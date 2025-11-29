@@ -1,0 +1,25 @@
+# --- Bỏ qua cấu hình IDE (Quan trọng nhất cho trường hợp của bạn) ---
+.idea/
+**/.idea/
+*.iml
+**/*.iml
+**/appInsightsSettings.xml
+
+# --- Android Build ---
+build/
+**/build/
+.gradle/
+**/.gradle/
+local.properties
+**/local.properties
+.cxx/
+**/.cxx/
+
+# --- Server ---
+server/server
+server/*.o
+server/*.db
+
+# --- Hệ thống ---
+.DS_Store
+Thumbs.db
