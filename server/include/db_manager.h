@@ -1,7 +1,7 @@
 #ifndef DB_MANAGER_H
 #define DB_MANAGER_H
 
-#include <sqlite3.h>
+#include <mysql/mysql.h>
 
 // Hàm khởi tạo DB (Tạo bảng nếu chưa có)
 void init_database();
