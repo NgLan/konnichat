@@ -1,84 +1,64 @@
 #include "../include/db_manager.h"
+#include "../include/dotenv.h" 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
-// Biến quản lý kết nối MySQL
 MYSQL *conn;
 
-// Cấu hình kết nối (Phải khớp với Bước 1)
-#define DB_HOST "localhost"
-#define DB_USER "chat_admin"
-#define DB_PASS "password123"
-#define DB_NAME "chatapp_db"
+void connect_database() {
+    // 1. Gọi thư viện load file .env vào RAM
+    env_load(".env");
 
-void init_database() {
+    // 2. Lấy giá trị bằng hàm getenv()
+    char *host = getenv("DB_HOST");
+    char *user = getenv("DB_USER");
+    char *pass = getenv("DB_PASS");
+    char *name = getenv("DB_NAME");
+    
+    // Xử lý port (chuyển string sang int), mặc định 3306 nếu thiếu
+    char *port_str = getenv("DB_PORT");
+    int port = (port_str != NULL) ? atoi(port_str) : 3306;
+
+    // Kiểm tra biến bắt buộc
+    if (!host || !user || !pass || !name) {
+        fprintf(stderr, "LỖI: Thiếu cấu hình DB trong file .env\n");
+        exit(1);
+    }
+
     conn = mysql_init(NULL);
-    if (conn == NULL) {
-        fprintf(stderr, "mysql_init() failed\n");
-        exit(1);
-    }
-
-    // Kết nối tới MySQL Server
-    if (mysql_real_connect(conn, DB_HOST, DB_USER, DB_PASS, DB_NAME, 0, NULL, 0) == NULL) {
+    if (mysql_real_connect(conn, host, user, pass, name, port, NULL, 0) == NULL) {
         fprintf(stderr, "Lỗi kết nối MySQL: %s\n", mysql_error(conn));
-        mysql_close(conn);
         exit(1);
     }
 
-    printf("Đã kết nối Database MySQL thành công.\n");
+    printf("Đã kết nối Database thành công (Host: %s)\n", host);
 }
 
 int db_register_user(const char *username, const char *password) {
-    char query[512];
-    
-    // Tạo câu lệnh SQL INSERT
-    // Lưu ý: mysql_real_escape_string nên được dùng ở đây để an toàn (tôi lược qua cho gọn code demo)
+    char query[1024];
     snprintf(query, sizeof(query), 
              "INSERT INTO Users (Username, Password) VALUES ('%s', '%s')", 
              username, password);
-
-    // Thực thi
-    if (mysql_query(conn, query)) {
-        // Nếu lỗi (ví dụ trùng Username)
-        // fprintf(stderr, "Register Error: %s\n", mysql_error(conn)); 
-        return 0; 
-    }
-    
-    return 1; // Thành công
+    if (mysql_query(conn, query)) return 0; 
+    return 1;
 }
 
 int db_check_login(const char *username, const char *password) {
-    char query[512];
+    char query[1024];
     int user_id = -1;
-
-    // Tạo câu lệnh SQL SELECT
     snprintf(query, sizeof(query), 
              "SELECT ID FROM Users WHERE Username='%s' AND Password='%s'", 
              username, password);
+    
+    if (mysql_query(conn, query)) return -1;
 
-    // Thực thi
-    if (mysql_query(conn, query)) {
-        fprintf(stderr, "Login Query Error: %s\n", mysql_error(conn));
-        return -1;
-    }
-
-    // Lấy kết quả
     MYSQL_RES *result = mysql_store_result(conn);
-    if (result == NULL) {
-        return -1;
-    }
-
-    // Kiểm tra số dòng trả về
-    int num_rows = mysql_num_rows(result);
-    if (num_rows > 0) {
-        MYSQL_ROW row = mysql_fetch_row(result);
-        if (row && row[0]) {
-            user_id = atoi(row[0]); // Chuyển chuỗi ID thành số int
+    if (result) {
+        if (mysql_num_rows(result) > 0) {
+            MYSQL_ROW row = mysql_fetch_row(result);
+            if (row && row[0]) user_id = atoi(row[0]);
         }
+        mysql_free_result(result);
     }
-
-    // Giải phóng bộ nhớ kết quả
-    mysql_free_result(result);
     return user_id;
 }
