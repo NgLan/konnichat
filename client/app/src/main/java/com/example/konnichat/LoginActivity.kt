@@ -80,10 +80,10 @@ class LoginActivity : AppCompatActivity() {
                         Toast.makeText(this@LoginActivity, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
 
                         // --- TODO: CHUYỂN SANG MÀN HÌNH CHÍNH (HOME) ---
-                        // val intent = Intent(this@LoginActivity, HomeActivity::class.java)
-                        // intent.putExtra("USER_ID", userId) // Truyền ID sang để dùng
-                        // startActivity(intent)
-                        // finish()
+                        val intent = Intent(this@LoginActivity, HomeActivity::class.java)
+                        intent.putExtra("USER_ID", userId) // Truyền ID sang để dùng
+                        startActivity(intent)
+                        finish()
 
                     } else {
                         Toast.makeText(this@LoginActivity, "Sai Email hoặc Mật khẩu!", Toast.LENGTH_SHORT).show()

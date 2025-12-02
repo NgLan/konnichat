@@ -22,7 +22,7 @@ void send_packet(int sock, int cmd_type, const char* user, const char* pass) {
     // 1. Chuẩn bị Payload
     LoginPayload payload;
     memset(&payload, 0, sizeof(LoginPayload)); // Xóa sạch bộ nhớ rác
-    strncpy(payload.username, user, 31);       // Copy username (tối đa 31 ký tự)
+    strncpy(payload.email, user, 255);       // Copy username (tối đa 31 ký tự)
     strncpy(payload.password, pass, 31);       // Copy password
 
     // 2. Chuẩn bị Header
@@ -135,4 +135,71 @@ Java_com_example_konnichat_LoginActivity_connectToServer(
 
     LOGI("Kết nối thành công!");
     return env->NewStringUTF("Đã kết nối tới Server thành công!");
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_konnichat_HomeActivity_getFriendList(
+        JNIEnv* env, jobject, jint userId) {
+
+    if (clientSocket == -1) return NULL;
+
+    // 1. Gửi request
+    GetFriendListPayload req;
+    req.user_id = userId;
+
+    PacketHeader header;
+    header.command_type = CMD_GET_FRIEND_LIST;
+    header.payload_size = sizeof(GetFriendListPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &req, sizeof(GetFriendListPayload), 0);
+
+    // 2. Nhận Header phản hồi
+    PacketHeader respHeader;
+    int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+    if (bytes <= 0) return NULL;
+
+    // 3. Nhận số lượng bạn bè
+    int count = 0;
+    recv(clientSocket, &count, sizeof(int), 0);
+
+    // 4. Chuẩn bị Java ArrayList
+    jclass arrayListClass = env->FindClass("java/util/ArrayList");
+    jmethodID arrayListInit = env->GetMethodID(arrayListClass, "<init>", "()V");
+    jmethodID arrayListAdd = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
+    jobject listObject = env->NewObject(arrayListClass, arrayListInit);
+
+    // Chuẩn bị class Friend
+    jclass friendClass = env->FindClass("com/example/konnichat/Friend");
+    // Constructor: Friend(int id, String name, boolean isOnline)
+    jmethodID friendInit = env->GetMethodID(friendClass, "<init>", "(ILjava/lang/String;Z)V");
+
+    // 5. Nhận dữ liệu và đẩy vào List
+    if (count > 0) {
+        FriendInfo* friends = new FriendInfo[count];
+
+        // Nhận toàn bộ data 1 lần cho nhanh (recv_all logic nên áp dụng ở đây nếu cần chuẩn chỉ)
+        int received = 0;
+        int totalSize = count * sizeof(FriendInfo);
+        char* ptr = (char*)friends;
+        while(received < totalSize) {
+            int r = recv(clientSocket, ptr + received, totalSize - received, 0);
+            if(r <= 0) break;
+            received += r;
+        }
+
+        for (int i = 0; i < count; i++) {
+            jstring name = env->NewStringUTF(friends[i].name);
+            jboolean isOnline = (friends[i].is_online == 1);
+
+            jobject friendObj = env->NewObject(friendClass, friendInit, friends[i].id, name, isOnline);
+            env->CallBooleanMethod(listObject, arrayListAdd, friendObj);
+
+            env->DeleteLocalRef(name);
+            env->DeleteLocalRef(friendObj);
+        }
+        delete[] friends;
+    }
+
+    return listObject;
 }

@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:padding="16dp"
+    android:background="?attr/selectableItemBackground"> <!-- Hiệu ứng khi nhấn -->
+
+    <!-- Avatar (Dùng ảnh tạm hoặc placeholder) -->
+    <ImageView
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:src="@mipmap/ic_launcher_round"
+        android:layout_marginEnd="16dp"/>
+
+    <!-- Tên và Trạng thái -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/tvFriendName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Tên người dùng"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:textColor="#000000"/>
+
+        <TextView
+            android:id="@+id/tvFriendStatusText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Offline"
+            android:textSize="12sp"
+            android:textColor="#888888"/>
+    </LinearLayout>
+
+    <!-- Chấm tròn trạng thái -->
+    <View
+        android:id="@+id/viewStatusDot"
+        android:layout_width="12dp"
+        android:layout_height="12dp"
+        android:background="@drawable/status_offline_bg" />
+
+</LinearLayout>
