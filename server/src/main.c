@@ -3,7 +3,7 @@
 
 int main() {
 
-    init_database();
+    connect_database();
     
     int server_fd, *new_sock;
     struct sockaddr_in address;

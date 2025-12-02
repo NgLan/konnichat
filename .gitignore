@@ -16,11 +16,14 @@ local.properties
 **/.cxx/
 
 # --- Server ---
-server/server
-server/*.o
-server/*.db
-server/myserver
+*.o
+*.db
 
 # --- Hệ thống ---
 .DS_Store
 Thumbs.db
+
+*.env
+
+myserver
+tester
