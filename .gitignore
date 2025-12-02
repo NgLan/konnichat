@@ -19,6 +19,7 @@ local.properties
 server/server
 server/*.o
 server/*.db
+server/myserver
 
 # --- Hệ thống ---
 .DS_Store
