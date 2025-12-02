@@ -5,7 +5,7 @@
 
 MYSQL *conn;
 
-void connect_database() {
+void init_database() {
     // 1. Gọi thư viện load file .env vào RAM
     env_load(".env");
 
