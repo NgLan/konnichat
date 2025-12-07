@@ -14,8 +14,8 @@
 typedef enum {
     CMD_LOGIN = 1,
     CMD_REGISTER = 2,
-    CMD_CHAT_SINGLE = 3,
-    CMD_CHAT_GROUP = 4,
+    CMD_SEND_MESSAGE = 3,    
+    CMD_RECEIVE_MESSAGE = 4,
     CMD_FRIEND_REQ = 5,
     CMD_GET_FRIEND_LIST = 6,
     CMD_RESPONSE = 99 // Server phản hồi kết quả
@@ -47,13 +47,20 @@ typedef struct __attribute__((packed)) {
     char password[32];
 } LoginPayload;
 
-// Ví dụ về payload cho Chat (dùng cho CMD_CHAT_SINGLE)
+// Payload gửi tin nhắn (Client -> Server)
 typedef struct __attribute__((packed)) {
-    int sender_id;          // ID người gửi
-    int receiver_id;        // ID người nhận
-    char message[0];        // Mảng động (flexible array member) chứa nội dung tin nhắn
+    int sender_id;
+    int receiver_id;
+    char content[512]; // Nội dung tin nhắn (tối đa 512 ký tự)
 } ChatPayload;
 
+// Payload nhận tin nhắn (Server -> Client)
+typedef struct __attribute__((packed)) {
+    int message_id;
+    int sender_id;
+    char content[512];
+    char timestamp[20]; // YYYY-MM-DD HH:MM:SS
+} MessageInfo;
 
 #define PORT 8080           // Cổng server sẽ mở
 #define BUFFER_SIZE 1024    // Kích thước bộ đệm tin nhắn

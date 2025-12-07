@@ -34,6 +34,8 @@ void init_database()
         exit(1);
     }
 
+    mysql_set_character_set(conn, "utf8mb4"); 
+
     printf("Đã kết nối Database thành công (Host: %s)\n", host);
 }
 
@@ -124,4 +126,62 @@ int db_get_friends(int user_id, FriendInfo *friends_out, int max_count)
         mysql_free_result(result);
     }
     return count;
+}
+
+// Hàm lưu tin nhắn mới vào DB (Mặc định status = 'sent')
+int db_save_message(int sender_id, int receiver_id, const char *content)
+{
+    char query[2048];
+    // status mặc định là 'sent' (chưa nhận)
+    snprintf(query, sizeof(query),
+             "INSERT INTO Messages (sender_id, receiver_id, content, status) "
+             "VALUES (%d, %d, '%s', 'sent')",
+             sender_id, receiver_id, content);
+
+    if (mysql_query(conn, query))
+    {
+        fprintf(stderr, "Save Msg Error: %s\n", mysql_error(conn));
+        return 0;
+    }
+    return 1;
+}
+
+// Hàm lấy các tin nhắn chưa nhận (status = 'sent') khi User đăng nhập
+int db_get_pending_messages(int user_id, MessageInfo *messages_out, int max_count)
+{
+    char query[1024];
+    snprintf(query, sizeof(query),
+             "SELECT id, sender_id, content, created_at "
+             "FROM Messages WHERE receiver_id = %d AND status = 'sent' "
+             "ORDER BY created_at ASC LIMIT %d",
+             user_id, max_count);
+
+    if (mysql_query(conn, query))
+        return 0;
+
+    MYSQL_RES *result = mysql_store_result(conn);
+    int count = 0;
+    if (result)
+    {
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(result)) && count < max_count)
+        {
+            messages_out[count].message_id = atoi(row[0]);
+            messages_out[count].sender_id = atoi(row[1]);
+            strncpy(messages_out[count].content, row[2], 511);
+            strncpy(messages_out[count].timestamp, row[3], 19);
+            count++;
+        }
+        mysql_free_result(result);
+    }
+    return count;
+}
+
+// Hàm đánh dấu tin nhắn đã gửi xong (status -> 'delivered')
+void db_mark_message_delivered(int message_id)
+{
+    char query[256];
+    snprintf(query, sizeof(query),
+             "UPDATE Messages SET status = 'delivered' WHERE id = %d", message_id);
+    mysql_query(conn, query);
 }

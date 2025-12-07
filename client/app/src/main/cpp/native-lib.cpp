@@ -38,7 +38,7 @@ void send_packet(int sock, int cmd_type, const char* user, const char* pass) {
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_example_konnichat_RegisterActivity_registerUser(
+Java_com_example_konnichat_NativeClient_registerUser(
         JNIEnv* env, jobject, jstring user, jstring pass) {
 
     if (clientSocket == -1) {
@@ -71,7 +71,7 @@ Java_com_example_konnichat_RegisterActivity_registerUser(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_example_konnichat_LoginActivity_loginUser(
+Java_com_example_konnichat_NativeClient_loginUser(
         JNIEnv* env, jobject, jstring user, jstring pass) {
 
     if (clientSocket == -1) {
@@ -102,7 +102,7 @@ Java_com_example_konnichat_LoginActivity_loginUser(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_example_konnichat_LoginActivity_connectToServer(
+Java_com_example_konnichat_NativeClient_connectToServer(
         JNIEnv* env,
         jobject /* this */) {
 
@@ -138,7 +138,7 @@ Java_com_example_konnichat_LoginActivity_connectToServer(
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_com_example_konnichat_HomeActivity_getFriendList(
+Java_com_example_konnichat_NativeClient_getFriendList(
         JNIEnv* env, jobject, jint userId) {
 
     if (clientSocket == -1) return NULL;
@@ -170,8 +170,14 @@ Java_com_example_konnichat_HomeActivity_getFriendList(
     jobject listObject = env->NewObject(arrayListClass, arrayListInit);
 
     // Chuẩn bị class Friend
-    jclass friendClass = env->FindClass("com/example/konnichat/Friend");
-    // Constructor: Friend(int id, String name, boolean isOnline)
+    jclass friendClass = env->FindClass("com/example/konnichat/data/dto/NativeFriendDto");
+    if (friendClass == NULL) {
+        LOGE("Không tìm thấy class NativeFriendDto!");
+        return NULL;
+    }
+
+    // Constructor: NativeFriendDto(int id, String name, boolean isOnline)
+    // Signature: (ILjava/lang/String;Z)V
     jmethodID friendInit = env->GetMethodID(friendClass, "<init>", "(ILjava/lang/String;Z)V");
 
     // 5. Nhận dữ liệu và đẩy vào List
@@ -202,4 +208,70 @@ Java_com_example_konnichat_HomeActivity_getFriendList(
     }
 
     return listObject;
+}
+
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_konnichat_NativeClient_sendMessage(
+        JNIEnv* env, jobject, jint senderId, jint receiverId, jstring content) {
+
+    if (clientSocket == -1) return;
+
+    const char *c_content = env->GetStringUTFChars(content, 0);
+
+    // Chuẩn bị payload
+    ChatPayload payload;
+    payload.sender_id = senderId;
+    payload.receiver_id = receiverId;
+    strncpy(payload.content, c_content, 511);
+
+    // Gửi gói tin
+    PacketHeader header;
+    header.command_type = CMD_SEND_MESSAGE;
+    header.payload_size = sizeof(ChatPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &payload, sizeof(ChatPayload), 0);
+
+    env->ReleaseStringUTFChars(content, c_content);
+}
+
+// Hàm nhận tin nhắn (Blocking) - Sẽ được gọi trong Thread riêng ở Java
+// Trả về đối tượng MessageInfo hoặc null nếu lỗi/không có tin
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_konnichat_NativeClient_receiveMessage(JNIEnv* env, jobject) {
+    if (clientSocket == -1) return NULL;
+
+    PacketHeader header;
+    // Peek: Xem trước header mà không lấy ra khỏi buffer
+    int bytes = recv(clientSocket, &header, sizeof(PacketHeader), MSG_PEEK);
+
+    if (bytes > 0 && header.command_type == CMD_RECEIVE_MESSAGE) {
+        // Nếu đúng là tin nhắn, đọc thật sự
+        recv(clientSocket, &header, sizeof(PacketHeader), 0);
+
+        MessageInfo msgInfo;
+        recv(clientSocket, &msgInfo, sizeof(MessageInfo), 0);
+
+        // Map sang Java Object
+        jclass msgClass = env->FindClass("com/example/konnichat/data/dto/NativeMessageDto");
+        if (msgClass == NULL) {
+            LOGE("Không tìm thấy class NativeMessageDto!");
+            return NULL;
+        }
+
+        // Constructor: NativeMessageDto(int serverMsgId, int senderId, String content, String timestamp)
+        // Signature: (IILjava/lang/String;Ljava/lang/String;)V
+        jmethodID init = env->GetMethodID(msgClass, "<init>", "(IILjava/lang/String;Ljava/lang/String;)V");
+
+        jstring content = env->NewStringUTF(msgInfo.content);
+        jstring time = env->NewStringUTF(msgInfo.timestamp);
+
+        jobject msgObj = env->NewObject(msgClass, init, msgInfo.message_id, msgInfo.sender_id, content, time);
+
+        env->DeleteLocalRef(content);
+        env->DeleteLocalRef(time);
+        return msgObj;
+    }
+
+    return NULL;
 }

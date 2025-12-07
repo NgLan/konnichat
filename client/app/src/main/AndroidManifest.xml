@@ -14,7 +14,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.KonniChat">
         <activity
-            android:name=".LoginActivity"
+            android:name=".presentation.auth.LoginActivity"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -23,8 +23,17 @@
             </intent-filter>
         </activity>
 
-        <activity android:name=".RegisterActivity" />
-        <activity android:name=".HomeActivity" />
+        <activity android:name=".presentation.auth.RegisterActivity" />
+        <activity
+            android:name=".presentation.home.HomeActivity"
+            android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar" />
+
+        <activity
+            android:name=".presentation.chat.ChatActivity"
+            android:theme="@style/Theme.MaterialComponents.DayNight.NoActionBar"
+            android:windowSoftInputMode="adjustResize" />
+        <!-- adjustResize giúp đẩy list chat lên khi bàn phím hiện ra -->
+
     </application>
 
 </manifest>

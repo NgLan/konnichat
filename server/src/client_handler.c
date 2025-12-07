@@ -1,6 +1,34 @@
 #include "../include/server.h"
 #include "../include/db_manager.h" // Để gọi hàm login/register
 
+void send_pending_messages(int sock, int user_id)
+{
+    MessageInfo pending_msgs[50]; // Tối đa 50 tin chờ
+    int count = db_get_pending_messages(user_id, pending_msgs, 50);
+
+    if (count > 0)
+    {
+        printf("User %d có %d tin nhắn offline. Đang đồng bộ...\n", user_id, count);
+        for (int i = 0; i < count; i++)
+        {
+            // 1. Chuẩn bị gói tin
+            PacketHeader header;
+            header.command_type = CMD_RECEIVE_MESSAGE; // Lệnh báo Client nhận tin
+            header.payload_size = sizeof(MessageInfo);
+
+            // 2. Gửi Header + Payload
+            send(sock, &header, sizeof(PacketHeader), 0);
+            send(sock, &pending_msgs[i], sizeof(MessageInfo), 0);
+
+            // 3. Cập nhật DB là đã gửi
+            db_mark_message_delivered(pending_msgs[i].message_id);
+
+            // Ngủ để tránh dính gói tin (TCP Stream)
+            usleep(10000);
+        }
+    }
+}
+
 // Hàm tiện ích: Đảm bảo nhận đủ N bytes từ stream (Task 2 Core)
 int recv_all(int sock, void *buffer, int size)
 {
@@ -108,19 +136,38 @@ void *handle_client(void *socket_desc)
             PacketHeader respHeader = {CMD_RESPONSE, sizeof(int)};
             send(sock, &respHeader, sizeof(PacketHeader), 0);
             send(sock, &userId, sizeof(int), 0); // Trả về ID user hoặc -1
+
+            if (userId > 0)
+            {
+                send_pending_messages(sock, userId);
+            }
             break;
         }
 
-        case CMD_CHAT_SINGLE:
-            // TODO: Xử lý chat sau
-            printf("Tin nhắn chat nhận được (chưa xử lý forwarding)\n");
+        case CMD_SEND_MESSAGE:
+        {
+            ChatPayload *chat = (ChatPayload *)payload;
+            printf("User %d gửi tin cho %d: %s\n", chat->sender_id, chat->receiver_id, chat->content);
+
+            // Lưu vào DB
+            if (db_save_message(chat->sender_id, chat->receiver_id, chat->content))
+            {
+                printf("-> Đã lưu tin nhắn vào DB.\n");
+            }
+            else
+            {
+                printf("-> Lỗi lưu tin nhắn.\n");
+            }
             break;
+        }
 
         default:
+        {
             printf("Lệnh không xác định: %d\n", header.command_type);
         }
+        }
 
-        free(payload); // Quan trọng: Giải phóng bộ nhớ sau khi xử lý xong gói tin
+        free(payload); // Giải phóng bộ nhớ sau khi xử lý xong gói tin
     }
 
     printf("Client (Socket %d) ngắt kết nối.\n", sock);

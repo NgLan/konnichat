@@ -16,4 +16,9 @@ int db_register_user(const char *username, const char *password);
 // Hàm lấy danh sách bạn bè
 int db_get_friends(int user_id, FriendInfo *friends_out, int max_count);
 
+// Các hàm liên quan đến tin nhắn
+int db_save_message(int sender_id, int receiver_id, const char* content);
+int db_get_pending_messages(int user_id, MessageInfo* messages_out, int max_count);
+void db_mark_message_delivered(int message_id);
+
 #endif
