@@ -10,57 +10,73 @@
 #include <arpa/inet.h>
 #include <pthread.h> 
 
-// Định nghĩa các loại lệnh (Command Types)
 typedef enum {
     CMD_LOGIN = 1,
     CMD_REGISTER = 2,
-    CMD_SEND_MESSAGE = 3,    
+    CMD_SEND_MESSAGE = 3,
     CMD_RECEIVE_MESSAGE = 4,
     CMD_FRIEND_REQ = 5,
     CMD_GET_FRIEND_LIST = 6,
-    CMD_RESPONSE = 99 // Server phản hồi kết quả
+    CMD_FETCH_OFFLINE_MSGS = 7, 
+    CMD_GET_HISTORY = 8,
+    CMD_RESPONSE = 99
 } CommandType;
 
-// Cấu trúc gói tin (Packet Structure)
-// __attribute__((packed)) giúp loại bỏ padding, giảm dung lượng và dễ parse
-
-// Gửi yêu cầu lấy list friend 
+// --- HEADER ---
 typedef struct __attribute__((packed)) {
-    int user_id;
-} GetFriendListPayload;
-
-// Thông tin 1 người bạn trả về cho Client
-typedef struct __attribute__((packed)) {
-    int id;
-    char name[50]; 
-    int is_online; // 1: Online, 0: Offline 
-} FriendInfo;
-
-typedef struct __attribute__((packed)) {
-    int command_type;       // 4 bytes: Loại lệnh (CommandType)
-    int payload_size;       // 4 bytes: Độ dài của phần dữ liệu đi kèm
+    int command_type;
+    int payload_size;
 } PacketHeader;
 
-// Ví dụ về payload cho Login (dùng cho CMD_LOGIN)
+// --- PAYLOADS ---
+
+// 1. Payload chung cho các request chỉ cần gửi User ID
+// (Dùng cho: GetFriendList, FetchOfflineMsgs...)
+typedef struct __attribute__((packed)) {
+    int user_id;
+} UserIdPayload;
+
+// 2. Payload Login/Register
 typedef struct __attribute__((packed)) {
     char email[256];
     char password[32];
 } LoginPayload;
 
-// Payload gửi tin nhắn (Client -> Server)
+// 3. Payload Chat (Gửi đi)
 typedef struct __attribute__((packed)) {
     int sender_id;
     int receiver_id;
-    char content[512]; // Nội dung tin nhắn (tối đa 512 ký tự)
+    char content[512];
 } ChatPayload;
 
-// Payload nhận tin nhắn (Server -> Client)
+// --- RESPONSE DATA ---
+
+// 1. Thông tin User (Trả về khi Login thành công để lưu vào DB)
+typedef struct __attribute__((packed)) {
+    int id;
+    char email[256];
+    char name[50];
+} UserInfo;
+
+// 2. Thông tin Bạn bè
+typedef struct __attribute__((packed)) {
+    int id;
+    char name[50];
+    int is_online;
+} FriendInfo;
+
+// 3. Thông tin Tin nhắn (Nhận về)
 typedef struct __attribute__((packed)) {
     int message_id;
     int sender_id;
     char content[512];
-    char timestamp[20]; // YYYY-MM-DD HH:MM:SS
+    char timestamp[20];
 } MessageInfo;
+
+typedef struct __attribute__((packed)) {
+    int user_id;
+    int friend_id;
+} HistoryPayload;
 
 #define PORT 8080           // Cổng server sẽ mở
 #define BUFFER_SIZE 1024    // Kích thước bộ đệm tin nhắn

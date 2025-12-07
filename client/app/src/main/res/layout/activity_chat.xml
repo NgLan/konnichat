@@ -6,15 +6,34 @@
     android:fitsSystemWindows="true">
 
     <!-- Header -->
-    <TextView
-        android:id="@+id/tvChatTitle"
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="Chat với..."
-        android:textSize="18sp"
-        android:textStyle="bold"
-        android:padding="16dp"
-        android:background="#EEEEEE"/>
+        android:orientation="horizontal"
+        android:background="#EEEEEE"
+        android:gravity="center_vertical"
+        android:padding="8dp">
+
+        <!-- Nút Back -->
+        <ImageButton
+            android:id="@+id/btnBack"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@drawable/ic_arrow_back"
+            android:contentDescription="Back"
+            android:padding="8dp" />
+
+        <!-- Tiêu đề (Tên bạn bè) -->
+        <TextView
+            android:id="@+id/tvChatTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Chat với..."
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:layout_marginStart="8dp"/>
+    </LinearLayout>
 
     <!-- List tin nhắn -->
     <androidx.recyclerview.widget.RecyclerView

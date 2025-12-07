@@ -26,7 +26,12 @@ class ChatActivity : AppCompatActivity() {
         val friendId = intent.getIntExtra("FRIEND_ID", -1)
         val friendName = intent.getStringExtra("FRIEND_NAME") ?: "..."
 
-        findViewById<TextView>(R.id.tvChatTitle).text = "Chat với $friendName"
+        findViewById<TextView>(R.id.tvChatTitle).text = friendName
+
+        val btnBack = findViewById<android.widget.ImageButton>(R.id.btnBack)
+        btnBack.setOnClickListener {
+            finish() // Đóng ChatActivity, quay về HomeActivity
+        }
 
         setupViewModel(myUserId, friendId)
         setupRecyclerView(myUserId)

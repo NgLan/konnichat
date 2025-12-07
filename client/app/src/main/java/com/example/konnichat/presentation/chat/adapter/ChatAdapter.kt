@@ -53,7 +53,16 @@ class ChatAdapter(
         private val time: TextView = view.findViewById(R.id.tvTime)
         fun bind(msg: Message) {
             content.text = msg.content
-            time.text = msg.createdAt
+
+            // Hiển thị trạng thái bằng text nhỏ bên cạnh giờ (hoặc icon)
+            val statusText = when(msg.status) {
+                com.example.konnichat.domain.enums.MessageStatus.SENDING -> "Đang gửi..."
+                com.example.konnichat.domain.enums.MessageStatus.SENT -> "Đã gửi"
+                com.example.konnichat.domain.enums.MessageStatus.RECEIVED -> "Đã nhận"
+                else -> ""
+            }
+
+            time.text = "${msg.createdAt} • $statusText"
         }
     }
 

@@ -11,7 +11,11 @@ class MessageMapper {
             senderId = entity.senderId,
             receiverId = entity.receiverId,
             content = entity.content,
-            status = try { MessageStatus.valueOf(entity.status.uppercase()) } catch (e: Exception) { MessageStatus.SENT },
+            status = try {
+                MessageStatus.valueOf(entity.status.uppercase())
+            } catch (e: Exception) {
+                MessageStatus.SENT
+            },
             createdAt = entity.createdAt,
             updatedAt = entity.updatedAt
         )

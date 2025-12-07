@@ -95,7 +95,7 @@ void *handle_client(void *socket_desc)
 
         case CMD_GET_FRIEND_LIST:
         {
-            GetFriendListPayload *req = (GetFriendListPayload *)payload;
+            UserIdPayload *req = (UserIdPayload *)payload;
             printf("User %d đang lấy danh sách bạn bè...\n", req->user_id);
 
             // 1. Tạo mảng tạm để chứa dữ liệu
@@ -130,16 +130,32 @@ void *handle_client(void *socket_desc)
             LoginPayload *data = (LoginPayload *)payload;
             printf("Yêu cầu Đăng nhập: %s\n", data->email);
 
-            int userId = db_check_login(data->email, data->password);
+            UserInfo userInfo;
+            memset(&userInfo, 0, sizeof(UserInfo));
+
+            int userId = db_check_login(data->email, data->password, &userInfo);
 
             // Gửi phản hồi
-            PacketHeader respHeader = {CMD_RESPONSE, sizeof(int)};
-            send(sock, &respHeader, sizeof(PacketHeader), 0);
-            send(sock, &userId, sizeof(int), 0); // Trả về ID user hoặc -1
+            PacketHeader respHeader;
+            respHeader.command_type = CMD_RESPONSE;
 
             if (userId > 0)
             {
-                send_pending_messages(sock, userId);
+                // Nếu thành công: Gửi kèm UserInfo
+                respHeader.payload_size = sizeof(int) + sizeof(UserInfo);
+                send(sock, &respHeader, sizeof(PacketHeader), 0);
+
+                // Gửi ID (để check success > 0)
+                send(sock, &userId, sizeof(int), 0);
+                // Gửi trọn bộ UserInfo
+                send(sock, &userInfo, sizeof(UserInfo), 0);
+            }
+            else
+            {
+                // Nếu thất bại: Chỉ gửi ID (-1)
+                respHeader.payload_size = sizeof(int);
+                send(sock, &respHeader, sizeof(PacketHeader), 0);
+                send(sock, &userId, sizeof(int), 0);
             }
             break;
         }
@@ -157,6 +173,78 @@ void *handle_client(void *socket_desc)
             else
             {
                 printf("-> Lỗi lưu tin nhắn.\n");
+            }
+            break;
+        }
+
+        case CMD_FETCH_OFFLINE_MSGS:
+        {
+            UserIdPayload *req = (UserIdPayload *)payload;
+            printf("User %d yêu cầu sync tin nhắn offline...\n", req->user_id);
+
+            // 1. Đếm số lượng tin
+            int count = db_count_offline_messages(req->user_id);
+
+            // 2. Lấy tin nhắn ra bộ nhớ đệm (tối đa 50 tin mỗi lần sync cho nhẹ)
+            int limit = 50;
+            if (count > limit)
+                count = limit; // Cap lại nếu quá nhiều
+
+            MessageInfo messages[50];
+            if (count > 0)
+            {
+                db_get_offline_messages(req->user_id, messages, count);
+            }
+
+            // 3. Gửi Header Response
+            // Payload gồm: 1 biến int (count) + mảng MessageInfo
+            PacketHeader respHeader;
+            respHeader.command_type = CMD_RESPONSE;
+            respHeader.payload_size = sizeof(int) + (count * sizeof(MessageInfo));
+
+            send(sock, &respHeader, sizeof(PacketHeader), 0);
+
+            // 4. Gửi Count trước
+            send(sock, &count, sizeof(int), 0);
+
+            // 5. Gửi từng tin nhắn và đánh dấu đã gửi
+            if (count > 0)
+            {
+                send(sock, messages, count * sizeof(MessageInfo), 0);
+
+                // Update DB ngay sau khi gửi vào socket buffer
+                for (int i = 0; i < count; i++)
+                {
+                    db_mark_message_delivered(messages[i].message_id);
+                }
+                printf("=> Đã gửi %d tin nhắn offline cho User %d.\n", count, req->user_id);
+            }
+            else
+            {
+                printf("=> User %d không có tin nhắn offline.\n", req->user_id);
+            }
+            break;
+        }
+
+        case CMD_GET_HISTORY:
+        {
+            HistoryPayload *req = (HistoryPayload *)payload;
+            printf("User %d lấy lịch sử chat với %d...\n", req->user_id, req->friend_id);
+
+            MessageInfo messages[50];
+            int count = db_get_chat_history(req->user_id, req->friend_id, messages, 50);
+
+            // Gửi Header Response
+            PacketHeader respHeader;
+            respHeader.command_type = CMD_RESPONSE;
+            respHeader.payload_size = sizeof(int) + (count * sizeof(MessageInfo));
+
+            send(sock, &respHeader, sizeof(PacketHeader), 0);
+            send(sock, &count, sizeof(int), 0); // Gửi số lượng
+
+            if (count > 0)
+            {
+                send(sock, messages, count * sizeof(MessageInfo), 0);
             }
             break;
         }

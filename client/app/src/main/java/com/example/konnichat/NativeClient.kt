@@ -2,6 +2,7 @@ package com.example.konnichat
 
 import com.example.konnichat.data.dto.NativeFriendDto
 import com.example.konnichat.data.dto.NativeMessageDto
+import com.example.konnichat.data.dto.NativeUserDto
 
 object NativeClient {
     init {
@@ -12,7 +13,7 @@ object NativeClient {
 
     // 1. Kết nối & Auth
     external fun connectToServer(): String
-    external fun loginUser(user: String, pass: String): Int
+    external fun loginUser(user: String, pass: String): NativeUserDto?
     external fun registerUser(user: String, pass: String): Int
 
     // 2. Bạn bè
@@ -21,4 +22,6 @@ object NativeClient {
     // 3. Chat
     external fun sendMessage(senderId: Int, receiverId: Int, content: String)
     external fun receiveMessage(): NativeMessageDto?
+    external fun fetchOfflineMessages(userId: Int): ArrayList<NativeMessageDto>?
+    external fun getChatHistory(myId: Int, friendId: Int): ArrayList<NativeMessageDto>?
 }

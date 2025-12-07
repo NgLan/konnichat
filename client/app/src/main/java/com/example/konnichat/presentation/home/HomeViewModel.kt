@@ -6,10 +6,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.konnichat.domain.model.User
+import com.example.konnichat.domain.repository.ChatRepository
 import com.example.konnichat.domain.usecase.GetFriendsUseCase
+import com.example.konnichat.domain.usecase.SyncOfflineMessagesUseCase
 import kotlinx.coroutines.launch
 
-class HomeViewModel(private val getFriendsUseCase: GetFriendsUseCase) : ViewModel() {
+class HomeViewModel(
+    private val getFriendsUseCase: GetFriendsUseCase,
+    private val syncOfflineMessagesUseCase: SyncOfflineMessagesUseCase
+) : ViewModel() {
 
     private val _friends = MutableLiveData<List<User>>()
     val friends: LiveData<List<User>> = _friends
@@ -23,6 +28,8 @@ class HomeViewModel(private val getFriendsUseCase: GetFriendsUseCase) : ViewMode
             try {
                 val list = getFriendsUseCase(myUserId)
                 _friends.value = list
+
+                syncOfflineMessagesUseCase(myUserId)
             } catch (e: Exception) {
                 e.printStackTrace()
                 // Xử lý lỗi (post livedata error nếu cần)
@@ -34,11 +41,14 @@ class HomeViewModel(private val getFriendsUseCase: GetFriendsUseCase) : ViewMode
 }
 
 // Factory để khởi tạo ViewModel có tham số
-class HomeViewModelFactory(private val getFriendsUseCase: GetFriendsUseCase) : ViewModelProvider.Factory {
+class HomeViewModelFactory(
+    private val getFriendsUseCase: GetFriendsUseCase,
+    private val syncOfflineMessagesUseCase: SyncOfflineMessagesUseCase
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return HomeViewModel(getFriendsUseCase) as T
+            return HomeViewModel(getFriendsUseCase, syncOfflineMessagesUseCase) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

@@ -57,15 +57,39 @@ class LoginActivity : AppCompatActivity() {
             btnLogin.text = "Đang xử lý..."
 
             CoroutineScope(Dispatchers.IO).launch {
-                // Gọi hàm C
-                val userId = NativeClient.loginUser(email, password)
+                // 1. Gọi Login lấy Full Info
+                val userDto = NativeClient.loginUser(email, password)
 
                 // Cập nhật UI ở luồng chính
                 withContext(Dispatchers.Main) {
                     btnLogin.isEnabled = true
                     btnLogin.text = "Đăng Nhập"
 
-                    if (userId > 0) {
+                    if (userDto != null && userDto.id > 0) {
+                        // 2. LƯU DỮ LIỆU THẬT VÀO ROOM
+                        // Cần inject UserDao vào đây, hoặc gọi thông qua Repository
+                        // Để nhanh, ta gọi trực tiếp DB:
+                        val db = com.example.konnichat.data.source.local.AppDatabase.getDatabase(applicationContext)
+                        val currentTime = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault()).format(java.util.Date())
+
+                        val myUserEntity = com.example.konnichat.data.source.local.entity.UserEntity(
+                            id = userDto.id,
+                            email = userDto.email, // Dữ liệu thật từ Server
+                            name = userDto.name,   // Dữ liệu thật từ Server
+                            password = "", // Không lưu pass plaintext
+                            age = 0,
+                            status = "active",
+                            isOnline = "online",
+                            avatarUrl = null,
+                            createdAt = currentTime,
+                            updatedAt = currentTime
+                        )
+
+                        // Chạy trên IO
+                        withContext(Dispatchers.IO) {
+                            db.userDao().insertUser(myUserEntity)
+                        }
+
                         Toast.makeText(
                             this@LoginActivity,
                             "Đăng nhập thành công!",
@@ -74,7 +98,7 @@ class LoginActivity : AppCompatActivity() {
 
                         // --- TODO: CHUYỂN SANG MÀN HÌNH CHÍNH (HOME) ---
                         val intent = Intent(this@LoginActivity, HomeActivity::class.java)
-                        intent.putExtra("USER_ID", userId) // Truyền ID sang để dùng
+                        intent.putExtra("USER_ID", userDto.id) // Truyền ID sang để dùng
                         startActivity(intent)
                         finish()
 

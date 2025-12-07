@@ -34,7 +34,7 @@ void init_database()
         exit(1);
     }
 
-    mysql_set_character_set(conn, "utf8mb4"); 
+    mysql_set_character_set(conn, "utf8mb4");
 
     printf("Đã kết nối Database thành công (Host: %s)\n", host);
 }
@@ -50,29 +50,35 @@ int db_register_user(const char *username, const char *password)
     return 1;
 }
 
-int db_check_login(const char *email, const char *password)
+int db_check_login(const char *email, const char *password, UserInfo *user_out)
 {
     char query[1024];
-    int user_id = -1;
     snprintf(query, sizeof(query),
-             "SELECT id FROM Users WHERE email='%s' AND password='%s'",
+             "SELECT id, name, email FROM Users WHERE email='%s' AND password='%s'",
              email, password);
 
     if (mysql_query(conn, query))
         return -1;
 
     MYSQL_RES *result = mysql_store_result(conn);
+    int success = 0;
     if (result)
     {
         if (mysql_num_rows(result) > 0)
         {
             MYSQL_ROW row = mysql_fetch_row(result);
             if (row && row[0])
-                user_id = atoi(row[0]);
+            {
+                user_out->id = atoi(row[0]);
+                strncpy(user_out->name, row[1] ? row[1] : "No Name", 49);
+                strncpy(user_out->email, row[2] ? row[2] : "", 255);
+                success = 1;
+            }
         }
         mysql_free_result(result);
     }
-    return user_id;
+
+    return success ? user_out->id : -1;
 }
 
 int db_get_friends(int user_id, FriendInfo *friends_out, int max_count)
@@ -184,4 +190,94 @@ void db_mark_message_delivered(int message_id)
     snprintf(query, sizeof(query),
              "UPDATE Messages SET status = 'delivered' WHERE id = %d", message_id);
     mysql_query(conn, query);
+}
+
+// 1. Đếm số tin nhắn chưa nhận (status = 'sent')
+int db_count_offline_messages(int user_id)
+{
+    char query[1024];
+    snprintf(query, sizeof(query),
+             "SELECT COUNT(*) FROM Messages WHERE receiver_id = %d AND status = 'sent'",
+             user_id);
+
+    if (mysql_query(conn, query))
+        return 0;
+
+    MYSQL_RES *result = mysql_store_result(conn);
+    int count = 0;
+    if (result)
+    {
+        MYSQL_ROW row = mysql_fetch_row(result);
+        if (row && row[0])
+        {
+            count = atoi(row[0]);
+        }
+        mysql_free_result(result);
+    }
+    return count;
+}
+
+// 2. Lấy danh sách tin nhắn
+int db_get_offline_messages(int user_id, MessageInfo *messages_out, int limit)
+{
+    char query[1024];
+    snprintf(query, sizeof(query),
+             "SELECT id, sender_id, content, created_at "
+             "FROM Messages WHERE receiver_id = %d AND status = 'sent' "
+             "ORDER BY created_at ASC LIMIT %d",
+             user_id, limit);
+
+    if (mysql_query(conn, query))
+        return 0;
+
+    MYSQL_RES *result = mysql_store_result(conn);
+    int count = 0;
+    if (result)
+    {
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(result)) && count < limit)
+        {
+            messages_out[count].message_id = atoi(row[0]);
+            messages_out[count].sender_id = atoi(row[1]);
+            strncpy(messages_out[count].content, row[2], 511);
+            strncpy(messages_out[count].timestamp, row[3], 19);
+            count++;
+        }
+        mysql_free_result(result);
+    }
+    return count;
+}
+
+// Hàm lấy lịch sử chat giữa 2 người (lấy 50 tin gần nhất)
+int db_get_chat_history(int user1, int user2, MessageInfo *messages_out, int limit)
+{
+    char query[1024];
+    // Lấy tin nhắn chiều đi và về
+    snprintf(query, sizeof(query),
+             "SELECT id, sender_id, content, created_at "
+             "FROM Messages "
+             "WHERE (sender_id = %d AND receiver_id = %d) "
+             "   OR (sender_id = %d AND receiver_id = %d) "
+             "ORDER BY created_at DESC LIMIT %d", // Lấy mới nhất trước
+             user1, user2, user2, user1, limit);
+
+    if (mysql_query(conn, query))
+        return 0;
+
+    MYSQL_RES *result = mysql_store_result(conn);
+    int count = 0;
+    if (result)
+    {
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(result)) && count < limit)
+        {
+            messages_out[count].message_id = atoi(row[0]);
+            messages_out[count].sender_id = atoi(row[1]);
+            strncpy(messages_out[count].content, row[2], 511);
+            strncpy(messages_out[count].timestamp, row[3], 19);
+            count++;
+        }
+        mysql_free_result(result);
+    }
+    return count;
 }

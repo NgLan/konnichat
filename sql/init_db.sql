@@ -151,6 +151,7 @@ INSERT INTO Users (email, password, name, is_online, avatar_url) VALUES
 ('giang.dang@test.com', 'Pass@1234', 'Đặng Trường Giang', 'offline', 'default_avt'),
 ('hoa.bui@test.com', 'Pass@1234', 'Bùi Thị Hoa', 'offline', 'default_avt'),
 ('khanh.do@test.com', 'Pass@1234', 'Đỗ Duy Khánh', 'online', 'default_avt'),
+('lan.nguyen@test.com', 'Pass@1234', 'Nguyễn Ngọc Lan', 'offline', 'default_avt'),
 ('linh.ngo@test.com', 'Pass@1234', 'Ngô Mỹ Linh', 'online', 'default_avt');
 
 -- 2. Kết bạn
@@ -161,7 +162,7 @@ WHERE email IN (
     'bich.tran@test.com', 'cuong.le@test.com', 
     'dung.pham@test.com', 'em.hoang@test.com', 'phuong.vu@test.com', 
     'giang.dang@test.com', 'hoa.bui@test.com', 'khanh.do@test.com', 
-    'linh.ngo@test.com'
+    'linh.ngo@test.com', 'lan.nguyen@test.com'
 );
 
 INSERT INTO Friends (user_id, friend_id)

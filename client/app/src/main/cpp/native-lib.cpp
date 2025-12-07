@@ -70,7 +70,7 @@ Java_com_example_konnichat_NativeClient_registerUser(
     return result; // Trả về 1 nếu thành công, 0 nếu thất bại
 }
 
-extern "C" JNIEXPORT jint JNICALL
+extern "C" JNIEXPORT jobject JNICALL
 Java_com_example_konnichat_NativeClient_loginUser(
         JNIEnv* env, jobject, jstring user, jstring pass) {
 
@@ -89,16 +89,36 @@ Java_com_example_konnichat_NativeClient_loginUser(
     PacketHeader respHeader;
     int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
 
-    int userId = -1;
+    jobject userObj = NULL;
+
     if (bytes > 0 && respHeader.command_type == CMD_RESPONSE) {
+        int userId = -1;
         // Server trả về UserID
         recv(clientSocket, &userId, sizeof(int), 0);
+
+        if (userId > 0) {
+            // Đọc tiếp struct UserInfo
+            UserInfo uInfo;
+            recv(clientSocket, &uInfo, sizeof(UserInfo), 0);
+
+            // Map sang Kotlin Object (NativeUserDto)
+            jclass userClass = env->FindClass("com/example/konnichat/data/dto/NativeUserDto");
+            jmethodID init = env->GetMethodID(userClass, "<init>", "(ILjava/lang/String;Ljava/lang/String;)V");
+
+            jstring jEmail = env->NewStringUTF(uInfo.email);
+            jstring jName = env->NewStringUTF(uInfo.name);
+
+            userObj = env->NewObject(userClass, init, uInfo.id, jEmail, jName);
+
+            env->DeleteLocalRef(jEmail);
+            env->DeleteLocalRef(jName);
+        }
     }
 
     env->ReleaseStringUTFChars(user, c_user);
     env->ReleaseStringUTFChars(pass, c_pass);
 
-    return userId; // Trả về UserID (>0) nếu thành công
+    return userObj; // Trả về UserID (>0) nếu thành công
 }
 
 extern "C" JNIEXPORT jstring JNICALL
@@ -144,15 +164,15 @@ Java_com_example_konnichat_NativeClient_getFriendList(
     if (clientSocket == -1) return NULL;
 
     // 1. Gửi request
-    GetFriendListPayload req;
+    UserIdPayload req;
     req.user_id = userId;
 
     PacketHeader header;
     header.command_type = CMD_GET_FRIEND_LIST;
-    header.payload_size = sizeof(GetFriendListPayload);
+    header.payload_size = sizeof(UserIdPayload);
 
     send(clientSocket, &header, sizeof(PacketHeader), 0);
-    send(clientSocket, &req, sizeof(GetFriendListPayload), 0);
+    send(clientSocket, &req, sizeof(UserIdPayload), 0);
 
     // 2. Nhận Header phản hồi
     PacketHeader respHeader;
@@ -162,6 +182,7 @@ Java_com_example_konnichat_NativeClient_getFriendList(
     // 3. Nhận số lượng bạn bè
     int count = 0;
     recv(clientSocket, &count, sizeof(int), 0);
+    LOGI("Native received friend count: %d", count);
 
     // 4. Chuẩn bị Java ArrayList
     jclass arrayListClass = env->FindClass("java/util/ArrayList");
@@ -197,10 +218,9 @@ Java_com_example_konnichat_NativeClient_getFriendList(
         for (int i = 0; i < count; i++) {
             jstring name = env->NewStringUTF(friends[i].name);
             jboolean isOnline = (friends[i].is_online == 1);
-
             jobject friendObj = env->NewObject(friendClass, friendInit, friends[i].id, name, isOnline);
-            env->CallBooleanMethod(listObject, arrayListAdd, friendObj);
 
+            env->CallBooleanMethod(listObject, arrayListAdd, friendObj);
             env->DeleteLocalRef(name);
             env->DeleteLocalRef(friendObj);
         }
@@ -274,4 +294,138 @@ Java_com_example_konnichat_NativeClient_receiveMessage(JNIEnv* env, jobject) {
     }
 
     return NULL;
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_konnichat_NativeClient_fetchOfflineMessages(
+        JNIEnv* env, jobject, jint userId) {
+
+    if (clientSocket == -1) return NULL;
+
+    // 1. Gửi Request
+    UserIdPayload req;
+    req.user_id = userId;
+
+    PacketHeader header;
+    header.command_type = CMD_FETCH_OFFLINE_MSGS;
+    header.payload_size = sizeof(UserIdPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &req, sizeof(UserIdPayload), 0);
+
+    // 2. Nhận Header
+    PacketHeader respHeader;
+    int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+    if (bytes <= 0) return NULL;
+
+    // 3. Nhận Số lượng (Count) - Server gửi 4 bytes int đầu tiên
+    int count = 0;
+    recv(clientSocket, &count, sizeof(int), 0);
+
+    LOGI("FetchOfflineMsgs: Server báo có %d tin nhắn.", count);
+
+    // 4. Chuẩn bị Java List
+    jclass arrayListClass = env->FindClass("java/util/ArrayList");
+    jmethodID arrayListInit = env->GetMethodID(arrayListClass, "<init>", "()V");
+    jmethodID arrayListAdd = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
+    jobject listObject = env->NewObject(arrayListClass, arrayListInit);
+
+    jclass msgClass = env->FindClass("com/example/konnichat/data/dto/NativeMessageDto");
+    jmethodID msgInit = env->GetMethodID(msgClass, "<init>", "(IILjava/lang/String;Ljava/lang/String;)V");
+
+    // 5. Vòng lặp nhận đúng 'count' tin nhắn
+    if (count > 0) {
+        // Có thể nhận 1 cục (nếu struct nhỏ) hoặc nhận từng cái.
+        // Để an toàn và clean, ta nhận cả mảng buffer vì Server gửi liền tù tì.
+        int totalBytes = count * sizeof(MessageInfo);
+        MessageInfo* msgs = new MessageInfo[count];
+
+        char* ptr = (char*)msgs;
+        int received = 0;
+
+        // Logic Recv All đảm bảo nhận đủ byte
+        while(received < totalBytes) {
+            int r = recv(clientSocket, ptr + received, totalBytes - received, 0);
+            if (r <= 0) break;
+            received += r;
+        }
+
+        // Map sang Java Object
+        for(int i=0; i < count; i++) {
+            jstring content = env->NewStringUTF(msgs[i].content);
+            jstring time = env->NewStringUTF(msgs[i].timestamp);
+
+            jobject msgObj = env->NewObject(msgClass, msgInit, msgs[i].message_id, msgs[i].sender_id, content, time);
+            env->CallBooleanMethod(listObject, arrayListAdd, msgObj);
+
+            env->DeleteLocalRef(content);
+            env->DeleteLocalRef(time);
+            env->DeleteLocalRef(msgObj);
+        }
+        delete[] msgs;
+    }
+
+    return listObject;
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_konnichat_NativeClient_getChatHistory(
+        JNIEnv* env, jobject, jint myId, jint friendId) {
+
+    if (clientSocket == -1) return NULL;
+
+    // 1. Gửi Request
+    HistoryPayload req;
+    req.user_id = myId;
+    req.friend_id = friendId;
+
+    PacketHeader header;
+    header.command_type = CMD_GET_HISTORY;
+    header.payload_size = sizeof(HistoryPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &req, sizeof(HistoryPayload), 0);
+
+    // 2. Nhận Response (Logic giống hệt fetchOfflineMessages)
+    PacketHeader respHeader;
+    int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+    if (bytes <= 0) return NULL;
+
+    int count = 0;
+    recv(clientSocket, &count, sizeof(int), 0);
+
+    // 3. Tạo List
+    jclass arrayListClass = env->FindClass("java/util/ArrayList");
+    jmethodID arrayListInit = env->GetMethodID(arrayListClass, "<init>", "()V");
+    jmethodID arrayListAdd = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
+    jobject listObject = env->NewObject(arrayListClass, arrayListInit);
+
+    jclass msgClass = env->FindClass("com/example/konnichat/data/dto/NativeMessageDto");
+    jmethodID msgInit = env->GetMethodID(msgClass, "<init>", "(IILjava/lang/String;Ljava/lang/String;)V");
+
+    if (count > 0) {
+        int totalBytes = count * sizeof(MessageInfo);
+        MessageInfo* msgs = new MessageInfo[count];
+
+        char* ptr = (char*)msgs;
+        int received = 0;
+        while(received < totalBytes) {
+            int r = recv(clientSocket, ptr + received, totalBytes - received, 0);
+            if (r <= 0) break;
+            received += r;
+        }
+
+        for(int i=0; i < count; i++) {
+            jstring content = env->NewStringUTF(msgs[i].content);
+            jstring time = env->NewStringUTF(msgs[i].timestamp);
+            jobject msgObj = env->NewObject(msgClass, msgInit, msgs[i].message_id, msgs[i].sender_id, content, time);
+            env->CallBooleanMethod(listObject, arrayListAdd, msgObj);
+
+            env->DeleteLocalRef(content);
+            env->DeleteLocalRef(time);
+            env->DeleteLocalRef(msgObj);
+        }
+        delete[] msgs;
+    }
+    return listObject;
 }

@@ -37,8 +37,11 @@ class HomeActivity : AppCompatActivity() {
     }
 
     private fun setupViewModel() {
-        val useCase = Injection.provideGetFriendsUseCase(this)
-        val factory = HomeViewModelFactory(useCase)
+        val getFriendsUseCase = Injection.provideGetFriendsUseCase(this)
+        val syncMsgUseCase = Injection.provideSyncOfflineMessagesUseCase(this)
+
+        val factory = HomeViewModelFactory(getFriendsUseCase, syncMsgUseCase)
+
         viewModel = ViewModelProvider(this, factory)[HomeViewModel::class.java]
     }
 

@@ -1,7 +1,6 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
-// Định nghĩa các loại lệnh (Phải khớp 100% với Server)
 typedef enum {
     CMD_LOGIN = 1,
     CMD_REGISTER = 2,
@@ -9,47 +8,65 @@ typedef enum {
     CMD_RECEIVE_MESSAGE = 4,
     CMD_FRIEND_REQ = 5,
     CMD_GET_FRIEND_LIST = 6,
+    CMD_FETCH_OFFLINE_MSGS = 7,
+    CMD_GET_HISTORY = 8,
     CMD_RESPONSE = 99
 } CommandType;
 
-// Cấu trúc gói tin header
-// __attribute__((packed)) rất quan trọng để khớp byte với C trên Linux
-// Gửi yêu cầu lấy list friend
-typedef struct __attribute__((packed)) {
-    int user_id;
-} GetFriendListPayload;
-
-// Thông tin 1 người bạn trả về cho Client
-typedef struct __attribute__((packed)) {
-    int id;
-    char name[50];
-    int is_online; // 1: Online, 0: Offline
-} FriendInfo;
-
+// --- HEADER ---
 typedef struct __attribute__((packed)) {
     int command_type;
     int payload_size;
 } PacketHeader;
 
-// Payload Login/Register
+// --- PAYLOADS ---
+
+// 1. Payload chung cho các request chỉ cần gửi User ID
+// (Dùng cho: GetFriendList, FetchOfflineMsgs...)
+typedef struct __attribute__((packed)) {
+    int user_id;
+} UserIdPayload;
+
+// 2. Payload Login/Register
 typedef struct __attribute__((packed)) {
     char email[256];
     char password[32];
 } LoginPayload;
 
-// Payload gửi tin nhắn (Client -> Server)
+// 3. Payload Chat (Gửi đi)
 typedef struct __attribute__((packed)) {
     int sender_id;
     int receiver_id;
-    char content[512]; // Nội dung tin nhắn (tối đa 512 ký tự)
+    char content[512];
 } ChatPayload;
 
-// Payload nhận tin nhắn (Server -> Client)
+// --- RESPONSE DATA ---
+
+// 1. Thông tin User (Trả về khi Login thành công để lưu vào DB)
+typedef struct __attribute__((packed)) {
+    int id;
+    char email[256];
+    char name[50];
+} UserInfo;
+
+// 2. Thông tin Bạn bè
+typedef struct __attribute__((packed)) {
+    int id;
+    char name[50];
+    int is_online;
+} FriendInfo;
+
+// 3. Thông tin Tin nhắn (Nhận về)
 typedef struct __attribute__((packed)) {
     int message_id;
     int sender_id;
     char content[512];
-    char timestamp[20]; // YYYY-MM-DD HH:MM:SS
+    char timestamp[20];
 } MessageInfo;
+
+typedef struct __attribute__((packed)) {
+    int user_id;
+    int friend_id;
+} HistoryPayload;
 
 #endif
