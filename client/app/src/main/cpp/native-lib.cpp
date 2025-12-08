@@ -124,13 +124,18 @@ Java_com_example_konnichat_NativeClient_loginUser(
 extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_konnichat_NativeClient_connectToServer(
         JNIEnv* env,
-        jobject /* this */) {
+        jobject /* this */,
+        jstring ipAddress,
+        jint port) {
 
 
+    // Chuyển đổi String của Java (jstring) sang chuỗi ký tự C (char*)
+    const char *ip = env->GetStringUTFChars(ipAddress, 0);
 
     // 1. Tạo Socket
     clientSocket = socket(AF_INET, SOCK_STREAM, 0);
     if (clientSocket == -1) {
+        env->ReleaseStringUTFChars(ipAddress, ip);
         return env->NewStringUTF("Lỗi: Không thể tạo socket");
     }
 
@@ -140,20 +145,23 @@ Java_com_example_konnichat_NativeClient_connectToServer(
     // - Nếu chạy máy thật: Dùng IP của máy tính (VD: 192.168.1.X) và setup Port Forwarding
     struct sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(8080);
+    serverAddr.sin_port = htons(port);
 
     // Giả sử dùng Emulator:
-    inet_pton(AF_INET, "10.0.2.2", &serverAddr.sin_addr);
+    inet_pton(AF_INET, ip, &serverAddr.sin_addr);
 
     // 3. Kết nối
     LOGI("Đang thử kết nối tới Server...");
     if (connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) < 0) {
         LOGE("Kết nối thất bại!");
         close(clientSocket);
+
+        env->ReleaseStringUTFChars(ipAddress, ip);
         return env->NewStringUTF("Kết nối thất bại (Check IP/Port)");
     }
 
     LOGI("Kết nối thành công!");
+    env->ReleaseStringUTFChars(ipAddress, ip);
     return env->NewStringUTF("Đã kết nối tới Server thành công!");
 }
 

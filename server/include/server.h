@@ -84,4 +84,7 @@ typedef struct __attribute__((packed)) {
 // Hàm xử lý logic của từng Client (Chạy trên luồng riêng)
 void *handle_client(void *socket_desc);
 
+// Hàm xử lý tìm kiếm UDP (trong discovery.c)
+void *udp_discovery_service(void *arg);
+
 #endif

@@ -12,7 +12,7 @@ object NativeClient {
     // --- CÁC HÀM JNI ---
 
     // 1. Kết nối & Auth
-    external fun connectToServer(): String
+    external fun connectToServer(ipAddress: String, port: Int): String
     external fun loginUser(user: String, pass: String): NativeUserDto?
     external fun registerUser(user: String, pass: String): Int
 

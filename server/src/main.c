@@ -1,72 +1,80 @@
 #include "../include/server.h"
 #include "../include/db_manager.h"
 
-int main() {
-
+int main()
+{
     init_database();
-    
+
+    // --- PHẦN 1: KHỞI ĐỘNG LUỒNG UDP (DISCOVERY) ---
+    pthread_t udp_thread;
+    if (pthread_create(&udp_thread, NULL, udp_discovery_service, NULL) != 0)
+    {
+        perror("Không thể tạo luồng UDP");
+    }
+    // Detach để nó tự chạy ngầm, không ảnh hưởng main thread
+    pthread_detach(udp_thread);
+
+    // --- PHẦN 2: KHỞI ĐỘNG TCP SERVER (CHAT CHÍNH) ---
     int server_fd, *new_sock;
     struct sockaddr_in address;
     int addrlen = sizeof(address);
 
-    
-
-    // 1. Tạo Socket (socket)
-    // AF_INET: IPv4, SOCK_STREAM: TCP
-    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
-        perror("Khởi tạo socket thất bại");
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0)
+    {
+        perror("Socket TCP thất bại");
         exit(EXIT_FAILURE);
     }
 
-    // Cấu hình địa chỉ server
+    // Set option để dùng lại port ngay khi tắt server (tránh lỗi Address already in use)
+    int opt = 1;
+    setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt));
+
     address.sin_family = AF_INET;
-    address.sin_addr.s_addr = INADDR_ANY; // Chấp nhận kết nối từ mọi IP
-    address.sin_port = htons(PORT);       // Gán cổng 8080
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT); // Port 8080
 
-    // 2. Gán IP và Port vào Socket (bind)
-    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
-        perror("Lỗi Bind (Cổng có thể đang bận)");
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0)
+    {
+        perror("Lỗi Bind TCP");
         exit(EXIT_FAILURE);
     }
 
-    // 3. Chờ kết nối (listen)
-    // Số 3 là hàng đợi tối đa (backlog)
-    if (listen(server_fd, 3) < 0) {
-        perror("Lỗi Listen");
+    if (listen(server_fd, 5) < 0)
+    {
+        perror("Lỗi Listen TCP");
         exit(EXIT_FAILURE);
     }
 
-    printf("Server đang chạy trên cổng %d...\n", PORT);
+    printf(">>> Chat Server (TCP) đang chạy trên cổng %d...\n", PORT);
 
-    // 4. Vòng lặp vô tận để chấp nhận Client (accept)
-    while (1) {
+    // Vòng lặp chấp nhận kết nối TCP
+    while (1)
+    {
         struct sockaddr_in client_addr;
         socklen_t client_len = sizeof(client_addr);
-        
-        // Cấp phát bộ nhớ cho socket mới để tránh xung đột dữ liệu giữa các luồng
+
         new_sock = malloc(sizeof(int));
-        
-        // accept() sẽ CHẶN tại đây cho đến khi có Client kết nối
         *new_sock = accept(server_fd, (struct sockaddr *)&client_addr, &client_len);
-        
-        if (*new_sock < 0) {
+
+        if (*new_sock < 0)
+        {
             perror("Lỗi Accept");
             free(new_sock);
             continue;
         }
 
-        printf("Kết nối mới từ IP: %s\n", inet_ntoa(client_addr.sin_addr));
+        printf(">>> [TCP] Client mới kết nối: %s\n", inet_ntoa(client_addr.sin_addr));
 
-        // 5. Tạo luồng mới (Task 2 applied here)
         pthread_t thread_id;
-        if (pthread_create(&thread_id, NULL, handle_client, (void*)new_sock) < 0) {
-            perror("Không thể tạo luồng");
+        if (pthread_create(&thread_id, NULL, handle_client, (void *)new_sock) < 0)
+        {
+            perror("Không thể tạo luồng Client");
             free(new_sock);
-            return 1;
         }
-
-        // Detach để luồng tự giải phóng tài nguyên khi chạy xong, không cần main chờ (join)
-        pthread_detach(thread_id);
+        else
+        {
+            pthread_detach(thread_id);
+        }
     }
 
     return 0;
