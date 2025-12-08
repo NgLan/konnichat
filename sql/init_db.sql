@@ -139,15 +139,39 @@ CREATE TABLE MessageReactions (
     UNIQUE KEY unique_user_group_react (user_id, group_message_id)
 );
 
--- INSERT DỮ LIỆU MẪU ĐỂ TEST TASK 11
-INSERT INTO Users (email, password, name, is_online) VALUES 
-('nglan@test.com', '123456', 'Ngoc Lan', 'online'),
-('hung@test.com', '123456', 'Manh Hung', 'offline'),
-('tuan@test.com', '123456', 'Anh Tuan', 'online');
+-- INSERT DỮ LIỆU MẪU
+-- 1. Tạo 10 User
+INSERT INTO Users (email, password, name, is_online, avatar_url) VALUES 
+('an.nguyen@test.com', 'Pass@1234', 'Nguyễn Văn An', 'online', 'default_avt'),
+('bich.tran@test.com', 'Pass@1234', 'Trần Thị Bích', 'offline', 'default_avt'),
+('cuong.le@test.com', 'Pass@1234', 'Lê Hùng Cường', 'online', 'default_avt'),
+('dung.pham@test.com', 'Pass@1234', 'Phạm Thùy Dung', 'online', 'default_avt'),
+('em.hoang@test.com', 'Pass@1234', 'Hoàng Văn Em', 'offline', 'default_avt'),
+('phuong.vu@test.com', 'Pass@1234', 'Vũ Lan Phương', 'online', 'default_avt'),
+('giang.dang@test.com', 'Pass@1234', 'Đặng Trường Giang', 'offline', 'default_avt'),
+('hoa.bui@test.com', 'Pass@1234', 'Bùi Thị Hoa', 'offline', 'default_avt'),
+('khanh.do@test.com', 'Pass@1234', 'Đỗ Duy Khánh', 'online', 'default_avt'),
+('lan.nguyen@test.com', 'Pass@1234', 'Nguyễn Ngọc Lan', 'offline', 'default_avt'),
+('linh.ngo@test.com', 'Pass@1234', 'Ngô Mỹ Linh', 'online', 'default_avt');
 
--- Lan và Hùng là bạn
-INSERT INTO Friends (user_id, friend_id) VALUES (1, 2);
-INSERT INTO Friends (user_id, friend_id) VALUES (2, 1);
+-- 2. Kết bạn
+-- (Câu lệnh này tự động lấy ID của các email vừa tạo để add vào bảng Friends)
+INSERT INTO Friends (user_id, friend_id)
+SELECT 1, id FROM Users 
+WHERE email IN (
+    'bich.tran@test.com', 'cuong.le@test.com', 
+    'dung.pham@test.com', 'em.hoang@test.com', 'phuong.vu@test.com', 
+    'giang.dang@test.com', 'hoa.bui@test.com', 'khanh.do@test.com', 
+    'linh.ngo@test.com', 'lan.nguyen@test.com'
+);
+
+INSERT INTO Friends (user_id, friend_id)
+SELECT 2, id FROM Users 
+WHERE email IN (
+    'an.nguyen@test.com', 'cuong.le@test.com', 
+    'dung.pham@test.com', 'em.hoang@test.com', 'phuong.vu@test.com', 
+    'giang.dang@test.com'
+);
 
 -- Thêm bộ icon cơ bản
 -- INSERT INTO Icons (code, image_url) VALUES 
@@ -155,7 +179,7 @@ INSERT INTO Friends (user_id, friend_id) VALUES (2, 1);
 -- ('love', 'ic_reaction_love'),
 -- ('haha', 'ic_reaction_haha'),
 -- ('sad', 'ic_reaction_sad'),
--- ('angry', 'ic_reaction_angry');
+-- ('angry', 'ic_reaction_angry'); 
 
 -- -- Giả sử User 1 thả tim (love - ID 2) vào tin nhắn số 1 (Chat 1-1)
 -- INSERT INTO MessageReactions (user_id, icon_id, message_id) VALUES (1, 2, 1);

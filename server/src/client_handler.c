@@ -1,6 +1,34 @@
 #include "../include/server.h"
 #include "../include/db_manager.h" // Để gọi hàm login/register
 
+void send_pending_messages(int sock, int user_id)
+{
+    MessageInfo pending_msgs[50]; // Tối đa 50 tin chờ
+    int count = db_get_pending_messages(user_id, pending_msgs, 50);
+
+    if (count > 0)
+    {
+        printf("User %d có %d tin nhắn offline. Đang đồng bộ...\n", user_id, count);
+        for (int i = 0; i < count; i++)
+        {
+            // 1. Chuẩn bị gói tin
+            PacketHeader header;
+            header.command_type = CMD_RECEIVE_MESSAGE; // Lệnh báo Client nhận tin
+            header.payload_size = sizeof(MessageInfo);
+
+            // 2. Gửi Header + Payload
+            send(sock, &header, sizeof(PacketHeader), 0);
+            send(sock, &pending_msgs[i], sizeof(MessageInfo), 0);
+
+            // 3. Cập nhật DB là đã gửi
+            db_mark_message_delivered(pending_msgs[i].message_id);
+
+            // Ngủ để tránh dính gói tin (TCP Stream)
+            usleep(10000);
+        }
+    }
+}
+
 // Hàm tiện ích: Đảm bảo nhận đủ N bytes từ stream (Task 2 Core)
 int recv_all(int sock, void *buffer, int size)
 {
@@ -67,7 +95,7 @@ void *handle_client(void *socket_desc)
 
         case CMD_GET_FRIEND_LIST:
         {
-            GetFriendListPayload *req = (GetFriendListPayload *)payload;
+            UserIdPayload *req = (UserIdPayload *)payload;
             printf("User %d đang lấy danh sách bạn bè...\n", req->user_id);
 
             // 1. Tạo mảng tạm để chứa dữ liệu
@@ -102,25 +130,132 @@ void *handle_client(void *socket_desc)
             LoginPayload *data = (LoginPayload *)payload;
             printf("Yêu cầu Đăng nhập: %s\n", data->email);
 
-            int userId = db_check_login(data->email, data->password);
+            UserInfo userInfo;
+            memset(&userInfo, 0, sizeof(UserInfo));
+
+            int userId = db_check_login(data->email, data->password, &userInfo);
 
             // Gửi phản hồi
-            PacketHeader respHeader = {CMD_RESPONSE, sizeof(int)};
-            send(sock, &respHeader, sizeof(PacketHeader), 0);
-            send(sock, &userId, sizeof(int), 0); // Trả về ID user hoặc -1
+            PacketHeader respHeader;
+            respHeader.command_type = CMD_RESPONSE;
+
+            if (userId > 0)
+            {
+                // Nếu thành công: Gửi kèm UserInfo
+                respHeader.payload_size = sizeof(int) + sizeof(UserInfo);
+                send(sock, &respHeader, sizeof(PacketHeader), 0);
+
+                // Gửi ID (để check success > 0)
+                send(sock, &userId, sizeof(int), 0);
+                // Gửi trọn bộ UserInfo
+                send(sock, &userInfo, sizeof(UserInfo), 0);
+            }
+            else
+            {
+                // Nếu thất bại: Chỉ gửi ID (-1)
+                respHeader.payload_size = sizeof(int);
+                send(sock, &respHeader, sizeof(PacketHeader), 0);
+                send(sock, &userId, sizeof(int), 0);
+            }
             break;
         }
 
-        case CMD_CHAT_SINGLE:
-            // TODO: Xử lý chat sau
-            printf("Tin nhắn chat nhận được (chưa xử lý forwarding)\n");
+        case CMD_SEND_MESSAGE:
+        {
+            ChatPayload *chat = (ChatPayload *)payload;
+            printf("User %d gửi tin cho %d: %s\n", chat->sender_id, chat->receiver_id, chat->content);
+
+            // Lưu vào DB
+            if (db_save_message(chat->sender_id, chat->receiver_id, chat->content))
+            {
+                printf("-> Đã lưu tin nhắn vào DB.\n");
+            }
+            else
+            {
+                printf("-> Lỗi lưu tin nhắn.\n");
+            }
             break;
+        }
+
+        case CMD_FETCH_OFFLINE_MSGS:
+        {
+            UserIdPayload *req = (UserIdPayload *)payload;
+            printf("User %d yêu cầu sync tin nhắn offline...\n", req->user_id);
+
+            // 1. Đếm số lượng tin
+            int count = db_count_offline_messages(req->user_id);
+
+            // 2. Lấy tin nhắn ra bộ nhớ đệm (tối đa 50 tin mỗi lần sync cho nhẹ)
+            int limit = 50;
+            if (count > limit)
+                count = limit; // Cap lại nếu quá nhiều
+
+            MessageInfo messages[50];
+            if (count > 0)
+            {
+                db_get_offline_messages(req->user_id, messages, count);
+            }
+
+            // 3. Gửi Header Response
+            // Payload gồm: 1 biến int (count) + mảng MessageInfo
+            PacketHeader respHeader;
+            respHeader.command_type = CMD_RESPONSE;
+            respHeader.payload_size = sizeof(int) + (count * sizeof(MessageInfo));
+
+            send(sock, &respHeader, sizeof(PacketHeader), 0);
+
+            // 4. Gửi Count trước
+            send(sock, &count, sizeof(int), 0);
+
+            // 5. Gửi từng tin nhắn và đánh dấu đã gửi
+            if (count > 0)
+            {
+                send(sock, messages, count * sizeof(MessageInfo), 0);
+
+                // Update DB ngay sau khi gửi vào socket buffer
+                for (int i = 0; i < count; i++)
+                {
+                    db_mark_message_delivered(messages[i].message_id);
+                }
+                printf("=> Đã gửi %d tin nhắn offline cho User %d.\n", count, req->user_id);
+            }
+            else
+            {
+                printf("=> User %d không có tin nhắn offline.\n", req->user_id);
+            }
+            break;
+        }
+
+        case CMD_GET_HISTORY:
+        {
+            HistoryPayload *req = (HistoryPayload *)payload;
+            printf("User %d lấy lịch sử chat với %d...\n", req->user_id, req->friend_id);
+
+            MessageInfo messages[50];
+            int count = db_get_chat_history(req->user_id, req->friend_id, messages, 50);
+
+            // Gửi Header Response
+            PacketHeader respHeader;
+            respHeader.command_type = CMD_RESPONSE;
+            respHeader.payload_size = sizeof(int) + (count * sizeof(MessageInfo));
+
+            send(sock, &respHeader, sizeof(PacketHeader), 0);
+            send(sock, &count, sizeof(int), 0); // Gửi số lượng
+
+            if (count > 0)
+            {
+                send(sock, messages, count * sizeof(MessageInfo), 0);
+            }
+            break;
+        }
 
         default:
+        {
             printf("Lệnh không xác định: %d\n", header.command_type);
         }
+        }
 
-        free(payload); // Quan trọng: Giải phóng bộ nhớ sau khi xử lý xong gói tin
+        free(payload); // Giải phóng bộ nhớ sau khi xử lý xong gói tin
     }
 
     printf("Client (Socket %d) ngắt kết nối.\n", sock);
