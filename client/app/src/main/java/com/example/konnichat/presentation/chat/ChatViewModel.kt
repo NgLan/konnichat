@@ -25,9 +25,9 @@ class ChatViewModel(
 
     init {
         // 1. Loop nhận tin mới
-        viewModelScope.launch(Dispatchers.IO) {
-            chatUseCases.receiveMessageLoop()
-        }
+//        viewModelScope.launch(Dispatchers.IO) {
+//            chatUseCases.receiveMessageLoop()
+//        }
 
         // 2. Sync tin cũ (Lịch sử)
         viewModelScope.launch(Dispatchers.IO) {

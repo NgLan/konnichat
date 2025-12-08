@@ -25,4 +25,7 @@ int db_get_chat_history(int user1, int user2, MessageInfo *messages_out, int lim
 int db_count_offline_messages(int user_id);
 int db_get_offline_messages(int user_id, MessageInfo* messages_out, int limit);
 
+// Hàm lưu tin nhắn: Trả về ID tin nhắn (>0) nếu thành công, 0 nếu thất bại
+void db_update_user_status(int user_id, int is_online);
+
 #endif

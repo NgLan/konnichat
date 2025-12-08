@@ -437,3 +437,61 @@ Java_com_example_konnichat_NativeClient_getChatHistory(
     }
     return listObject;
 }
+
+// Thêm struct wrapper để trả về Kotlin
+// Type = 1 (Message), Type = 2 (Status)
+// Chúng ta sẽ trả về object class "SocketEvent"
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_konnichat_NativeClient_readSocketEvent(JNIEnv* env, jobject) {
+    if (clientSocket == -1) return NULL;
+
+    PacketHeader header;
+    // 1. Peek Header để xem loại lệnh
+    int bytes = recv(clientSocket, &header, sizeof(PacketHeader), MSG_PEEK | MSG_DONTWAIT);
+
+    if (bytes <= 0) return NULL; // Không có tin hoặc lỗi
+
+    // Chuẩn bị Class Kotlin
+    jclass eventClass = env->FindClass("com/example/konnichat/data/dto/SocketEventDto");
+    jmethodID initEvent = env->GetMethodID(eventClass, "<init>", "(ILjava/lang/Object;)V");
+
+    if (header.command_type == CMD_RECEIVE_MESSAGE) {
+        // --- XỬ LÝ TIN NHẮN ---
+        recv(clientSocket, &header, sizeof(PacketHeader), 0); // Đọc bỏ Header
+        MessageInfo msgInfo;
+        recv(clientSocket, &msgInfo, sizeof(MessageInfo), 0); // Đọc Data
+
+        // Map sang MessageDto
+        jclass msgClass = env->FindClass("com/example/konnichat/data/dto/NativeMessageDto");
+        jmethodID initMsg = env->GetMethodID(msgClass, "<init>", "(IILjava/lang/String;Ljava/lang/String;)V");
+        jstring content = env->NewStringUTF(msgInfo.content);
+        jstring time = env->NewStringUTF(msgInfo.timestamp);
+        jobject msgObj = env->NewObject(msgClass, initMsg, msgInfo.message_id, msgInfo.sender_id, content, time);
+
+        // Gói vào SocketEvent (Type = 1)
+        jobject eventObj = env->NewObject(eventClass, initEvent, 1, msgObj);
+
+        env->DeleteLocalRef(content);
+        env->DeleteLocalRef(time);
+        return eventObj;
+
+    } else if (header.command_type == CMD_NOTIFY_STATUS) {
+        // --- XỬ LÝ TRẠNG THÁI ---
+        recv(clientSocket, &header, sizeof(PacketHeader), 0); // Đọc bỏ Header
+        StatusPayload statusInfo;
+        recv(clientSocket, &statusInfo, sizeof(StatusPayload), 0);
+
+        // Map sang StatusDto
+        jclass statusClass = env->FindClass("com/example/konnichat/data/dto/NativeStatusDto");
+        jmethodID initStatus = env->GetMethodID(statusClass, "<init>", "(IZ)V");
+        jobject statusObj = env->NewObject(statusClass, initStatus, statusInfo.friend_id, (jboolean)(statusInfo.is_online == 1));
+
+        // Gói vào SocketEvent (Type = 2)
+        jobject eventObj = env->NewObject(eventClass, initEvent, 2, statusObj);
+        return eventObj;
+    }
+    // Nếu là các gói tin khác (ví dụ Response của login), ta không consume ở đây để các hàm khác xử lý
+
+    return NULL;
+}

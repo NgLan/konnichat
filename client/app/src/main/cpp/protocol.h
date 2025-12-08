@@ -10,6 +10,7 @@ typedef enum {
     CMD_GET_FRIEND_LIST = 6,
     CMD_FETCH_OFFLINE_MSGS = 7,
     CMD_GET_HISTORY = 8,
+    CMD_NOTIFY_STATUS = 9,
     CMD_RESPONSE = 99
 } CommandType;
 
@@ -39,6 +40,12 @@ typedef struct __attribute__((packed)) {
     int receiver_id;
     char content[512];
 } ChatPayload;
+
+// 4. Payload thông báo trạng thái
+typedef struct __attribute__((packed)) {
+    int friend_id;
+    int is_online; // 1: Online, 0: Offline
+} StatusPayload;
 
 // --- RESPONSE DATA ---
 

@@ -3,6 +3,7 @@ package com.example.konnichat
 import com.example.konnichat.data.dto.NativeFriendDto
 import com.example.konnichat.data.dto.NativeMessageDto
 import com.example.konnichat.data.dto.NativeUserDto
+import com.example.konnichat.data.dto.SocketEventDto
 
 object NativeClient {
     init {
@@ -24,4 +25,6 @@ object NativeClient {
     external fun receiveMessage(): NativeMessageDto?
     external fun fetchOfflineMessages(userId: Int): ArrayList<NativeMessageDto>?
     external fun getChatHistory(myId: Int, friendId: Int): ArrayList<NativeMessageDto>?
+
+    external fun readSocketEvent(): SocketEventDto?
 }

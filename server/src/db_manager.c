@@ -149,7 +149,7 @@ int db_save_message(int sender_id, int receiver_id, const char *content)
         fprintf(stderr, "Save Msg Error: %s\n", mysql_error(conn));
         return 0;
     }
-    return 1;
+    return (int)mysql_insert_id(conn);;
 }
 
 // Hàm lấy các tin nhắn chưa nhận (status = 'sent') khi User đăng nhập
@@ -280,4 +280,19 @@ int db_get_chat_history(int user1, int user2, MessageInfo *messages_out, int lim
         mysql_free_result(result);
     }
     return count;
+}
+
+void db_update_user_status(int user_id, int is_online) {
+    char query[256];
+    const char* status_str = is_online ? "online" : "offline";
+    
+    snprintf(query, sizeof(query), 
+        "UPDATE Users SET is_online = '%s' WHERE id = %d", 
+        status_str, user_id);
+        
+    if (mysql_query(conn, query)) {
+        fprintf(stderr, "Update Status Error: %s\n", mysql_error(conn));
+    } else {
+        printf("User %d is now %s\n", user_id, status_str);
+    }
 }

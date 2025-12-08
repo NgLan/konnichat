@@ -1,8 +1,54 @@
 #include "../include/server.h"
 #include "../include/db_manager.h"
 
+// ĐỊNH NGHĨA BIẾN TOÀN CỤC
+ConnectedClient clients[MAX_CLIENTS];
+pthread_mutex_t clients_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Helper: Thêm User vào danh sách Online
+void add_connected_client(int socket, int user_id) {
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].socket == 0) { // Tìm chỗ trống
+            clients[i].socket = socket;
+            clients[i].user_id = user_id;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+// Helper: Xóa User khi ngắt kết nối
+void remove_connected_client(int socket) {
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].socket == socket) {
+            clients[i].socket = 0;
+            clients[i].user_id = 0;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+}
+
+// Helper: Tìm socket của người nhận để gửi tin nhắn ngay
+int get_socket_by_user_id(int user_id) {
+    int sock = -1;
+    pthread_mutex_lock(&clients_mutex);
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].user_id == user_id && clients[i].socket != 0) {
+            sock = clients[i].socket;
+            break;
+        }
+    }
+    pthread_mutex_unlock(&clients_mutex);
+    return sock;
+}
+
+
 int main()
 {
+    memset(clients, 0, sizeof(clients));
     init_database();
 
     // --- PHẦN 1: KHỞI ĐỘNG LUỒNG UDP (DISCOVERY) ---

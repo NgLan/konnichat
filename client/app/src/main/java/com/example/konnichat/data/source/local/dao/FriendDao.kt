@@ -31,4 +31,7 @@ interface FriendDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertRequest(request: FriendRequestEntity)
+
+    @Query("UPDATE Users SET is_online = :status WHERE id = :friendId")
+    suspend fun updateFriendStatus(friendId: Int, status: String)
 }

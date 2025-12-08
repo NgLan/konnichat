@@ -1,5 +1,50 @@
 #include "../include/server.h"
 #include "../include/db_manager.h" // Để gọi hàm login/register
+#include <time.h>
+
+// Gửi thông báo trạng thái cho các bạn bè đang online
+void notify_friends_status(int user_id, int is_online)
+{
+    // 1. Lấy danh sách bạn bè của user_id từ DB
+    FriendInfo friends[100];
+    int count = db_get_friends(user_id, friends, 100);
+
+    // 2. Duyệt danh sách bạn bè
+    for (int i = 0; i < count; i++)
+    {
+        int friend_id = friends[i].id;
+
+        // 3. Kiểm tra xem người bạn đó có đang online không
+        int sock = get_socket_by_user_id(friend_id);
+        if (sock != -1)
+        {
+            // 4. Gửi gói tin
+            PacketHeader header;
+            header.command_type = CMD_NOTIFY_STATUS;
+            header.payload_size = sizeof(StatusPayload);
+
+            StatusPayload payload;
+            payload.friend_id = user_id; // "Tôi" là người vừa đổi trạng thái
+            payload.is_online = is_online;
+
+            send(sock, &header, sizeof(PacketHeader), 0);
+            send(sock, &payload, sizeof(StatusPayload), 0);
+
+            printf("-> Đã báo cho User %d rằng User %d %s.\n",
+                   friend_id, user_id, is_online ? "Online" : "Offline");
+        }
+    }
+}
+
+// Hàm lấy giờ hiện tại YYYY-MM-DD HH:MM:SS
+void get_current_time_str(char *buffer)
+{
+    time_t rawtime;
+    struct tm *timeinfo;
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+    strftime(buffer, 20, "%Y-%m-%d %H:%M:%S", timeinfo);
+}
 
 void send_pending_messages(int sock, int user_id)
 {
@@ -53,6 +98,7 @@ void *handle_client(void *socket_desc)
     free(socket_desc);
 
     PacketHeader header;
+    int current_user_id = -1;
 
     // Vòng lặp chính xử lý từng gói tin
     while (1)
@@ -68,11 +114,19 @@ void *handle_client(void *socket_desc)
             break; // Hết RAM? Thoát.
 
         // 3. Đọc tiếp Payload
-        status = recv_all(sock, payload, header.payload_size);
-        if (status <= 0)
+        // status = recv_all(sock, payload, header.payload_size);
+        // if (status <= 0)
+        // {
+        //     free(payload);
+        //     break;
+        // }
+        int received = 0;
+        while (received < header.payload_size)
         {
-            free(payload);
-            break;
+            int r = recv(sock, (char *)payload + received, header.payload_size - received, 0);
+            if (r <= 0)
+                break;
+            received += r;
         }
 
         // 4. Xử lý Logic theo loại lệnh (CommandType)
@@ -133,29 +187,44 @@ void *handle_client(void *socket_desc)
             UserInfo userInfo;
             memset(&userInfo, 0, sizeof(UserInfo));
 
+            // Kiểm tra DB
             int userId = db_check_login(data->email, data->password, &userInfo);
 
-            // Gửi phản hồi
             PacketHeader respHeader;
             respHeader.command_type = CMD_RESPONSE;
 
             if (userId > 0)
             {
-                // Nếu thành công: Gửi kèm UserInfo
+                // --- TRƯỜNG HỢP THÀNH CÔNG ---
+                // 1. Gửi Header báo kích thước lớn (Int + Struct)
                 respHeader.payload_size = sizeof(int) + sizeof(UserInfo);
                 send(sock, &respHeader, sizeof(PacketHeader), 0);
 
-                // Gửi ID (để check success > 0)
+                // 2. Gửi ID
                 send(sock, &userId, sizeof(int), 0);
-                // Gửi trọn bộ UserInfo
+
+                // 3. Gửi thông tin User
                 send(sock, &userInfo, sizeof(UserInfo), 0);
+
+                // 4. Cập nhật trạng thái Server
+                current_user_id = userId;
+                db_update_user_status(userId, 1);   // Online
+                add_connected_client(sock, userId); // Lưu Session
+                notify_friends_status(userId, 1);
+
+                printf("-> User %d login thành công.\n", userId);
             }
             else
             {
-                // Nếu thất bại: Chỉ gửi ID (-1)
+                // --- TRƯỜNG HỢP THẤT BẠI ---
+                // 1. Gửi Header báo kích thước nhỏ (Chỉ Int)
                 respHeader.payload_size = sizeof(int);
                 send(sock, &respHeader, sizeof(PacketHeader), 0);
+
+                // 2. Gửi mã lỗi (0 hoặc -1)
                 send(sock, &userId, sizeof(int), 0);
+
+                printf("-> Login thất bại: %s\n", data->email);
             }
             break;
         }
@@ -165,14 +234,46 @@ void *handle_client(void *socket_desc)
             ChatPayload *chat = (ChatPayload *)payload;
             printf("User %d gửi tin cho %d: %s\n", chat->sender_id, chat->receiver_id, chat->content);
 
-            // Lưu vào DB
-            if (db_save_message(chat->sender_id, chat->receiver_id, chat->content))
+            // 1. Lưu vào DB và lấy ID tin nhắn
+            int new_msg_id = db_save_message(chat->sender_id, chat->receiver_id, chat->content);
+
+            if (new_msg_id > 0) // Lưu thành công
             {
-                printf("-> Đã lưu tin nhắn vào DB.\n");
+                // 2. LOGIC REALTIME: Kiểm tra xem người nhận có đang online không
+                int receiver_sock = get_socket_by_user_id(chat->receiver_id);
+
+                if (receiver_sock != -1)
+                {
+                    printf("-> Người nhận (%d) đang Online. Forwarding msgID: %d...\n", chat->receiver_id, new_msg_id);
+
+                    MessageInfo msg;
+                    // Gán ID thật vừa lấy từ DB
+                    msg.message_id = new_msg_id;
+                    msg.sender_id = chat->sender_id;
+                    strncpy(msg.content, chat->content, 511);
+                    get_current_time_str(msg.timestamp); // Lấy giờ hiện tại server gửi kèm
+
+                    PacketHeader fwdHeader;
+                    fwdHeader.command_type = CMD_RECEIVE_MESSAGE;
+                    fwdHeader.payload_size = sizeof(MessageInfo);
+
+                    // Gửi sang socket của người nhận
+                    send(receiver_sock, &fwdHeader, sizeof(PacketHeader), 0);
+                    send(receiver_sock, &msg, sizeof(MessageInfo), 0);
+
+                    // 3. Cập nhật status thành 'delivered' trong DB
+                    // vì đã đẩy được xuống socket người nhận
+                    db_mark_message_delivered(new_msg_id);
+                    printf("-> Đã đánh dấu tin nhắn %d là delivered.\n", new_msg_id);
+                }
+                else
+                {
+                    printf("-> Người nhận Offline. Tin nhắn %d lưu trạng thái 'sent' chờ sync.\n", new_msg_id);
+                }
             }
             else
             {
-                printf("-> Lỗi lưu tin nhắn.\n");
+                printf("-> Lỗi lưu tin nhắn vào DB.\n");
             }
             break;
         }
@@ -258,7 +359,18 @@ void *handle_client(void *socket_desc)
         free(payload); // Giải phóng bộ nhớ sau khi xử lý xong gói tin
     }
 
-    printf("Client (Socket %d) ngắt kết nối.\n", sock);
+    printf("Socket %d ngắt kết nối.\n", sock);
+
+    if (current_user_id != -1)
+    {
+        // 1. CẬP NHẬT OFFLINE
+        db_update_user_status(current_user_id, 0);
+
+        // 2. XÓA KHỎI SESSION
+        remove_connected_client(sock);
+
+        notify_friends_status(current_user_id, 0);
+    }
     close(sock);
     return 0;
 }

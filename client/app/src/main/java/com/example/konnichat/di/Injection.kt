@@ -29,7 +29,7 @@ object Injection {
     // Repository Chat
     fun provideChatRepository(context: Context): ChatRepository {
         val database = provideDatabase(context)
-        return ChatRepositoryImpl(database.messageDao(), MessageMapper())
+        return ChatRepositoryImpl(database.messageDao(), database.friendDao(), MessageMapper())
     }
 
     // --- Provide UseCases ---
@@ -51,6 +51,10 @@ object Injection {
 
     fun provideSyncOfflineMessagesUseCase(context: Context): SyncOfflineMessagesUseCase {
         return SyncOfflineMessagesUseCase(provideChatRepository(context))
+    }
+
+    fun provideReceiveMessageLoopUseCase(context: Context): ReceiveMessageLoopUseCase {
+        return ReceiveMessageLoopUseCase(provideChatRepository(context))
     }
 }
 

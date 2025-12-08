@@ -2,10 +2,14 @@ package com.example.konnichat.data.repository
 
 import android.util.Log
 import com.example.konnichat.NativeClient
+import com.example.konnichat.data.dto.NativeMessageDto
+import com.example.konnichat.data.dto.NativeStatusDto
 import com.example.konnichat.data.mapper.MessageMapper
+import com.example.konnichat.data.source.local.dao.FriendDao
 import com.example.konnichat.data.source.local.dao.MessageDao
 import com.example.konnichat.data.source.local.entity.MessageEntity
 import com.example.konnichat.domain.enums.MessageStatus
+import com.example.konnichat.domain.enums.OnlineStatus
 import com.example.konnichat.domain.model.Message
 import com.example.konnichat.domain.repository.ChatRepository
 import kotlinx.coroutines.Dispatchers
@@ -15,12 +19,13 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
 class ChatRepositoryImpl(
-    private val dao: MessageDao,
+    private val messageDao: MessageDao,
+    private val friendDao: FriendDao,
     private val mapper: MessageMapper
 ) : ChatRepository {
 
     override fun getMessages(myUserId: Int, friendId: Int): Flow<List<Message>> {
-        return dao.getConversation(myUserId, friendId).map { entityList ->
+        return messageDao.getConversation(myUserId, friendId).map { entityList ->
             entityList.map { mapper.mapToDomain(it) }
         }
     }
@@ -32,7 +37,7 @@ class ChatRepositoryImpl(
             var entity = mapper.mapToEntity(message).copy(
                 status = MessageStatus.SENDING.name.lowercase()
             )
-            dao.insertMessage(entity)
+            messageDao.insertMessage(entity)
 
             // BƯỚC 2: Gọi Native gửi tin
             try {
@@ -40,7 +45,7 @@ class ChatRepositoryImpl(
                 NativeClient.sendMessage(message.senderId, message.receiverId, message.content ?: "")
 
                 // BƯỚC 3: Nếu code chạy đến đây nghĩa là không lỗi -> Update thành SENT
-                dao.updateMessageStatus(entity.id, MessageStatus.SENT.name.lowercase())
+                messageDao.updateMessageStatus(entity.id, MessageStatus.SENT.name.lowercase())
 
                 Log.d("ChatRepo", "Tin nhắn ${entity.id} đã gửi thành công (SENT)")
 
@@ -52,27 +57,45 @@ class ChatRepositoryImpl(
         }
     }
 
-    override suspend fun startReceivingMessageLoop() {
+    override suspend fun startReceivingMessageLoop(myUserId: Int) {
         withContext(Dispatchers.IO) {
             while (true) {
                 try {
-                    val nativeMsg = NativeClient.receiveMessage()
-                    if (nativeMsg != null) {
-                        // Tin nhắn nhận được -> Status là RECEIVED
-                        val entity = MessageEntity(
-                            id = nativeMsg.serverMsgId,
-                            senderId = nativeMsg.senderId,
-                            receiverId = 0, // ID của mình (người nhận)
-                            content = nativeMsg.content,
-                            status = MessageStatus.RECEIVED.name.lowercase(), // Đổi thành RECEIVED
-                            createdAt = nativeMsg.timestamp,
-                            updatedAt = nativeMsg.timestamp
-                        )
-                        dao.insertMessage(entity)
+                    val event = NativeClient.readSocketEvent()
+
+                    if (event != null) {
+                        when (event.type) {
+                            1 -> { // TIN NHẮN
+                                val msg = event.data as NativeMessageDto
+                                Log.d("ChatRepo", "Nhận tin realtime từ: ${msg.senderId}")
+
+                                val entity = MessageEntity(
+                                    id = msg.serverMsgId,
+                                    senderId = msg.senderId,
+                                    receiverId = myUserId,
+                                    content = msg.content,
+                                    status = MessageStatus.RECEIVED.name.lowercase(),
+                                    createdAt = msg.timestamp,
+                                    updatedAt = msg.timestamp
+                                )
+                                messageDao.insertMessage(entity)
+                            }
+                            2 -> { // TRẠNG THÁI ONLINE/OFFLINE
+                                val status = event.data as NativeStatusDto
+                                Log.d("ChatRepo", "Friend ${status.friendId} đổi trạng thái: ${status.isOnline}")
+
+                                // Cập nhật vào bảng Users (Room sẽ tự trigger UI cập nhật)
+                                val statusStr = if(status.isOnline) OnlineStatus.ONLINE.name else OnlineStatus.OFFLINE.name
+                                // Cần viết hàm updateStatus trong UserDao hoặc FriendDao
+                                // Giả sử dùng UserDao query update
+                                friendDao.updateFriendStatus(status.friendId, statusStr)
+                            }
+                        }
                     } else {
-                        delay(100)
+                        delay(100) // Nghỉ xíu nếu không có tin
                     }
                 } catch (e: Exception) {
+                    Log.e("ChatRepo", "Loop Error: ${e.message}")
                     delay(3000)
                 }
             }
@@ -97,7 +120,7 @@ class ChatRepositoryImpl(
                             createdAt = dto.timestamp,
                             updatedAt = dto.timestamp
                         )
-                        dao.insertMessage(entity)
+                        messageDao.insertMessage(entity)
                     }
                 }
             } catch (e: Exception) {
@@ -130,7 +153,7 @@ class ChatRepositoryImpl(
                             updatedAt = dto.timestamp
                         )
                         // REPLACE: Nếu tin nhắn đã có trong DB thì update đè lên (không sợ trùng)
-                        dao.insertMessage(entity)
+                        messageDao.insertMessage(entity)
                     }
                 }
             } catch (e: Exception) {

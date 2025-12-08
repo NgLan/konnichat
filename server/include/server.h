@@ -19,6 +19,7 @@ typedef enum {
     CMD_GET_FRIEND_LIST = 6,
     CMD_FETCH_OFFLINE_MSGS = 7, 
     CMD_GET_HISTORY = 8,
+    CMD_NOTIFY_STATUS = 9,
     CMD_RESPONSE = 99
 } CommandType;
 
@@ -48,6 +49,12 @@ typedef struct __attribute__((packed)) {
     int receiver_id;
     char content[512];
 } ChatPayload;
+
+// 4. Payload thông báo trạng thái
+typedef struct __attribute__((packed)) {
+    int friend_id;
+    int is_online; // 1: Online, 0: Offline
+} StatusPayload;
 
 // --- RESPONSE DATA ---
 
@@ -80,6 +87,22 @@ typedef struct __attribute__((packed)) {
 
 #define PORT 8080           // Cổng server sẽ mở
 #define BUFFER_SIZE 1024    // Kích thước bộ đệm tin nhắn
+#define MAX_CLIENTS 100
+
+// Cấu trúc quản lý Client đang online
+typedef struct {
+    int socket;
+    int user_id;
+} ConnectedClient;
+
+// Biến toàn cục 
+extern ConnectedClient clients[MAX_CLIENTS];
+extern pthread_mutex_t clients_mutex;
+
+// Các hàm quản lý Client
+void add_connected_client(int socket, int user_id);
+void remove_connected_client(int socket);
+int get_socket_by_user_id(int user_id);
 
 // Hàm xử lý logic của từng Client (Chạy trên luồng riêng)
 void *handle_client(void *socket_desc);
