@@ -17,7 +17,7 @@ class RegisterActivity : AppCompatActivity() {
 
     // --- KHAI BÁO JNI ---
     // Gọi xuống C++ để đăng ký
-    external fun registerUser(user: String, pass: String): Int
+//    external fun registerUser(user: String, pass: String): Int
 
     companion object {
         init {
@@ -110,7 +110,7 @@ class RegisterActivity : AppCompatActivity() {
             btnSignUp.text = "Đang đăng ký..."
 
             CoroutineScope(Dispatchers.IO).launch {
-                val result = registerUser(email, pass)
+                val result = NativeClient.registerUser(email, pass)
 
                 withContext(Dispatchers.Main) {
                     btnSignUp.isEnabled = true

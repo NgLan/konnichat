@@ -38,7 +38,7 @@ void send_packet(int sock, int cmd_type, const char* user, const char* pass) {
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_example_konnichat_RegisterActivity_registerUser(
+Java_com_example_konnichat_NativeClient_registerUser(
         JNIEnv* env, jobject, jstring user, jstring pass) {
 
     if (clientSocket == -1) {
@@ -71,7 +71,7 @@ Java_com_example_konnichat_RegisterActivity_registerUser(
 }
 
 extern "C" JNIEXPORT jint JNICALL
-Java_com_example_konnichat_LoginActivity_loginUser(
+Java_com_example_konnichat_NativeClient_loginUser(
         JNIEnv* env, jobject, jstring user, jstring pass) {
 
     if (clientSocket == -1) {
@@ -102,7 +102,7 @@ Java_com_example_konnichat_LoginActivity_loginUser(
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_example_konnichat_LoginActivity_connectToServer(
+Java_com_example_konnichat_NativeClient_connectToServer(
         JNIEnv* env,
         jobject /* this */) {
 
@@ -138,7 +138,7 @@ Java_com_example_konnichat_LoginActivity_connectToServer(
 }
 
 extern "C" JNIEXPORT jobject JNICALL
-Java_com_example_konnichat_HomeActivity_getFriendList(
+Java_com_example_konnichat_NativeClient_getFriendList(
         JNIEnv* env, jobject, jint userId) {
 
     if (clientSocket == -1) return NULL;
@@ -199,6 +199,248 @@ Java_com_example_konnichat_HomeActivity_getFriendList(
             env->DeleteLocalRef(friendObj);
         }
         delete[] friends;
+    }
+
+    return listObject;
+}
+
+
+// --- TASK 8: Gửi lời mời kết bạn ---
+extern "C" JNIEXPORT jint JNICALL
+Java_com_example_konnichat_NativeClient_sendFriendRequest(
+        JNIEnv* env, jobject, jint senderId, jint receiverId) {
+
+    if (clientSocket == -1) return 0; // Lỗi
+
+    // 1. Chuẩn bị Payload
+    FriendReqPayload req;
+    req.sender_id = senderId;
+    req.receiver_id = receiverId;
+
+    // 2. Gửi Header + Payload
+    PacketHeader header;
+    header.command_type = CMD_SEND_FRIEND_REQ;
+    header.payload_size = sizeof(FriendReqPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &req, sizeof(FriendReqPayload), 0);
+
+    // 3. Nhận phản hồi
+    PacketHeader respHeader;
+    if (recv(clientSocket, &respHeader, sizeof(PacketHeader), 0) <= 0) return 0;
+
+    int resultCode = 0;
+    if (respHeader.command_type == CMD_RESPONSE) {
+        recv(clientSocket, &resultCode, sizeof(int), 0);
+    }
+
+    // resultCode có thể là RequestID (>0) hoặc mã lỗi
+    return resultCode;
+}
+
+// --- TASK 9A: Lấy danh sách lời mời đang chờ ---
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_konnichat_NativeClient_getPendingRequests(
+        JNIEnv* env, jobject, jint userId) {
+
+    if (clientSocket == -1) return NULL;
+
+    // 1. Gửi request (Payload dùng chung ID giống GetFriendList)
+    GetFriendListPayload req;
+    req.user_id = userId;
+
+    PacketHeader header;
+    header.command_type = CMD_GET_PENDING_REQS;
+    header.payload_size = sizeof(GetFriendListPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &req, sizeof(GetFriendListPayload), 0);
+
+    // 2. Nhận Header
+    PacketHeader respHeader;
+    if (recv(clientSocket, &respHeader, sizeof(PacketHeader), 0) <= 0) return NULL;
+
+    // 3. Nhận số lượng
+    int count = 0;
+    recv(clientSocket, &count, sizeof(int), 0);
+
+    // 4. Chuẩn bị ArrayList để trả về Kotlin
+    jclass arrayListClass = env->FindClass("java/util/ArrayList");
+    jmethodID arrayListInit = env->GetMethodID(arrayListClass, "<init>", "()V");
+    jmethodID arrayListAdd = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
+    jobject listObject = env->NewObject(arrayListClass, arrayListInit);
+
+    // Chuẩn bị class PendingRequest (Kotlin)
+    jclass reqClass = env->FindClass("com/example/konnichat/PendingRequest");
+    // Constructor: PendingRequest(int requestId, int senderId, String senderName)
+    jmethodID reqInit = env->GetMethodID(reqClass, "<init>", "(IILjava/lang/String;)V");
+
+    // 5. Nhận dữ liệu và đẩy vào List
+    if (count > 0) {
+        PendingReqInfo* list = new PendingReqInfo[count];
+
+        // Recv All loop
+        int totalSize = count * sizeof(PendingReqInfo);
+        int received = 0;
+        char* ptr = (char*)list;
+        while(received < totalSize) {
+            int r = recv(clientSocket, ptr + received, totalSize - received, 0);
+            if(r <= 0) break;
+            received += r;
+        }
+
+        for (int i = 0; i < count; i++) {
+            jstring sName = env->NewStringUTF(list[i].sender_name);
+
+            // Tạo object Kotlin
+            jobject reqObj = env->NewObject(reqClass, reqInit,
+                                            list[i].request_id,
+                                            list[i].sender_id,
+                                            sName);
+
+            env->CallBooleanMethod(listObject, arrayListAdd, reqObj);
+
+            env->DeleteLocalRef(sName);
+            env->DeleteLocalRef(reqObj);
+        }
+        delete[] list;
+    }
+
+    return listObject;
+}
+
+// --- TASK 9B: Phản hồi lời mời (Đồng ý/Từ chối) ---
+extern "C" JNIEXPORT jint JNICALL
+Java_com_example_konnichat_NativeClient_respondFriendRequest(
+        JNIEnv* env, jobject, jint requestId, jint isAccepted) {
+
+    if (clientSocket == -1) return 0;
+
+    RespondReqPayload resp;
+    resp.request_id = requestId;
+    resp.is_accepted = isAccepted;
+
+    PacketHeader header;
+    header.command_type = CMD_RESPOND_FRIEND_REQ;
+    header.payload_size = sizeof(RespondReqPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &resp, sizeof(RespondReqPayload), 0);
+
+    PacketHeader respHeader;
+    recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+
+    int success = 0;
+    if (respHeader.command_type == CMD_RESPONSE) {
+        recv(clientSocket, &success, sizeof(int), 0);
+    }
+    return success;
+}
+
+// --- TASK 10: Hủy kết bạn ---
+extern "C" JNIEXPORT jint JNICALL
+Java_com_example_konnichat_NativeClient_unfriend(
+        JNIEnv* env, jobject, jint userId, jint friendId) {
+
+    if (clientSocket == -1) return 0;
+
+    UnfriendPayload req;
+    req.user_id = userId;
+    req.friend_id = friendId;
+
+    PacketHeader header;
+    header.command_type = CMD_UNFRIEND;
+    header.payload_size = sizeof(UnfriendPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &req, sizeof(UnfriendPayload), 0);
+
+    PacketHeader respHeader;
+    recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+
+    int success = 0;
+    if (respHeader.command_type == CMD_RESPONSE) {
+        recv(clientSocket, &success, sizeof(int), 0);
+    }
+    return success;
+}
+
+extern "C" JNIEXPORT jobject JNICALL
+Java_com_example_konnichat_NativeClient_searchUsers(
+        JNIEnv* env, jobject, jstring keyword, jint currentUserId) {
+
+    if (clientSocket == -1) return NULL;
+
+    // 1. Chuẩn bị dữ liệu gửi đi
+    const char *c_keyword = env->GetStringUTFChars(keyword, 0);
+
+    SearchReqPayload req;
+    memset(&req, 0, sizeof(SearchReqPayload));
+    req.current_user_id = currentUserId;
+    strncpy(req.keyword, c_keyword, 49); // Copy tối đa 49 ký tự để chừa null
+
+    env->ReleaseStringUTFChars(keyword, c_keyword); // Giải phóng chuỗi Java ngay sau khi copy
+
+    // 2. Gửi Header + Payload
+    PacketHeader header;
+    header.command_type = CMD_SEARCH_USERS;
+    header.payload_size = sizeof(SearchReqPayload);
+
+    send(clientSocket, &header, sizeof(PacketHeader), 0);
+    send(clientSocket, &req, sizeof(SearchReqPayload), 0);
+
+    // 3. Nhận phản hồi từ Server
+    PacketHeader respHeader;
+    int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+    if (bytes <= 0) return NULL;
+
+    // 4. Nhận số lượng kết quả tìm thấy
+    int count = 0;
+    recv(clientSocket, &count, sizeof(int), 0);
+
+    // 5. Chuẩn bị ArrayList để trả về Kotlin
+    jclass arrayListClass = env->FindClass("java/util/ArrayList");
+    jmethodID arrayListInit = env->GetMethodID(arrayListClass, "<init>", "()V");
+    jmethodID arrayListAdd = env->GetMethodID(arrayListClass, "add", "(Ljava/lang/Object;)Z");
+    jobject listObject = env->NewObject(arrayListClass, arrayListInit);
+
+    // Chuẩn bị class UserSearchInfo (Kotlin)
+    jclass infoClass = env->FindClass("com/example/konnichat/UserSearchInfo");
+    // Constructor: UserSearchInfo(int id, String name, String email)
+    jmethodID infoInit = env->GetMethodID(infoClass, "<init>", "(ILjava/lang/String;Ljava/lang/String;)V");
+
+    // 6. Nhận dữ liệu và đẩy vào List
+    if (count > 0) {
+        UserSearchInfo* results = new UserSearchInfo[count];
+
+        // Nhận toàn bộ data (Recv All logic đơn giản)
+        int totalSize = count * sizeof(UserSearchInfo);
+        int received = 0;
+        char* ptr = (char*)results;
+        while(received < totalSize) {
+            int r = recv(clientSocket, ptr + received, totalSize - received, 0);
+            if(r <= 0) break;
+            received += r;
+        }
+
+        for (int i = 0; i < count; i++) {
+            jstring sName = env->NewStringUTF(results[i].name);
+            jstring sEmail = env->NewStringUTF(results[i].email);
+
+            // Tạo object Kotlin
+            jobject infoObj = env->NewObject(infoClass, infoInit,
+                                             results[i].id,
+                                             sName,
+                                             sEmail);
+
+            env->CallBooleanMethod(listObject, arrayListAdd, infoObj);
+
+            // Dọn dẹp tham chiếu cục bộ
+            env->DeleteLocalRef(sName);
+            env->DeleteLocalRef(sEmail);
+            env->DeleteLocalRef(infoObj);
+        }
+        delete[] results; // Giải phóng bộ nhớ C++
     }
 
     return listObject;

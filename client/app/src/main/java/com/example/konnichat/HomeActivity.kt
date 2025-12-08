@@ -1,87 +1,50 @@
 package com.example.konnichat
 
 import android.os.Bundle
-import android.view.View
-import android.widget.TextView
-import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import androidx.fragment.app.Fragment
+import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class HomeActivity : AppCompatActivity() {
 
-    // --- KHAI BÁO NATIVE ---
-    // Hàm này phải khớp với bên native-lib.cpp
-    external fun getFriendList(userId: Int): ArrayList<Friend>?
-
-    companion object {
-        init {
-            System.loadLibrary("konnichat")
-        }
-    }
-
-    // --- BIẾN ---
     private var currentUserId: Int = -1
-    private lateinit var rvFriends: RecyclerView
-    private lateinit var tvEmptyState: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_home)
+        setContentView(R.layout.activity_home) // Đảm bảo layout này có FragmentContainer
 
-        // 1. Lấy UserID được truyền từ LoginActivity
+        // 1. Nhận UserID
         currentUserId = intent.getIntExtra("USER_ID", -1)
 
-        if (currentUserId == -1) {
-            Toast.makeText(this, "Lỗi: Không tìm thấy User ID", Toast.LENGTH_SHORT).show()
-            finish() // Đóng app nếu lỗi
-            return
+        // 2. Setup Bottom Navigation
+        val bottomNav = findViewById<BottomNavigationView>(R.id.bottom_navigation)
+
+        bottomNav.setOnItemSelectedListener { item ->
+            var selectedFragment: Fragment? = null
+
+            when (item.itemId) {
+                R.id.nav_friends -> selectedFragment = FriendListFragment()
+                R.id.nav_search -> selectedFragment = SearchFragment()
+                R.id.nav_requests -> selectedFragment = RequestsFragment()
+            }
+
+            if (selectedFragment != null) {
+                // Truyền UserID sang Fragment
+                val bundle = Bundle()
+                bundle.putInt("USER_ID", currentUserId)
+                selectedFragment.arguments = bundle
+
+                // Thay thế Fragment
+                supportFragmentManager.beginTransaction()
+                    .replace(R.id.fragment_container, selectedFragment)
+                    .commit()
+            }
+            true
         }
 
-        // 2. Ánh xạ View
-        rvFriends = findViewById(R.id.rvFriends)
-        tvEmptyState = findViewById(R.id.tvEmptyState)
-
-        // 3. Cấu hình RecyclerView
-        rvFriends.layoutManager = LinearLayoutManager(this)
-
-        // 4. Load dữ liệu từ Server
-        loadFriendsData()
-    }
-
-    private fun loadFriendsData() {
-        // Chạy trên luồng IO để không treo giao diện khi đợi mạng
-        CoroutineScope(Dispatchers.IO).launch {
-            try {
-                // Gọi hàm C Native
-                val friendList = getFriendList(currentUserId)
-
-                // Cập nhật giao diện trên luồng Main
-                withContext(Dispatchers.Main) {
-                    if (friendList != null && friendList.isNotEmpty()) {
-                        // Có dữ liệu -> Hiển thị list
-                        tvEmptyState.visibility = View.GONE
-                        rvFriends.visibility = View.VISIBLE
-
-                        val adapter = FriendAdapter(friendList)
-                        rvFriends.adapter = adapter
-                    } else {
-                        // Không có dữ liệu hoặc lỗi -> Hiển thị thông báo rỗng
-                        rvFriends.visibility = View.GONE
-                        tvEmptyState.visibility = View.VISIBLE
-                        tvEmptyState.text = "Bạn chưa có bạn bè nào.\nHãy kết bạn thêm nhé!"
-                    }
-                }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) {
-                    Toast.makeText(this@HomeActivity, "Lỗi kết nối Server!", Toast.LENGTH_SHORT).show()
-                }
-                e.printStackTrace()
-            }
+        // 3. Mặc định load tab đầu tiên nếu chưa có trạng thái lưu
+        if (savedInstanceState == null) {
+            bottomNav.selectedItemId = R.id.nav_friends
         }
     }
 }

@@ -54,4 +54,6 @@ dependencies {
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
+    implementation("com.google.android.material:material:1.9.0") // Hoặc phiên bản mới hơn
+    implementation("androidx.fragment:fragment-ktx:1.6.1") // Hỗ trợ Fragment tốt hơn
 }

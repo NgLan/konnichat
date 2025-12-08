@@ -16,9 +16,9 @@ class LoginActivity : AppCompatActivity() {
 
     // --- KHAI BÁO JNI ---
     // Hàm kết nối server
-    external fun connectToServer(): String
-    // Hàm gửi user/pass để đăng nhập
-    external fun loginUser(user: String, pass: String): Int
+//    external fun connectToServer(): String
+//    // Hàm gửi user/pass để đăng nhập
+//    external fun loginUser(user: String, pass: String): Int
 
     companion object {
         // Load thư viện native-lib (tên trong CMakeLists.txt)
@@ -41,7 +41,7 @@ class LoginActivity : AppCompatActivity() {
         // 2. Tự động kết nối Server khi mở màn hình này
         // (Chạy ngầm để không đơ UI)
         CoroutineScope(Dispatchers.IO).launch {
-            val status = connectToServer()
+            val status = NativeClient.connectToServer()
             // Có thể log status ra Logcat để kiểm tra nếu cần
         }
 
@@ -69,7 +69,7 @@ class LoginActivity : AppCompatActivity() {
 
             CoroutineScope(Dispatchers.IO).launch {
                 // Gọi hàm C
-                val userId = loginUser(email, password)
+                val userId = NativeClient.loginUser(email, password)
 
                 // Cập nhật UI ở luồng chính
                 withContext(Dispatchers.Main) {
