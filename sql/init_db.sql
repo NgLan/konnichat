@@ -11,8 +11,8 @@ CREATE TABLE Users (
     age INT,
     -- Status: 'active', 'banned'
     status VARCHAR(20) DEFAULT 'active',
-    -- IsOnline: 'online', 'offline'
-    is_online VARCHAR(10) DEFAULT 'offline', 
+    -- IsOnline: TRUE: 'online', FALSE: 'offline'
+    is_online BOOLEAN DEFAULT FALSE, 
     avatar_url TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
@@ -50,10 +50,9 @@ CREATE TABLE Messages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     sender_id INT NOT NULL,
     receiver_id INT NOT NULL,
-    content TEXT CHARACTER SET utf8mb4,
-    -- Status: 'sent', 'delivered', 'read', 'revoked', 'deleted'
-    status VARCHAR(20) DEFAULT 'sent',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    content TEXT CHARACTER SET utf8mb4 NOT NULL,
+    status VARCHAR(20) DEFAULT 'sent', -- Status: 'sent', 'delivered', 'read', 'revoked', 'deleted'
+    created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (sender_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (receiver_id) REFERENCES Users(id) ON DELETE CASCADE
@@ -89,10 +88,9 @@ CREATE TABLE GroupMessages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     group_id INT NOT NULL,
     sender_id INT NOT NULL,
-    content TEXT CHARACTER SET utf8mb4,
-    -- Status: 'sent', 'delivered', 'revoked', 'deleted'
-    status VARCHAR(20) DEFAULT 'sent',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    content TEXT CHARACTER SET utf8mb4 NOT NULL,
+    status VARCHAR(20) DEFAULT 'sent', -- Status: 'sent', 'delivered', 'revoked', 'deleted'
+    created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (group_id) REFERENCES `Groups`(id) ON DELETE CASCADE,
     FOREIGN KEY (sender_id) REFERENCES Users(id) ON DELETE CASCADE
@@ -142,17 +140,17 @@ CREATE TABLE MessageReactions (
 -- INSERT DỮ LIỆU MẪU
 -- 1. Tạo 10 User
 INSERT INTO Users (email, password, name, is_online, avatar_url) VALUES 
-('an.nguyen@test.com', 'Pass@1234', 'Nguyễn Văn An', 'online', 'default_avt'),
-('bich.tran@test.com', 'Pass@1234', 'Trần Thị Bích', 'offline', 'default_avt'),
-('cuong.le@test.com', 'Pass@1234', 'Lê Hùng Cường', 'online', 'default_avt'),
-('dung.pham@test.com', 'Pass@1234', 'Phạm Thùy Dung', 'online', 'default_avt'),
-('em.hoang@test.com', 'Pass@1234', 'Hoàng Văn Em', 'offline', 'default_avt'),
-('phuong.vu@test.com', 'Pass@1234', 'Vũ Lan Phương', 'online', 'default_avt'),
-('giang.dang@test.com', 'Pass@1234', 'Đặng Trường Giang', 'offline', 'default_avt'),
-('hoa.bui@test.com', 'Pass@1234', 'Bùi Thị Hoa', 'offline', 'default_avt'),
-('khanh.do@test.com', 'Pass@1234', 'Đỗ Duy Khánh', 'online', 'default_avt'),
-('lan.nguyen@test.com', 'Pass@1234', 'Nguyễn Ngọc Lan', 'offline', 'default_avt'),
-('linh.ngo@test.com', 'Pass@1234', 'Ngô Mỹ Linh', 'online', 'default_avt');
+('an.nguyen@test.com', 'Pass@1234', 'Nguyễn Văn An', 1, 'default_avt'),
+('bich.tran@test.com', 'Pass@1234', 'Trần Thị Bích', 0, 'default_avt'),
+('cuong.le@test.com', 'Pass@1234', 'Lê Hùng Cường', 1, 'default_avt'),
+('dung.pham@test.com', 'Pass@1234', 'Phạm Thùy Dung', 1, 'default_avt'),
+('em.hoang@test.com', 'Pass@1234', 'Hoàng Văn Em', 0, 'default_avt'),
+('phuong.vu@test.com', 'Pass@1234', 'Vũ Lan Phương', 1, 'default_avt'),
+('giang.dang@test.com', 'Pass@1234', 'Đặng Trường Giang', 0, 'default_avt'),
+('hoa.bui@test.com', 'Pass@1234', 'Bùi Thị Hoa', 0, 'default_avt'),
+('khanh.do@test.com', 'Pass@1234', 'Đỗ Duy Khánh', 1, 'default_avt'),
+('lan.nguyen@test.com', 'Pass@1234', 'Nguyễn Ngọc Lan', 0, 'default_avt'),
+('linh.ngo@test.com', 'Pass@1234', 'Ngô Mỹ Linh', 1, 'default_avt');
 
 -- 2. Kết bạn
 -- (Câu lệnh này tự động lấy ID của các email vừa tạo để add vào bảng Friends)

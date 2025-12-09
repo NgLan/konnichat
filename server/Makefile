@@ -1,44 +1,49 @@
 # Trình biên dịch
 CC = gcc
 
-# Cờ biên dịch (Compiler Flags)
-# -I./include: Tìm file header .h trong thư mục include
-# -Wall: Hiển thị tất cả cảnh báo (Warning) để dễ fix lỗi
-# -g: Thêm thông tin debug (để dùng gdb nếu crash)
-CFLAGS = -I./include -Wall -g
+# Cờ biên dịch: Include đủ các thư mục header
+CFLAGS = -I./include -I./include/utils -I./include/repo -Wall -g
 
-# Thư viện liên kết (Linker Flags)
-# -lpthread: Cho đa luồng
-# -lmysqlclient: Cho MySQL Server
+# Thư viện liên kết
 LIBS = -lpthread -lmysqlclient
 
-# Danh sách file nguồn (Source files)
-# Đã thêm src/discovery.c vào đây
-SRCS = src/main.c src/client_handler.c src/db_manager.c src/dotenv.c src/discovery.c
+# Danh sách thư mục
+SRC_DIR = src
+REPO_DIR = src/repo
 
-# Danh sách file object (Tự động đổi đuôi .c thành .o)
+# Danh sách file nguồn 
+SRCS = $(SRC_DIR)/main.c \
+       $(SRC_DIR)/client_handler.c \
+       $(SRC_DIR)/database.c \
+       $(SRC_DIR)/dotenv.c \
+       $(SRC_DIR)/discovery.c \
+       $(SRC_DIR)/connection_manager.c \
+       $(SRC_DIR)/tcp_server.c \
+       $(REPO_DIR)/user_repo.c \
+       $(REPO_DIR)/friend_repo.c \
+       $(REPO_DIR)/message_repo.c
+
+# Tạo danh sách file object (.o) tương ứng
 OBJS = $(SRCS:.c=.o)
 
-# Tên file thực thi đầu ra
+# Tên file thực thi chính
 TARGET = myserver
 
-# --- QUY TẮC BIÊN DỊCH (TARGETS) ---
+# --- QUY TẮC BIÊN DỊCH ---
 
-# Mục tiêu mặc định khi gõ 'make'
 all: $(TARGET)
 
-# Quy tắc tạo file thực thi
+# Link các file .o thành file thực thi
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LIBS)
-	@echo "Build thanh cong! Chay ./$(TARGET) de khoi dong server."
+	@echo "Build Server successful! Run ./$(TARGET)"
 
-# Quy tắc tạo file object từ file .c
+# Quy tắc biên dịch từng file .c thành .o
+# Sử dụng pattern rule %.o : %.c
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-# Dọn dẹp các file rác (.o) và file thực thi cũ
 clean:
-	rm -f src/*.o $(TARGET)
+	rm -f $(SRC_DIR)/*.o $(REPO_DIR)/*.o $(TARGET)
 
-# Khai báo các mục tiêu giả (không phải tên file)
 .PHONY: all clean
