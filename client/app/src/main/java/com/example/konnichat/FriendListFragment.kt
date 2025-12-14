@@ -37,6 +37,8 @@ class FriendListFragment : Fragment() {
         return view
     }
 
+    private var adapter: FriendAdapter? = null
+
     private fun loadFriendsData() {
         if (currentUserId == -1) return
 
@@ -50,11 +52,13 @@ class FriendListFragment : Fragment() {
                         tvEmptyState.visibility = View.GONE
                         rvFriends.visibility = View.VISIBLE
 
-                        // --- SỬA ĐOẠN NÀY: Truyền callback vào Adapter ---
-                        rvFriends.adapter = FriendAdapter(friendList) { friendToDelete ->
-                            // Khi bấm chọn "Xóa bạn bè" trong menu -> Hiện dialog
-                            showConfirmUnfriendDialog(friendToDelete)
+                        val arrayList = ArrayList(friendList)
+                        adapter = FriendAdapter(arrayList) { friend ->
+                            showConfirmUnfriendDialog(friend)
                         }
+
+                        // --- SỬA ĐOẠN NÀY: Truyền callback vào Adapter ---
+                        rvFriends.adapter = adapter
                     } else {
                         rvFriends.visibility = View.GONE
                         tvEmptyState.visibility = View.VISIBLE
@@ -66,6 +70,14 @@ class FriendListFragment : Fragment() {
         }
     }
 
+    fun addNewFriendToUI(friend: Friend) {
+        // Ẩn thông báo rỗng nếu có
+        tvEmptyState.visibility = View.GONE
+        rvFriends.visibility = View.VISIBLE
+
+        // Thêm vào adapter
+        adapter?.addFriend(friend)
+    }
     // Hàm hiển thị hộp thoại xác nhận
     private fun showConfirmUnfriendDialog(friend: Friend) {
         AlertDialog.Builder(context)

@@ -10,7 +10,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 // Thêm callback vào Constructor: (Friend) -> Unit
 class FriendAdapter(
-    private val friendList: List<Friend>,
+    private val friendList: MutableList<Friend>,
     private val onUnfriendClick: (Friend) -> Unit
 ) : RecyclerView.Adapter<FriendAdapter.FriendViewHolder>() {
 
@@ -66,4 +66,9 @@ class FriendAdapter(
     }
 
     override fun getItemCount() = friendList.size
+
+    fun addFriend(newFriend: Friend) {
+        friendList.add(0, newFriend) // Thêm vào đầu danh sách cho dễ thấy
+        notifyItemInserted(0) // Hiệu ứng chèn đẹp mắt
+    }
 }

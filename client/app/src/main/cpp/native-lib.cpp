@@ -83,6 +83,29 @@ void* listening_task(void* arg) {
                 env->DeleteLocalRef(sName);
             }
         }
+        else if (header.command_type == CMD_NOTIFY_REQ_ACCEPTED) { // Mã 51
+            // 1. Đọc Header thật
+            recv(clientSocket, &header, sizeof(PacketHeader), 0);
+
+            // 2. Đọc Payload (Thông tin người bạn mới)
+            FriendInfo info;
+            recv(clientSocket, &info, sizeof(FriendInfo), 0);
+
+            pthread_mutex_unlock(&socketMutex); // Mở khóa ngay
+            LOGI("Realtime: User %s (ID: %d) đã chấp nhận kết bạn!", info.name, info.id);
+
+            // 3. Gọi ngược về Kotlin
+            jclass clazz = env->GetObjectClass(gNativeClientObj);
+            // Tìm hàm onFriendRequestAccepted(int, String, boolean)
+            jmethodID methodId = env->GetMethodID(clazz, "onFriendRequestAccepted", "(ILjava/lang/String;Z)V");
+
+            if (methodId != NULL) {
+                jstring sName = env->NewStringUTF(info.name);
+                jboolean bOnline = (info.is_online == 1);
+                env->CallVoidMethod(gNativeClientObj, methodId, info.id, sName, bOnline);
+                env->DeleteLocalRef(sName);
+            }
+        }
             // Nếu là CMD_RESPONSE (Kết quả trả về cho lệnh User gọi), ta KHÔNG đọc ở đây
             // để cho hàm JNI tương ứng (ví dụ searchUsers) tự đọc.
         else {

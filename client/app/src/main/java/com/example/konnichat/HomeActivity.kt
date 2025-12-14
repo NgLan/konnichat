@@ -84,4 +84,21 @@ class HomeActivity : AppCompatActivity(), NativeClient.FriendRequestCallback {
             // TODO: Sau này làm Chat, bạn sẽ thêm hàm onMessageReceived tương tự ở đây
         }
     }
+
+    override fun onRequestAccepted(newFriendId: Int, newFriendName: String, isOnline: Boolean) {
+        runOnUiThread {
+            // 1. Hiện thông báo chúc mừng
+            Toast.makeText(this, "$newFriendName đã đồng ý kết bạn!", Toast.LENGTH_LONG).show()
+
+            // 2. Tìm xem đang ở Fragment nào
+            val currentFragment = supportFragmentManager.findFragmentById(R.id.fragment_container)
+
+            // 3. Nếu đang ở màn hình Bạn bè -> Thêm thẻ ngay lập tức
+            if (currentFragment is FriendListFragment) {
+                val newFriend = Friend(newFriendId, newFriendName, isOnline)
+                currentFragment.addNewFriendToUI(newFriend)
+            }
+            // Nếu đang ở màn hình Search -> Cập nhật nút bấm (Nâng cao, có thể làm sau)
+        }
+    }
 }

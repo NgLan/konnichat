@@ -67,6 +67,7 @@ object NativeClient {
 
     interface FriendRequestCallback {
         fun onNewRequestReceived(senderId: Int, senderName: String)
+        fun onRequestAccepted(newFriendId: Int, newFriendName: String, isOnline: Boolean)
     }
 
     private var callback: FriendRequestCallback? = null
@@ -82,4 +83,8 @@ object NativeClient {
         callback?.onNewRequestReceived(senderId, senderName)
     }
 
+    fun onFriendRequestAccepted(id: Int, name: String, isOnline: Boolean) {
+        // Chuyển tiếp cho HomeActivity xử lý
+        callback?.onRequestAccepted(id, name, isOnline)
+    }
 }
