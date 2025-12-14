@@ -18,6 +18,9 @@ JavaVM* gJvm = nullptr; // Biến toàn cục lưu máy ảo Java
 
 jobject gNativeClientObj = nullptr;
 
+pthread_mutex_t socketMutex = PTHREAD_MUTEX_INITIALIZER; // Cái khóa
+bool isWaitingForResponse = false; // Cờ hiệu: True = Luồng chính đang bận
+
 // --- 1. Hàm khởi tạo để lấy JavaVM (Bắt buộc cho đa luồng) ---
 JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
     gJvm = vm;
@@ -37,16 +40,22 @@ void* listening_task(void* arg) {
     while (1) {
         if (clientSocket == -1) break;
 
+        if (isWaitingForResponse) {
+            usleep(10000); // Ngủ 10ms rồi quay lại kiểm tra sau
+            continue; // Bỏ qua lượt này
+        }
+
+        pthread_mutex_lock(&socketMutex);
         // Peek (nhìn trộm) 8 bytes header trước
         // Dùng MSG_PEEK để không lấy hẳn dữ liệu ra, tránh xung đột với các hàm sync khác
         // (Lưu ý: Để giải pháp đơn giản cho người mới học, ta sẽ chỉ chặn bắt các gói NOTIFY ở đây)
 
-        int bytes = recv(clientSocket, &header, sizeof(PacketHeader), MSG_PEEK);
+        int bytes = recv(clientSocket, &header, sizeof(PacketHeader), MSG_PEEK | MSG_DONTWAIT);
         if (bytes <= 0) {
             LOGE("Server ngắt kết nối hoặc lỗi mạng!");
-            close(clientSocket);
-            clientSocket = -1;
-            break;
+            pthread_mutex_unlock(&socketMutex);
+            usleep(100000); // Ngủ 100ms
+            continue;
         }
 
         // Nếu là gói tin THÔNG BÁO (Server chủ động gửi) -> Ta xử lý ngay tại đây
@@ -59,6 +68,7 @@ void* listening_task(void* arg) {
             PendingReqInfo info;
             recv(clientSocket, &info, sizeof(PendingReqInfo), 0);
 
+            pthread_mutex_unlock(&socketMutex);
             LOGI("Realtime: Nhận lời mời từ %s", info.sender_name);
 
             // 3. Gọi ngược về Kotlin (Callback)
@@ -77,7 +87,8 @@ void* listening_task(void* arg) {
             // để cho hàm JNI tương ứng (ví dụ searchUsers) tự đọc.
         else {
             // Ngủ một chút để nhường CPU cho luồng chính đọc socket
-            usleep(100000); // 100ms
+            pthread_mutex_unlock(&socketMutex);
+            usleep(50000); // 100ms
         }
     }
 
@@ -90,10 +101,18 @@ void* listening_task(void* arg) {
 extern "C" JNIEXPORT void JNICALL
 Java_com_example_konnichat_NativeClient_startListening(JNIEnv* env, jobject instance) {
 
+    static bool isRunning = false;
+    if (isRunning) {
+        LOGI("Luồng lắng nghe đang chạy rồi, không khởi tạo lại.");
+        return;
+    }
+
     // Tạo Global Reference để giữ object này không bị Garbage Collector xóa mất
     if (gNativeClientObj == nullptr) {
         gNativeClientObj = env->NewGlobalRef(instance);
     }
+
+    isRunning = true;
 
     pthread_t thread_id;
     // Tạo luồng POSIX chuẩn (chạy hàm listening_task)
@@ -231,6 +250,9 @@ Java_com_example_konnichat_NativeClient_getFriendList(
 
     if (clientSocket == -1) return NULL;
 
+    pthread_mutex_lock(&socketMutex); // 1. Khóa lại
+    isWaitingForResponse = true;
+
     // 1. Gửi request
     GetFriendListPayload req;
     req.user_id = userId;
@@ -245,7 +267,12 @@ Java_com_example_konnichat_NativeClient_getFriendList(
     // 2. Nhận Header phản hồi
     PacketHeader respHeader;
     int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
-    if (bytes <= 0) return NULL;
+    // Xử lý lỗi kết nối
+    if (bytes <= 0) {
+        isWaitingForResponse = false;     // Hạ biển
+        pthread_mutex_unlock(&socketMutex); // Mở khóa
+        return NULL;
+    }
 
     // 3. Nhận số lượng bạn bè
     int count = 0;
@@ -297,6 +324,9 @@ Java_com_example_konnichat_NativeClient_getFriendList(
         delete[] friends;
     }
 
+    isWaitingForResponse = false;       // 3. Hạ biển "Đã xong"
+    pthread_mutex_unlock(&socketMutex);
+
     return listObject;
 }
 
@@ -307,6 +337,9 @@ Java_com_example_konnichat_NativeClient_sendFriendRequest(
         JNIEnv* env, jobject, jint senderId, jint receiverId) {
 
     if (clientSocket == -1) return 0; // Lỗi
+
+    pthread_mutex_lock(&socketMutex); // 1. Khóa lại
+    isWaitingForResponse = true;
 
     // 1. Chuẩn bị Payload
     FriendReqPayload req;
@@ -323,12 +356,19 @@ Java_com_example_konnichat_NativeClient_sendFriendRequest(
 
     // 3. Nhận phản hồi
     PacketHeader respHeader;
-    if (recv(clientSocket, &respHeader, sizeof(PacketHeader), 0) <= 0) return 0;
+    if (recv(clientSocket, &respHeader, sizeof(PacketHeader), 0) <= 0) {
+        isWaitingForResponse = false;     // Hạ biển
+        pthread_mutex_unlock(&socketMutex); // Mở khóa
+        return NULL;
+    }
 
     int resultCode = 0;
     if (respHeader.command_type == CMD_RESPONSE) {
         recv(clientSocket, &resultCode, sizeof(int), 0);
     }
+
+    isWaitingForResponse = false;       // 3. Hạ biển "Đã xong"
+    pthread_mutex_unlock(&socketMutex); // 4. Mở khóa cho Luồng ngầm chạy
 
     // resultCode có thể là RequestID (>0) hoặc mã lỗi
     return resultCode;
@@ -340,6 +380,10 @@ Java_com_example_konnichat_NativeClient_getPendingRequests(
         JNIEnv* env, jobject, jint userId) {
 
     if (clientSocket == -1) return NULL;
+
+    // --- BẮT ĐẦU VÙNG AN TOÀN ---
+    pthread_mutex_lock(&socketMutex); // 1. Khóa lại
+    isWaitingForResponse = true;      // 2. Treo biển "Đang bận"
 
     // 1. Gửi request (Payload dùng chung ID giống GetFriendList)
     GetFriendListPayload req;
@@ -354,7 +398,11 @@ Java_com_example_konnichat_NativeClient_getPendingRequests(
 
     // 2. Nhận Header
     PacketHeader respHeader;
-    if (recv(clientSocket, &respHeader, sizeof(PacketHeader), 0) <= 0) return NULL;
+    if (recv(clientSocket, &respHeader, sizeof(PacketHeader), 0) <= 0) {
+        isWaitingForResponse = false;     // Hạ biển
+        pthread_mutex_unlock(&socketMutex); // Mở khóa
+        return NULL;
+    }
 
     // 3. Nhận số lượng
     int count = 0;
@@ -410,6 +458,9 @@ Java_com_example_konnichat_NativeClient_getPendingRequests(
         delete[] list;
     }
 
+    isWaitingForResponse = false;       // 3. Hạ biển "Đã xong"
+    pthread_mutex_unlock(&socketMutex);
+
     return listObject;
 }
 
@@ -419,6 +470,8 @@ Java_com_example_konnichat_NativeClient_respondFriendRequest(
         JNIEnv* env, jobject, jint requestId, jint isAccepted) {
 
     if (clientSocket == -1) return 0;
+    pthread_mutex_lock(&socketMutex); // 1. Khóa lại
+    isWaitingForResponse = true;
 
     RespondReqPayload resp;
     resp.request_id = requestId;
@@ -432,12 +485,24 @@ Java_com_example_konnichat_NativeClient_respondFriendRequest(
     send(clientSocket, &resp, sizeof(RespondReqPayload), 0);
 
     PacketHeader respHeader;
-    recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+    int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+
+    // Xử lý lỗi kết nối
+    if (bytes <= 0) {
+        isWaitingForResponse = false;     // Hạ biển
+        pthread_mutex_unlock(&socketMutex); // Mở khóa
+        return NULL;
+    }
 
     int success = 0;
     if (respHeader.command_type == CMD_RESPONSE) {
         recv(clientSocket, &success, sizeof(int), 0);
     }
+
+    // --- KẾT THÚC VÙNG AN TOÀN ---
+    isWaitingForResponse = false;       // 3. Hạ biển "Đã xong"
+    pthread_mutex_unlock(&socketMutex);
+
     return success;
 }
 
@@ -447,6 +512,8 @@ Java_com_example_konnichat_NativeClient_unfriend(
         JNIEnv* env, jobject, jint userId, jint friendId) {
 
     if (clientSocket == -1) return 0;
+    pthread_mutex_lock(&socketMutex); // 1. Khóa lại
+    isWaitingForResponse = true;
 
     UnfriendPayload req;
     req.user_id = userId;
@@ -460,12 +527,23 @@ Java_com_example_konnichat_NativeClient_unfriend(
     send(clientSocket, &req, sizeof(UnfriendPayload), 0);
 
     PacketHeader respHeader;
-    recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+    int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
+
+    if (bytes <= 0) {
+        isWaitingForResponse = false;     // Hạ biển
+        pthread_mutex_unlock(&socketMutex); // Mở khóa
+        return NULL;
+    }
 
     int success = 0;
     if (respHeader.command_type == CMD_RESPONSE) {
         recv(clientSocket, &success, sizeof(int), 0);
     }
+
+    // --- KẾT THÚC VÙNG AN TOÀN ---
+    isWaitingForResponse = false;       // 3. Hạ biển "Đã xong"
+    pthread_mutex_unlock(&socketMutex);
+
     return success;
 }
 
@@ -474,6 +552,8 @@ Java_com_example_konnichat_NativeClient_searchUsers(
         JNIEnv* env, jobject, jstring keyword, jint currentUserId) {
 
     if (clientSocket == -1) return NULL;
+    pthread_mutex_lock(&socketMutex); // 1. Khóa lại
+    isWaitingForResponse = true;
 
     // 1. Chuẩn bị dữ liệu gửi đi
     const char *c_keyword = env->GetStringUTFChars(keyword, 0);
@@ -496,7 +576,11 @@ Java_com_example_konnichat_NativeClient_searchUsers(
     // 3. Nhận phản hồi từ Server
     PacketHeader respHeader;
     int bytes = recv(clientSocket, &respHeader, sizeof(PacketHeader), 0);
-    if (bytes <= 0) return NULL;
+    if (bytes <= 0) {
+        isWaitingForResponse = false;     // Hạ biển
+        pthread_mutex_unlock(&socketMutex); // Mở khóa
+        return NULL;
+    }
 
     // 4. Nhận số lượng kết quả tìm thấy
     int count = 0;
@@ -554,6 +638,8 @@ Java_com_example_konnichat_NativeClient_searchUsers(
         }
         delete[] results; // Giải phóng bộ nhớ C++
     }
+    isWaitingForResponse = false;       // 3. Hạ biển "Đã xong"
+    pthread_mutex_unlock(&socketMutex); // 4. Mở khóa cho Luồng ngầm chạy
 
     return listObject;
 }
