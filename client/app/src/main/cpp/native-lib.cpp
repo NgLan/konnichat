@@ -14,6 +14,94 @@
 
 // Biến toàn cục lưu socket
 int clientSocket = -1;
+JavaVM* gJvm = nullptr; // Biến toàn cục lưu máy ảo Java
+
+jobject gNativeClientObj = nullptr;
+
+// --- 1. Hàm khởi tạo để lấy JavaVM (Bắt buộc cho đa luồng) ---
+JNIEXPORT jint JNICALL JNI_OnLoad(JavaVM* vm, void* reserved) {
+    gJvm = vm;
+    return JNI_VERSION_1_6;
+}
+
+// --- 2. Luồng lắng nghe chạy ngầm (Task 2) ---
+void* listening_task(void* arg) {
+    JNIEnv *env;
+    // Gắn thread C++ này vào JVM để có thể gọi hàm Kotlin
+    if (gJvm->AttachCurrentThread(&env, NULL) != JNI_OK) {
+        LOGE("Lỗi: Không thể Attach Thread vào JVM");
+        return NULL;
+    }
+
+    PacketHeader header;
+    while (1) {
+        if (clientSocket == -1) break;
+
+        // Peek (nhìn trộm) 8 bytes header trước
+        // Dùng MSG_PEEK để không lấy hẳn dữ liệu ra, tránh xung đột với các hàm sync khác
+        // (Lưu ý: Để giải pháp đơn giản cho người mới học, ta sẽ chỉ chặn bắt các gói NOTIFY ở đây)
+
+        int bytes = recv(clientSocket, &header, sizeof(PacketHeader), MSG_PEEK);
+        if (bytes <= 0) {
+            LOGE("Server ngắt kết nối hoặc lỗi mạng!");
+            close(clientSocket);
+            clientSocket = -1;
+            break;
+        }
+
+        // Nếu là gói tin THÔNG BÁO (Server chủ động gửi) -> Ta xử lý ngay tại đây
+        if (header.command_type == CMD_NOTIFY_FRIEND_REQ) {
+
+            // 1. Đọc thật sự Header ra khỏi socket (xóa khỏi buffer)
+            recv(clientSocket, &header, sizeof(PacketHeader), 0);
+
+            // 2. Đọc Payload
+            PendingReqInfo info;
+            recv(clientSocket, &info, sizeof(PendingReqInfo), 0);
+
+            LOGI("Realtime: Nhận lời mời từ %s", info.sender_name);
+
+            // 3. Gọi ngược về Kotlin (Callback)
+            // Tìm class NativeClient
+            jclass clazz = env->GetObjectClass(gNativeClientObj);
+            // Tìm hàm onFriendRequestReceived(int, String)
+            jmethodID methodId = env->GetMethodID(clazz, "onFriendRequestReceived", "(ILjava/lang/String;)V");
+
+            if (methodId != NULL) {
+                jstring sName = env->NewStringUTF(info.sender_name);
+                env->CallVoidMethod(gNativeClientObj, methodId, info.sender_id, sName);
+                env->DeleteLocalRef(sName);
+            }
+        }
+            // Nếu là CMD_RESPONSE (Kết quả trả về cho lệnh User gọi), ta KHÔNG đọc ở đây
+            // để cho hàm JNI tương ứng (ví dụ searchUsers) tự đọc.
+        else {
+            // Ngủ một chút để nhường CPU cho luồng chính đọc socket
+            usleep(100000); // 100ms
+        }
+    }
+
+    // Gỡ thread ra khỏi JVM trước khi hủy
+    gJvm->DetachCurrentThread();
+    return NULL;
+}
+
+// --- 3. Hàm JNI để khởi động luồng ---
+extern "C" JNIEXPORT void JNICALL
+Java_com_example_konnichat_NativeClient_startListening(JNIEnv* env, jobject instance) {
+
+    // Tạo Global Reference để giữ object này không bị Garbage Collector xóa mất
+    if (gNativeClientObj == nullptr) {
+        gNativeClientObj = env->NewGlobalRef(instance);
+    }
+
+    pthread_t thread_id;
+    // Tạo luồng POSIX chuẩn (chạy hàm listening_task)
+    pthread_create(&thread_id, NULL, listening_task, NULL);
+    pthread_detach(thread_id); // Chạy độc lập
+
+    LOGI("Đã khởi động luồng lắng nghe (Listening Thread)!");
+}
 
 // Hàm tiện ích: Gửi gói tin (Helper function)
 void send_packet(int sock, int cmd_type, const char* user, const char* pass) {
@@ -163,6 +251,14 @@ Java_com_example_konnichat_NativeClient_getFriendList(
     int count = 0;
     recv(clientSocket, &count, sizeof(int), 0);
 
+    // --- [SỬA Ở ĐÂY: THÊM KIỂM TRA AN TOÀN] ---
+    // Giới hạn ví dụ: tối đa 10,000 bạn bè. Nếu lớn hơn -> Dữ liệu rác -> Bỏ qua
+    if (count < 0 || count > 10000) {
+        LOGE("Lỗi: Số lượng phần tử không hợp lệ (count = %d). Có thể do lỗi protocol.", count);
+        // Cần đọc xả rác socket hoặc đóng kết nối để tránh lỗi dây chuyền, tạm thời return NULL
+        return NULL;
+    }
+
     // 4. Chuẩn bị Java ArrayList
     jclass arrayListClass = env->FindClass("java/util/ArrayList");
     jmethodID arrayListInit = env->GetMethodID(arrayListClass, "<init>", "()V");
@@ -263,6 +359,14 @@ Java_com_example_konnichat_NativeClient_getPendingRequests(
     // 3. Nhận số lượng
     int count = 0;
     recv(clientSocket, &count, sizeof(int), 0);
+
+    // --- [SỬA Ở ĐÂY: THÊM KIỂM TRA AN TOÀN] ---
+    // Giới hạn ví dụ: tối đa 10,000 bạn bè. Nếu lớn hơn -> Dữ liệu rác -> Bỏ qua
+    if (count < 0 || count > 10000) {
+        LOGE("Lỗi: Số lượng phần tử không hợp lệ (count = %d). Có thể do lỗi protocol.", count);
+        // Cần đọc xả rác socket hoặc đóng kết nối để tránh lỗi dây chuyền, tạm thời return NULL
+        return NULL;
+    }
 
     // 4. Chuẩn bị ArrayList để trả về Kotlin
     jclass arrayListClass = env->FindClass("java/util/ArrayList");
@@ -397,6 +501,14 @@ Java_com_example_konnichat_NativeClient_searchUsers(
     // 4. Nhận số lượng kết quả tìm thấy
     int count = 0;
     recv(clientSocket, &count, sizeof(int), 0);
+
+    // --- [SỬA Ở ĐÂY: THÊM KIỂM TRA AN TOÀN] ---
+    // Giới hạn ví dụ: tối đa 10,000 bạn bè. Nếu lớn hơn -> Dữ liệu rác -> Bỏ qua
+    if (count < 0 || count > 10000) {
+        LOGE("Lỗi: Số lượng phần tử không hợp lệ (count = %d). Có thể do lỗi protocol.", count);
+        // Cần đọc xả rác socket hoặc đóng kết nối để tránh lỗi dây chuyền, tạm thời return NULL
+        return NULL;
+    }
 
     // 5. Chuẩn bị ArrayList để trả về Kotlin
     jclass arrayListClass = env->FindClass("java/util/ArrayList");

@@ -1,5 +1,6 @@
 package com.example.konnichat
-
+import android.util.Log
+import java.util.ArrayList
 object NativeClient {
     init {
         System.loadLibrary("konnichat")
@@ -60,5 +61,25 @@ object NativeClient {
     // 3. Chat
 //    external fun sendMessage(senderId: Int, receiverId: Int, content: String)
 //    external fun receiveMessage(): Message?
-    
+
+    // Gọi hàm này ngay sau khi Login thành công
+    external fun startListening()
+
+    interface FriendRequestCallback {
+        fun onNewRequestReceived(senderId: Int, senderName: String)
+    }
+
+    private var callback: FriendRequestCallback? = null
+
+    fun setFriendRequestCallback(cb: FriendRequestCallback?) {
+        this.callback = cb
+    }
+
+    fun onFriendRequestReceived(senderId: Int, senderName: String) {
+        Log.d("NativeClient", "NHẬN ĐƯỢC LỜI MỜI TỪ: $senderName (ID: $senderId)")
+
+        // Báo ngay cho màn hình nào đang lắng nghe
+        callback?.onNewRequestReceived(senderId, senderName)
+    }
+
 }

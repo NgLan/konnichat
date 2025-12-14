@@ -1,5 +1,6 @@
 package com.example.konnichat
 
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -25,12 +26,10 @@ class FriendListFragment : Fragment() {
         savedInstanceState: Bundle?
     ): View? {
         val view = inflater.inflate(R.layout.fragment_friend_list, container, false)
-
-        // 1. Lấy User ID từ Activity truyền sang
         currentUserId = arguments?.getInt("USER_ID") ?: -1
 
         rvFriends = view.findViewById(R.id.rvFriends)
-        tvEmptyState = view.findViewById(R.id.tvEmptyFriends) // Lưu ý ID trong XML fragment
+        tvEmptyState = view.findViewById(R.id.tvEmptyFriends)
         rvFriends.layoutManager = LinearLayoutManager(context)
 
         loadFriendsData()
@@ -43,13 +42,19 @@ class FriendListFragment : Fragment() {
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
+                // Lấy danh sách bạn bè từ Server
                 val friendList = NativeClient.getFriendList(currentUserId)
+
                 withContext(Dispatchers.Main) {
                     if (friendList != null && friendList.isNotEmpty()) {
                         tvEmptyState.visibility = View.GONE
                         rvFriends.visibility = View.VISIBLE
-                        rvFriends.adapter = FriendAdapter(friendList)
-                        // TODO: Thêm sự kiện LongClick để hủy kết bạn (Task 10)
+
+                        // --- SỬA ĐOẠN NÀY: Truyền callback vào Adapter ---
+                        rvFriends.adapter = FriendAdapter(friendList) { friendToDelete ->
+                            // Khi bấm chọn "Xóa bạn bè" trong menu -> Hiện dialog
+                            showConfirmUnfriendDialog(friendToDelete)
+                        }
                     } else {
                         rvFriends.visibility = View.GONE
                         tvEmptyState.visibility = View.VISIBLE
@@ -57,6 +62,36 @@ class FriendListFragment : Fragment() {
                 }
             } catch (e: Exception) {
                 e.printStackTrace()
+            }
+        }
+    }
+
+    // Hàm hiển thị hộp thoại xác nhận
+    private fun showConfirmUnfriendDialog(friend: Friend) {
+        AlertDialog.Builder(context)
+            .setTitle("Hủy kết bạn")
+            .setMessage("Bạn có chắc chắn muốn xóa ${friend.name} khỏi danh sách bạn bè không?")
+            .setPositiveButton("Xóa") { _, _ ->
+                performUnfriend(friend)
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
+
+    // Hàm gọi xuống Native Client để xóa
+    private fun performUnfriend(friend: Friend) {
+        CoroutineScope(Dispatchers.IO).launch {
+            // Gọi hàm Task 10: Unfriend
+            val success = NativeClient.unfriend(currentUserId, friend.id)
+
+            withContext(Dispatchers.Main) {
+                if (success == 1) {
+                    Toast.makeText(context, "Đã xóa ${friend.name}", Toast.LENGTH_SHORT).show()
+                    // Load lại danh sách để cập nhật giao diện
+                    loadFriendsData()
+                } else {
+                    Toast.makeText(context, "Lỗi kết nối, thử lại sau!", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

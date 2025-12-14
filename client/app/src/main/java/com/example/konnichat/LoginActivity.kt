@@ -79,6 +79,8 @@ class LoginActivity : AppCompatActivity() {
                     if (userId > 0) {
                         Toast.makeText(this@LoginActivity, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
 
+                        NativeClient.startListening()
+
                         // --- TODO: CHUYỂN SANG MÀN HÌNH CHÍNH (HOME) ---
                         val intent = Intent(this@LoginActivity, HomeActivity::class.java)
                         intent.putExtra("USER_ID", userId) // Truyền ID sang để dùng
