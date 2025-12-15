@@ -111,6 +111,7 @@ static int handle_login(int sock, PacketHeader *reqHeader, void *payload)
 
         // 3. Notify Friends
         UserInfoPayload friends[100];
+        memset(friends, 0, sizeof(friends));
         int count = db_get_friends(userId, friends, 100);
         for (int i = 0; i < count; i++)
         {
@@ -144,6 +145,7 @@ static void handle_get_friends(int sock, PacketHeader *reqHeader, int current_us
     }
 
     UserInfoPayload friends[100];
+    memset(friends, 0, sizeof(friends));
     int count = db_get_friends(current_user_id, friends, 100);
 
     PacketHeader respHeader;
@@ -255,6 +257,106 @@ static void handle_fetch_offline(int sock, PacketHeader *reqHeader, int current_
     LOG_INFO("Synced %d offline msgs for User %d.", count, current_user_id);
 }
 
+static void handle_search_users(int sock, PacketHeader *reqHeader, void *payload, int current_user_id) {
+    SearchReqPayload *req = (SearchReqPayload *)payload;
+    LOG_INFO("User %d searching for: %s", current_user_id, req->keyword);
+
+    // Chuẩn bị buffer kết quả
+    UserSearchInfo results[20];
+    int count = db_search_users(req->keyword, current_user_id, results, 20);
+
+    // Payload trả về: [Count (4 bytes)] + [Array Data]
+    int payload_size = sizeof(int32_t) + (count * sizeof(UserSearchInfo));
+    void *resp_buffer = malloc(payload_size);
+    
+    // Đóng gói
+    memcpy(resp_buffer, &count, sizeof(int32_t));
+    if (count > 0) {
+        memcpy((char*)resp_buffer + sizeof(int32_t), results, count * sizeof(UserSearchInfo));
+    }
+
+    send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_SUCCESS, resp_buffer, payload_size);
+    free(resp_buffer);
+}
+
+static void handle_send_friend_req(int sock, PacketHeader *reqHeader, void *payload, int current_user_id) {
+    FriendReqPayload *req = (FriendReqPayload *)payload;
+    
+    // Gọi Repo xử lý logic
+    int result_id = db_send_friend_request(current_user_id, req->target_id);
+    
+    // Phản hồi cho người gửi
+    int status = (result_id > 0) ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
+    send_response(sock, CMD_RESPONSE, reqHeader->request_id, status, NULL, 0);
+
+    // --- REAL-TIME NOTIFICATION ---
+    if (result_id > 0) {
+        int target_sock = get_socket_by_user_id(req->target_id);
+        if (target_sock > 0) {
+            PendingReqInfo notif;
+            notif.request_id = result_id;
+            notif.sender_id = current_user_id;
+            
+            // Lấy tên người gửi để hiển thị thông báo đẹp hơn
+            // (Tạm thời hardcode hoặc query DB thêm 1 lần nữa nếu cần thiết)
+            snprintf(notif.sender_name, sizeof(notif.sender_name), "User %d", current_user_id); 
+
+            send_response(target_sock, CMD_NOTIFY_FRIEND_REQ, 0, STATUS_SUCCESS, &notif, sizeof(PendingReqInfo));
+            LOG_INFO("Sent friend request notification to socket %d", target_sock);
+        }
+    }
+}
+
+static void handle_get_pending_reqs(int sock, PacketHeader *reqHeader, int current_user_id) {
+    PendingReqInfo list[50];
+    int count = db_get_pending_requests(current_user_id, list, 50);
+
+    // Đóng gói: [Count] + [List]
+    int payload_size = sizeof(int32_t) + (count * sizeof(PendingReqInfo));
+    void *resp_buffer = malloc(payload_size);
+    
+    memcpy(resp_buffer, &count, sizeof(int32_t));
+    if (count > 0) {
+        memcpy((char*)resp_buffer + sizeof(int32_t), list, count * sizeof(PendingReqInfo));
+    }
+
+    send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_SUCCESS, resp_buffer, payload_size);
+    free(resp_buffer);
+}
+
+static void handle_respond_friend_req(int sock, PacketHeader *reqHeader, void *payload, int current_user_id) {
+    FriendRespondPayload *resp = (FriendRespondPayload *)payload;
+    int sender_id_of_req = 0;
+
+    int success = db_respond_friend_request(resp->request_id, current_user_id, resp->is_accepted, &sender_id_of_req);
+    int status = success ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
+
+    send_response(sock, CMD_RESPONSE, reqHeader->request_id, status, NULL, 0);
+
+    // --- REAL-TIME NOTIFICATION (Báo cho người gửi biết) ---
+    if (success && resp->is_accepted && sender_id_of_req > 0) {
+        int sender_sock = get_socket_by_user_id(sender_id_of_req);
+        if (sender_sock > 0) {
+            UserInfoPayload my_info;
+            my_info.user_id = current_user_id;
+            my_info.is_online = 1;
+            // Cần query lấy tên thật nếu muốn chuẩn, tạm thời để trống hoặc ID
+            snprintf(my_info.name, sizeof(my_info.name), "Friend ID %d", current_user_id);
+
+            send_response(sender_sock, CMD_NOTIFY_REQ_ACCEPTED, 0, STATUS_SUCCESS, &my_info, sizeof(UserInfoPayload));
+        }
+    }
+}
+
+static void handle_unfriend(int sock, PacketHeader *reqHeader, void *payload, int current_user_id) {
+    FriendReqPayload *req = (FriendReqPayload *)payload; // Dùng chung struct vì chỉ cần target_id
+    
+    int success = db_remove_friend(current_user_id, req->target_id);
+    int status = success ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
+    
+    send_response(sock, CMD_RESPONSE, reqHeader->request_id, status, NULL, 0);
+}
+
 // --- MAIN THREAD LOOP ---
 void *handle_client(void *socket_desc)
 {
@@ -302,29 +404,56 @@ void *handle_client(void *socket_desc)
                 break;
             }
         }
+        // 4. AUTH CHECK
+        if (current_user_id == -1 && 
+            header.command_type != CMD_REGISTER && 
+            header.command_type != CMD_LOGIN) {
+            
+            LOG_WARN("Unauthorized access attempt from socket %d", sock);
+            send_response(sock, CMD_RESPONSE, header.request_id, STATUS_ERROR_AUTH, NULL, 0);
+            if (payload) free(payload);
+            continue;
+        }
 
-        // 4. Dispatch Command
+        // 5. Dispatch Command
         switch (header.command_type)
         {
-        case CMD_REGISTER:
-            handle_register(sock, &header, payload);
-            break;
-        case CMD_LOGIN:
-        {
-            int uid = handle_login(sock, &header, payload);
-            if (uid > 0)
-                current_user_id = uid;
-            break;
-        }
-        case CMD_GET_FRIEND_LIST:
-            handle_get_friends(sock, &header, current_user_id);
-            break;
-        case CMD_SEND_MESSAGE:
-            handle_send_message(sock, &header, payload);
-            break;
-        case CMD_FETCH_OFFLINE_MSGS:
-            handle_fetch_offline(sock, &header, current_user_id);
-            break;
+            case CMD_REGISTER:
+                handle_register(sock, &header, payload);
+                break;
+            case CMD_LOGIN:
+            {
+                int uid = handle_login(sock, &header, payload);
+                if (uid > 0)
+                    current_user_id = uid;
+                break;
+            }
+            case CMD_GET_FRIEND_LIST:
+                handle_get_friends(sock, &header, current_user_id);
+                break;
+            case CMD_SEND_MESSAGE:
+                handle_send_message(sock, &header, payload);
+                break;
+            case CMD_FETCH_OFFLINE_MSGS:
+                handle_fetch_offline(sock, &header, current_user_id);
+                break;
+        // --- SEARCH ---
+            case CMD_SEARCH_USERS:
+                handle_search_users(sock, &header, payload, current_user_id);
+                break;
+            case CMD_SEND_FRIEND_REQ:
+                handle_send_friend_req(sock, &header, payload, current_user_id);
+                break;
+            case CMD_GET_PENDING_REQS:
+                handle_get_pending_reqs(sock, &header, current_user_id);
+                break;
+            case CMD_RESPOND_FRIEND_REQ:
+                handle_respond_friend_req(sock, &header, payload, current_user_id);
+                break;
+            case CMD_UNFRIEND:
+                handle_unfriend(sock, &header, payload, current_user_id);
+                break;
+
         default:
             LOG_WARN("Unknown Command: %d", header.command_type);
             break;
@@ -344,6 +473,7 @@ void *handle_client(void *socket_desc)
 
         // Notify friends offline
         UserInfoPayload friends[100];
+        memset(friends, 0, sizeof(friends));
         int count = db_get_friends(current_user_id, friends, 100);
         for (int i = 0; i < count; i++)
         {

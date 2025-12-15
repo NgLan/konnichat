@@ -42,6 +42,8 @@ typedef enum {
     CMD_RESPOND_FRIEND_REQ = 42, // Chấp nhận/Từ chối
     CMD_UNFRIEND = 43,
     CMD_NOTIFY_FRIEND_REQ = 44,  // Server báo có lời mời
+    CMD_SEARCH_USERS = 45,       // Client tìm kiếm user
+    CMD_GET_PENDING_REQS = 46,
 
     // 5. Advanced Features 
     CMD_GET_HISTORY = 50,
@@ -49,6 +51,7 @@ typedef enum {
     CMD_RECALL_MESSAGE = 52,     // Thu hồi
     CMD_REACT_MESSAGE = 53,      // Thả tim, like...
     CMD_NOTIFY_UPDATE_MSG = 54,  // Server báo tin nhắn đã bị đổi (thu hồi/react)
+    CMD_NOTIFY_REQ_ACCEPTED = 55,
 
     // 6. Notifications
     CMD_NOTIFY_STATUS = 60,      // Báo online/offline
@@ -120,6 +123,17 @@ typedef struct __attribute__((packed)) {
     // Để đơn giản giai đoạn đầu, tạo nhóm xong mới add member sau.
 } CreateGroupPayload;
 
+// Search (Tìm kiếm)
+typedef struct __attribute__((packed)) {
+    char keyword[50];
+} SearchReqPayload;
+
+typedef struct __attribute__((packed)) {
+    int32_t user_id;
+    char name[64];
+    char email[256];
+} UserSearchInfo;
+
 typedef struct __attribute__((packed)) {
     int32_t group_id;
     int32_t target_user_id; // Người được thêm hoặc bị kick
@@ -129,6 +143,14 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     int32_t target_id;      // Người muốn kết bạn / unfriend
 } FriendReqPayload;
+
+// Pending Request (Lời mời đang chờ)
+typedef struct __attribute__((packed)) {
+    int32_t request_id;
+    int32_t sender_id;
+    char sender_name[64];
+    uint64_t created_at; // Optional
+} PendingReqInfo;
 
 typedef struct __attribute__((packed)) {
     int32_t request_id;     // ID của lời mời kết bạn (trong DB)

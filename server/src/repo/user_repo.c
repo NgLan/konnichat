@@ -90,3 +90,26 @@ void db_update_user_status(int user_id, int is_online)
         LOG_INFO("User %d status updated to: %s", user_id, is_online ? "online" : "offline");
     }
 }
+
+int db_search_users(const char *keyword, int current_id, UserSearchInfo *out, int max)
+{
+    char query[1024];
+    snprintf(query, sizeof(query),
+             "SELECT id, name, email FROM Users WHERE name LIKE '%%%s%%' AND id != %d LIMIT %d",
+             keyword, current_id, max);
+    
+    if (mysql_query(conn, query)) return 0;
+    MYSQL_RES *res = mysql_store_result(conn);
+    int count = 0;
+    if (res) {
+        MYSQL_ROW row;
+        while((row = mysql_fetch_row(res)) && count < max) {
+            out[count].user_id = atoi(row[0]);
+            strncpy(out[count].name, row[1], 63);
+            strncpy(out[count].email, row[2], 255);
+            count++;
+        }
+        mysql_free_result(res);
+    }
+    return count;
+}
