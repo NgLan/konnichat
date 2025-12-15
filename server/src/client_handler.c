@@ -84,7 +84,7 @@ static void handle_register(int sock, PacketHeader *reqHeader, void *payload)
     AuthPayload *data = (AuthPayload *)payload;
     LOG_INFO("Register Request: %s", data->email);
 
-    int success = db_register_user(data->email, data->password);
+    int success = db_register_user(data->name, data->email, data->password);
     int status = success ? STATUS_SUCCESS : STATUS_ERROR_AUTH;
 
     send_response(sock, CMD_RESPONSE, reqHeader->request_id, status, NULL, 0);
@@ -338,7 +338,9 @@ void *handle_client(void *socket_desc)
     if (current_user_id != -1)
     {
         db_update_user_status(current_user_id, 0);
-        remove_connected_client(sock);
+        if (current_user_id != -1) {
+            remove_connected_client(current_user_id); // Truyền ID, đừng truyền sock
+        }
 
         // Notify friends offline
         UserInfoPayload friends[100];

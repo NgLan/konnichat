@@ -82,6 +82,7 @@ typedef struct __attribute__((packed)) {
 
 // 1. Authentication (Login/Register)
 typedef struct __attribute__((packed)) {
+    char name[MAX_NAME_LEN];
     char email[MAX_EMAIL_LEN];
     char password[MAX_PASS_LEN];
 } AuthPayload;

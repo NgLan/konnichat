@@ -13,12 +13,12 @@
  * @brief Registers a new user.
  * @return 1 if success, 0 if failure (e.g., duplicate email).
  */
-int db_register_user(const char *email, const char *password)
+int db_register_user(const char *name, const char *email, const char *password)
 {
     char query[1024];
     snprintf(query, sizeof(query),
-             "INSERT INTO Users (email, password) VALUES ('%s', '%s')",
-             email, password);
+             "INSERT INTO Users (name, email, password) VALUES ('%s', '%s', '%s')",
+             name, email, password);
 
     if (mysql_query(conn, query))
     {

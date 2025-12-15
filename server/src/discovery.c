@@ -16,6 +16,7 @@
 #include "../include/utils/logger.h"
 
 #include <arpa/inet.h>
+#include <unistd.h> // <--- Thêm dòng này để dùng hàm close()
 
 // --- CONFIGURATION ---
 #define UDP_PORT 8888

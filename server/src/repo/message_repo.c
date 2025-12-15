@@ -9,6 +9,10 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <time.h>    // <--- Cần thêm cái này để dùng struct tm, time_t
+#include <stdint.h>
+
+static uint64_t parse_mysql_time(const char *str);
 
 /**
  * @brief Saves a new message to DB.
