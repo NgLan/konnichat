@@ -3,42 +3,179 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="24dp"
-    android:gravity="center">
+    android:padding="16dp"
+    android:background="#FAFAFA">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:weightSum="2"
+        android:layout_marginBottom="8dp">
+
+        <EditText
+            android:id="@+id/etEmail"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Email (e.g., user1@test.com)"
+            android:text="user1@test.com"
+            android:inputType="textEmailAddress"
+            android:textSize="14sp"
+            android:layout_marginEnd="4dp"/>
+
+        <EditText
+            android:id="@+id/etPass"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:hint="Password"
+            android:text="123"
+            android:inputType="textPassword"
+            android:textSize="14sp"
+            android:layout_marginStart="4dp"/>
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:weightSum="10"
+        android:layout_marginBottom="8dp">
+
+        <EditText
+            android:id="@+id/etTargetId"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="3"
+            android:hint="Target ID"
+            android:inputType="number"
+            android:textSize="14sp"
+            android:layout_marginEnd="4dp"/>
+
+        <EditText
+            android:id="@+id/etMessage"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="7"
+            android:hint="Nội dung chat / Payload"
+            android:inputType="text"
+            android:textSize="14sp"
+            android:layout_marginStart="4dp"/>
+    </LinearLayout>
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#DDDDDD"
+        android:layout_marginVertical="8dp"/>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="3"> <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:text="1. AUTHENTICATION"
+            android:textColor="#3F51B5"
+            android:textStyle="bold"
+            android:textSize="12sp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="3">
+
+            <Button android:id="@+id/btnConnect" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Connect" android:layout_marginEnd="2dp"/>
+            <Button android:id="@+id/btnRegister" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Đăng ký" android:layout_marginEnd="2dp"/>
+            <Button android:id="@+id/btnLogin" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Đăng nhập"/>
+        </LinearLayout>
+
+        <TextView
+            android:text="2. FRIEND MANAGEMENT"
+            android:textColor="#009688"
+            android:textStyle="bold"
+            android:textSize="12sp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="4dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="3">
+            <Button android:id="@+id/btnSearch" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Tìm User" android:layout_marginEnd="2dp"/>
+            <Button android:id="@+id/btnGetFriends" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="List Bạn" android:layout_marginEnd="2dp"/>
+            <Button android:id="@+id/btnSendReq" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Gửi KB"/>
+        </LinearLayout>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:orientation="horizontal"
+            android:weightSum="3">
+            <Button android:id="@+id/btnGetPending" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Xem Lời Mời" android:layout_marginEnd="2dp"/>
+            <Button android:id="@+id/btnAccept" style="@style/Widget.AppCompat.Button.Small" android:backgroundTint="#4CAF50" android:textColor="#FFF" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Đồng ý" android:layout_marginEnd="2dp"/>
+            <Button android:id="@+id/btnDeny" style="@style/Widget.AppCompat.Button.Small" android:backgroundTint="#F44336" android:textColor="#FFF" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Từ chối"/>
+        </LinearLayout>
+
+        <TextView
+            android:text="3. CHAT &amp; UTILS"
+            android:textColor="#FF9800"
+            android:textStyle="bold"
+            android:textSize="12sp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:layout_marginBottom="4dp"/>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:weightSum="2">
+            <Button android:id="@+id/btnChat" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Gửi Tin Nhắn" android:layout_marginEnd="2dp"/>
+            <Button android:id="@+id/btnFetchOffline" style="@style/Widget.AppCompat.Button.Small" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:text="Lấy Tin Offline"/>
+        </LinearLayout>
+
+    </LinearLayout>
+    </ScrollView>
 
     <TextView
-        android:id="@+id/tvStatus"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="Chưa kết nối"
-        android:textSize="18sp"
-        android:layout_marginBottom="20dp"/>
-
-    <EditText
-        android:id="@+id/etUsername"
+        android:text="--- SYSTEM LOG ---"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:hint="Tên đăng nhập" />
+        android:gravity="center"
+        android:textSize="10sp"
+        android:textStyle="italic"
+        android:layout_marginTop="8dp"
+        android:textColor="#555"/>
 
-    <EditText
-        android:id="@+id/etPassword"
+    <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:hint="Mật khẩu"
-        android:inputType="textPassword" />
+        android:layout_height="0dp"
+        android:layout_weight="2"
+        android:background="#212121"
+        android:padding="8dp">
 
-    <Button
-        android:id="@+id/btnLogin"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Đăng nhập"
-        android:layout_marginTop="10dp"/>
-
-    <Button
-        android:id="@+id/btnRegister"
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="Đăng ký tài khoản"
-        style="@style/Widget.MaterialComponents.Button.OutlinedButton"/>
+        <TextView
+            android:id="@+id/tvConsole"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="> System ready..."
+            android:textColor="#76FF03"
+            android:fontFamily="monospace"
+            android:textSize="12sp"/>
+    </ScrollView>
 
 </LinearLayout>
