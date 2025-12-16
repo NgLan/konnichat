@@ -11,7 +11,7 @@ class MainActivity : AppCompatActivity() {
 
         // Load thư viện native 'konnichat-client' khi class được khởi tạo
         init {
-            System.loadLibrary("konnichat-client")
+            System.loadLibrary("konnichat")
         }
     }
 
