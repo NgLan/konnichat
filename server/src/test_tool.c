@@ -55,7 +55,7 @@ int main() {
     // --- KỊCH BẢN TEST 1: ĐĂNG KÝ ---
     printf("\n[TEST 1] Thử Đăng ký tài khoản 'testuser'...\n");
     LoginPayload regData;
-    strcpy(regData.username, "testuser");
+    strcpy(regData.email, "testuser");
     strcpy(regData.password, "123456");
 
     send_packet(sock, CMD_REGISTER, &regData, sizeof(LoginPayload));
