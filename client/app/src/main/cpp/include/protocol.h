@@ -1,7 +1,7 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
-#include <stdint.h> 
+#include <stdint.h>
 
 // --- CẤU HÌNH CHUNG ---
 #define SERVER_PORT 8080
@@ -19,83 +19,83 @@ typedef enum {
     CMD_HEARTBEAT = 0,         // Ping/Pong giữ kết nối
 
     // 1. Auth  
-    CMD_REGISTER            = 10,
-    CMD_REGISTER_RESP       = 11, // Phản hồi đăng ký
-    
-    CMD_LOGIN               = 12,
-    CMD_LOGIN_RESP          = 13, // Phản hồi đăng nhập
+    CMD_REGISTER = 10,
+    CMD_REGISTER_RESP = 11, // Phản hồi đăng ký
 
-    CMD_LOGOUT              = 14,
+    CMD_LOGIN = 12,
+    CMD_LOGIN_RESP = 13, // Phản hồi đăng nhập
+
+    CMD_LOGOUT = 14,
 
     // 2. Chat 1-1 
-    CMD_SEND_MESSAGE        = 20, // Client gửi tin
-    CMD_SEND_MESSAGE_RESP   = 21, // Server xác nhận đã nhận (ACK)
-    
-    CMD_RECEIVE_MESSAGE     = 22, // Server đẩy tin nhắn tới người nhận 
+    CMD_SEND_MESSAGE = 20, // Client gửi tin
+    CMD_SEND_MESSAGE_RESP = 21, // Server xác nhận đã nhận (ACK)
+
+    CMD_RECEIVE_MESSAGE = 22, // Server đẩy tin nhắn tới người nhận
 
     // 3. Chat Group 
-    CMD_CREATE_GROUP        = 30,
-    CMD_CREATE_GROUP_RESP   = 31,
+    CMD_CREATE_GROUP = 30,
+    CMD_CREATE_GROUP_RESP = 31,
 
-    CMD_ADD_MEMBER          = 32,
-    CMD_ADD_MEMBER_RESP     = 33,
+    CMD_ADD_MEMBER = 32,
+    CMD_ADD_MEMBER_RESP = 33,
 
-    CMD_REMOVE_MEMBER       = 34,
-    CMD_REMOVE_MEMBER_RESP  = 35,
+    CMD_REMOVE_MEMBER = 34,
+    CMD_REMOVE_MEMBER_RESP = 35,
 
-    CMD_LEAVE_GROUP         = 36,
-    CMD_LEAVE_GROUP_RESP    = 37,
+    CMD_LEAVE_GROUP = 36,
+    CMD_LEAVE_GROUP_RESP = 37,
 
-    CMD_SEND_GROUP_MSG      = 38,
+    CMD_SEND_GROUP_MSG = 38,
     CMD_SEND_GROUP_MSG_RESP = 39,
 
-    CMD_RECEIVE_GROUP_MSG   = 300, // Event push 
+    CMD_RECEIVE_GROUP_MSG = 300, // Event push
 
     // 4. Friend Management 
-    CMD_GET_FRIEND_LIST     = 40,
-    CMD_GET_FRIEND_LIST_RESP= 41,
+    CMD_GET_FRIEND_LIST = 40,
+    CMD_GET_FRIEND_LIST_RESP = 41,
 
-    CMD_SEND_FRIEND_REQ     = 42,
-    CMD_SEND_FRIEND_REQ_RESP= 43,
+    CMD_SEND_FRIEND_REQ = 42,
+    CMD_SEND_FRIEND_REQ_RESP = 43,
 
-    CMD_RESPOND_FRIEND_REQ  = 44, // Chấp nhận/Từ chối yêu cầu kết bạn
+    CMD_RESPOND_FRIEND_REQ = 44, // Chấp nhận/Từ chối yêu cầu kết bạn
     CMD_RESPOND_FRIEND_REQ_RESP = 45,
 
-    CMD_UNFRIEND            = 46,
-    CMD_UNFRIEND_RESP       = 47,
-    
-    CMD_GET_PENDING_REQS    = 48,
+    CMD_UNFRIEND = 46,
+    CMD_UNFRIEND_RESP = 47,
+
+    CMD_GET_PENDING_REQS = 48,
     CMD_GET_PENDING_REQS_RESP = 49,
 
     // 5. Search
-    CMD_SEARCH_USERS        = 60,
-    CMD_SEARCH_USERS_RESP   = 61,
+    CMD_SEARCH_USERS = 60,
+    CMD_SEARCH_USERS_RESP = 61,
 
     // 6. Advanced Features 
-    CMD_GET_HISTORY         = 70,
-    CMD_GET_HISTORY_RESP    = 71,
+    CMD_GET_HISTORY = 70,
+    CMD_GET_HISTORY_RESP = 71,
 
-    CMD_FETCH_OFFLINE_MSGS  = 72,
+    CMD_FETCH_OFFLINE_MSGS = 72,
     CMD_FETCH_OFFLINE_MSGS_RESP = 73,
 
     CMD_RECALL_MESSAGE = 52,     // Thu hồi
     CMD_REACT_MESSAGE = 53,      // Thả tim, like...
 
     // 6. Notifications
-    CMD_NOTIFY_FRIEND_REQ   = 80,  // Có lời mời kết bạn mới
+    CMD_NOTIFY_FRIEND_REQ = 80,  // Có lời mời kết bạn mới
     CMD_NOTIFY_REQ_ACCEPTED = 81,  // Lời mời đã được chấp nhận
-    CMD_NOTIFY_STATUS       = 82,  // Bạn bè on/off
-    CMD_NOTIFY_UPDATE_MSG   = 83,  // Tin nhắn bị thu hồi/react
+    CMD_NOTIFY_STATUS = 82,  // Bạn bè on/off
+    CMD_NOTIFY_UPDATE_MSG = 83,  // Tin nhắn bị thu hồi/react
 
     // 99. Error 
-    CMD_ERROR_UNKNOWN       = 999            
+    CMD_ERROR_UNKNOWN = 999
 } CommandType;
 
 // --- MÃ TRẠNG THÁI ---
 typedef enum {
     STATUS_SUCCESS = 0,
     STATUS_ERROR_UNKNOWN = 1,
-    STATUS_ERROR_AUTH = 2,       
+    STATUS_ERROR_AUTH = 2,
     STATUS_ERROR_USER_NOT_FOUND = 3,
     STATUS_ERROR_DB = 4,
     STATUS_ERROR_INVALID_PARAM = 5,

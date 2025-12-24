@@ -81,18 +81,18 @@ static void discard_payload(int sock, int size)
 // --- LOGIC HANDLERS ---
 static void handle_register(int sock, PacketHeader *reqHeader, void *payload)
 {
-    AuthPayload *data = (AuthPayload *)payload;
+    RegisterPayload *data = (RegisterPayload *)payload;
     LOG_INFO("Register Request: %s", data->email);
 
     int success = db_register_user(data->name, data->email, data->password);
     int status = success ? STATUS_SUCCESS : STATUS_ERROR_AUTH;
 
-    send_response(sock, CMD_RESPONSE, reqHeader->request_id, status, NULL, 0);
+    send_response(sock, CMD_REGISTER_RESP, reqHeader->request_id, status, NULL, 0);
 }
 
 static int handle_login(int sock, PacketHeader *reqHeader, void *payload)
 {
-    AuthPayload *data = (AuthPayload *)payload;
+    LoginPayload *data = (LoginPayload *)payload;
     LOG_INFO("Login Request: %s", data->email);
 
     UserInfoPayload userInfo;
@@ -103,7 +103,7 @@ static int handle_login(int sock, PacketHeader *reqHeader, void *payload)
     if (userId > 0)
     {
         // 1. Send Success Response
-        send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_SUCCESS, &userInfo, sizeof(UserInfoPayload));
+        send_response(sock, CMD_LOGIN_RESP, reqHeader->request_id, STATUS_SUCCESS, &userInfo, sizeof(UserInfoPayload));
 
         // 2. Update State
         db_update_user_status(userId, 1);
@@ -128,7 +128,7 @@ static int handle_login(int sock, PacketHeader *reqHeader, void *payload)
     }
     else
     {
-        send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
+        send_response(sock, CMD_LOGIN_RESP, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
         LOG_WARN("Login failed: %s", data->email);
         return -1;
     }
@@ -140,7 +140,7 @@ static void handle_get_friends(int sock, PacketHeader *reqHeader, int current_us
     if (current_user_id == -1)
     {
         LOG_WARN("Unauthenticated request for Friend List.");
-        send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
+        send_response(sock, CMD_GET_FRIEND_LIST_RESP, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
         return;
     }
 
@@ -151,7 +151,7 @@ static void handle_get_friends(int sock, PacketHeader *reqHeader, int current_us
     PacketHeader respHeader;
     memset(&respHeader, 0, sizeof(PacketHeader));
     respHeader.version = PROTOCOL_VERSION;
-    respHeader.command_type = CMD_RESPONSE;
+    respHeader.command_type = CMD_GET_FRIEND_LIST_RESP;
     respHeader.request_id = reqHeader->request_id;
     respHeader.status_code = STATUS_SUCCESS;
 
@@ -206,11 +206,11 @@ static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload
 
         // 4. Phản hồi cho người gửi để họ cập nhật UI (VD: hiện dấu tích "Đã gửi")
         chat->message_id = new_msg_id;
-        send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_SUCCESS, chat, sizeof(ChatPayload));
+        send_response(sock, CMD_SEND_MESSAGE_RESP, reqHeader->request_id, STATUS_SUCCESS, chat, sizeof(ChatPayload));
     }
     else
     {
-        send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
+        send_response(sock, CMD_SEND_MESSAGE_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
     }
 }
 
@@ -220,7 +220,7 @@ static void handle_fetch_offline(int sock, PacketHeader *reqHeader, int current_
     if (current_user_id == -1)
     {
         LOG_WARN("Unauthenticated request for Offline Messages.");
-        send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
+        send_response(sock, CMD_FETCH_OFFLINE_MSGS_RESP, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
         return;
     }
 
@@ -231,7 +231,7 @@ static void handle_fetch_offline(int sock, PacketHeader *reqHeader, int current_
     PacketHeader respHeader;
     memset(&respHeader, 0, sizeof(PacketHeader));
     respHeader.version = PROTOCOL_VERSION;
-    respHeader.command_type = CMD_RESPONSE;
+    respHeader.command_type = CMD_FETCH_OFFLINE_MSGS_RESP;
     respHeader.request_id = reqHeader->request_id;
     respHeader.status_code = STATUS_SUCCESS;
 
@@ -275,7 +275,7 @@ static void handle_search_users(int sock, PacketHeader *reqHeader, void *payload
         memcpy((char*)resp_buffer + sizeof(int32_t), results, count * sizeof(UserSearchInfo));
     }
 
-    send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_SUCCESS, resp_buffer, payload_size);
+    send_response(sock, CMD_SEARCH_USERS_RESP, reqHeader->request_id, STATUS_SUCCESS, resp_buffer, payload_size);
     free(resp_buffer);
 }
 
@@ -287,7 +287,7 @@ static void handle_send_friend_req(int sock, PacketHeader *reqHeader, void *payl
     
     // Phản hồi cho người gửi
     int status = (result_id > 0) ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
-    send_response(sock, CMD_RESPONSE, reqHeader->request_id, status, NULL, 0);
+    send_response(sock, CMD_SEND_FRIEND_REQ_RESP, reqHeader->request_id, status, NULL, 0);
 
     // --- REAL-TIME NOTIFICATION ---
     if (result_id > 0) {
@@ -320,7 +320,7 @@ static void handle_get_pending_reqs(int sock, PacketHeader *reqHeader, int curre
         memcpy((char*)resp_buffer + sizeof(int32_t), list, count * sizeof(PendingReqInfo));
     }
 
-    send_response(sock, CMD_RESPONSE, reqHeader->request_id, STATUS_SUCCESS, resp_buffer, payload_size);
+    send_response(sock, CMD_GET_PENDING_REQS_RESP, reqHeader->request_id, STATUS_SUCCESS, resp_buffer, payload_size);
     free(resp_buffer);
 }
 
@@ -331,7 +331,7 @@ static void handle_respond_friend_req(int sock, PacketHeader *reqHeader, void *p
     int success = db_respond_friend_request(resp->request_id, current_user_id, resp->is_accepted, &sender_id_of_req);
     int status = success ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
 
-    send_response(sock, CMD_RESPONSE, reqHeader->request_id, status, NULL, 0);
+    send_response(sock, CMD_RESPOND_FRIEND_REQ_RESP, reqHeader->request_id, status, NULL, 0);
 
     // --- REAL-TIME NOTIFICATION (Báo cho người gửi biết) ---
     if (success && resp->is_accepted && sender_id_of_req > 0) {
@@ -354,7 +354,7 @@ static void handle_unfriend(int sock, PacketHeader *reqHeader, void *payload, in
     int success = db_remove_friend(current_user_id, req->target_id);
     int status = success ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
     
-    send_response(sock, CMD_RESPONSE, reqHeader->request_id, status, NULL, 0);
+    send_response(sock, CMD_UNFRIEND_RESP, reqHeader->request_id, status, NULL, 0);
 }
 
 // --- MAIN THREAD LOOP ---
@@ -404,13 +404,14 @@ void *handle_client(void *socket_desc)
                 break;
             }
         }
+
         // 4. AUTH CHECK
         if (current_user_id == -1 && 
             header.command_type != CMD_REGISTER && 
             header.command_type != CMD_LOGIN) {
             
             LOG_WARN("Unauthorized access attempt from socket %d", sock);
-            send_response(sock, CMD_RESPONSE, header.request_id, STATUS_ERROR_AUTH, NULL, 0);
+            send_response(sock, CMD_ERROR_UNKNOWN, header.request_id, STATUS_ERROR_AUTH, NULL, 0);
             if (payload) free(payload);
             continue;
         }
@@ -468,7 +469,7 @@ void *handle_client(void *socket_desc)
     {
         db_update_user_status(current_user_id, 0);
         if (current_user_id != -1) {
-            remove_connected_client(current_user_id); // Truyền ID, đừng truyền sock
+            remove_connected_client(current_user_id); 
         }
 
         // Notify friends offline
