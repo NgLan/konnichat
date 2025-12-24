@@ -3,7 +3,7 @@ CREATE DATABASE konnichat CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE konnichat;
 
 -- 1. Bảng USERS
-CREATE TABLE Users (
+CREATE TABLE users (
     id INT AUTO_INCREMENT PRIMARY KEY,
     email VARCHAR(100) NOT NULL UNIQUE,
     password VARCHAR(255) NOT NULL,
@@ -19,7 +19,7 @@ CREATE TABLE Users (
 );
 
 -- 2. Bảng FRIEND_REQUESTS (Lời mời kết bạn)
-CREATE TABLE FriendRequests (
+CREATE TABLE friend_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
     sender_id INT NOT NULL,
     receiver_id INT NOT NULL,
@@ -33,7 +33,7 @@ CREATE TABLE FriendRequests (
 );
 
 -- 3. Bảng FRIENDS (Bạn bè chính thức)
-CREATE TABLE Friends (
+CREATE TABLE friends (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     friend_id INT NOT NULL,
@@ -46,20 +46,21 @@ CREATE TABLE Friends (
 );
 
 -- 4. Bảng MESSAGES (Chat 1-1)
-CREATE TABLE Messages (
+CREATE TABLE messages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     sender_id INT NOT NULL,
-    receiver_id INT NOT NULL,
+    receiver_id INT NOT NULL, -- Lưu UserID (nếu p2p) hoặc GroupID (nếu group)
+    chat_type VARCHAR(10) NOT NULL, -- Phân loại: 'p2p' (Chat đơn), 'group' (Chat nhóm)
     content TEXT CHARACTER SET utf8mb4 NOT NULL,
     status VARCHAR(20) DEFAULT 'sent', -- Status: 'sent', 'delivered', 'read', 'revoked', 'deleted'
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
     FOREIGN KEY (sender_id) REFERENCES Users(id) ON DELETE CASCADE,
-    FOREIGN KEY (receiver_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
 -- 5. Bảng GROUPS (Nhóm)
-CREATE TABLE `Groups` (
+CREATE TABLE `groups` (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL,
     avatar_url TEXT,
@@ -69,7 +70,7 @@ CREATE TABLE `Groups` (
 );
 
 -- 6. Bảng GROUP_MEMBERS
-CREATE TABLE GroupMembers (
+CREATE TABLE group_members (
     id INT AUTO_INCREMENT PRIMARY KEY,
     group_id INT NOT NULL,
     member_id INT NOT NULL,
@@ -83,20 +84,8 @@ CREATE TABLE GroupMembers (
     UNIQUE KEY unique_group_member (group_id, member_id)
 );
 
--- 7. Bảng GROUP_MESSAGES
-CREATE TABLE GroupMessages (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    group_id INT NOT NULL,
-    sender_id INT NOT NULL,
-    content TEXT CHARACTER SET utf8mb4 NOT NULL,
-    status VARCHAR(20) DEFAULT 'sent', -- Status: 'sent', 'delivered', 'revoked', 'deleted'
-    created_at TIMESTAMP NOT NULL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (group_id) REFERENCES `Groups`(id) ON DELETE CASCADE,
-    FOREIGN KEY (sender_id) REFERENCES Users(id) ON DELETE CASCADE
-);
-
-CREATE TABLE Icons (
+-- 7. Bảng ICONS (Biểu tượng cảm xúc)
+CREATE TABLE icons (
     id INT AUTO_INCREMENT PRIMARY KEY,
     -- icon: (ví dụ: 'like', 'love', 'haha')
     icon VARCHAR(50) NOT NULL UNIQUE, 
@@ -105,36 +94,19 @@ CREATE TABLE Icons (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE MessageReactions (
+-- 8. Bảng REACTIONS (Thả cảm xúc vào tin nhắn)
+CREATE TABLE reactions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL, -- Người thả reaction
     icon_id INT NOT NULL, -- Loại icon 
-    
-    -- Link tới tin nhắn 1-1 (Có thể NULL nếu đây là reaction nhóm)
-    message_id INT DEFAULT NULL,
-    
-    -- Link tới tin nhắn Nhóm (Có thể NULL nếu đây là reaction 1-1)
-    group_message_id INT DEFAULT NULL,
-    
+    message_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     
-    -- Khóa ngoại
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (icon_id) REFERENCES Icons(id) ON DELETE CASCADE,
     FOREIGN KEY (message_id) REFERENCES Messages(id) ON DELETE CASCADE,
-    FOREIGN KEY (group_message_id) REFERENCES GroupMessages(id) ON DELETE CASCADE,
 
-    -- Ràng buộc logic: Một dòng chỉ được phép thuộc về 1 loại tin nhắn
-    -- (Hoặc là message_id có dữ liệu, hoặc là group_message_id có dữ liệu, không được cả 2 cùng có)
-    CONSTRAINT check_reaction_target CHECK (
-        (message_id IS NOT NULL AND group_message_id IS NULL) OR 
-        (message_id IS NULL AND group_message_id IS NOT NULL)
-    ),
-
-    -- Ràng buộc logic: Một người chỉ được thả 1 reaction cho 1 tin nhắn
-    -- (Nếu thả lại sẽ update dòng cũ chứ không tạo dòng mới)
-    UNIQUE KEY unique_user_p2p_react (user_id, message_id),
-    UNIQUE KEY unique_user_group_react (user_id, group_message_id)
+    UNIQUE KEY unique_user_react (user_id, message_id)
 );
 
 -- INSERT DỮ LIỆU MẪU
