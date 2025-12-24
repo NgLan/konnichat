@@ -56,7 +56,7 @@ CREATE TABLE messages (
     created_at TIMESTAMP NOT NULL,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     
-    FOREIGN KEY (sender_id) REFERENCES Users(id) ON DELETE CASCADE,
+    FOREIGN KEY (sender_id) REFERENCES Users(id) ON DELETE CASCADE
 );
 
 -- 5. Bảng GROUPS (Nhóm)
@@ -150,9 +150,3 @@ WHERE email IN (
 -- ('haha', 'ic_reaction_haha'),
 -- ('sad', 'ic_reaction_sad'),
 -- ('angry', 'ic_reaction_angry'); 
-
--- -- Giả sử User 1 thả tim (love - ID 2) vào tin nhắn số 1 (Chat 1-1)
--- INSERT INTO MessageReactions (user_id, icon_id, message_id) VALUES (1, 2, 1);
-
--- -- Giả sử User 2 thả haha (haha - ID 3) vào tin nhắn nhóm số 5
--- INSERT INTO MessageReactions (user_id, icon_id, group_message_id) VALUES (2, 3, 5);
