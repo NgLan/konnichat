@@ -18,12 +18,12 @@ int main()
     init_connection_manager();
 
     // 2. Khởi động dịch vụ tìm kiếm UDP (Chạy ngầm)
-    pthread_t udp_thread;
-    if (pthread_create(&udp_thread, NULL, udp_discovery_service, NULL) != 0) {
-        LOG_ERROR("Failed to start UDP Discovery Service.");
-    } else {
-        pthread_detach(udp_thread);
-    }
+    // pthread_t udp_thread;
+    // if (pthread_create(&udp_thread, NULL, udp_discovery_service, NULL) != 0) {
+    //     LOG_ERROR("Failed to start UDP Discovery Service.");
+    // } else {
+    //     pthread_detach(udp_thread);
+    // }
 
     // 3. Khởi động TCP Server (Chạy chính, block)
     start_tcp_server();
