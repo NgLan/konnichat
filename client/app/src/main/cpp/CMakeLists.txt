@@ -28,7 +28,9 @@ include_directories(${CMAKE_SOURCE_DIR}/include)
 # used in the AndroidManifest.xml file.
 add_library(${CMAKE_PROJECT_NAME} SHARED
         # List C/C++ source files with relative paths to this CMakeLists.txt.
-        native-lib.c
+        src/utils/logger_utils.c
+        src/jni_bridge.c
+        src/native_core.c
 )
 
 # Specifies libraries CMake should link to your target library. You

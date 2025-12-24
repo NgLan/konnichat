@@ -16,7 +16,6 @@ SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/client_handler.c \
        $(SRC_DIR)/database.c \
        $(SRC_DIR)/dotenv.c \
-       $(SRC_DIR)/discovery.c \
        $(SRC_DIR)/connection_manager.c \
        $(SRC_DIR)/tcp_server.c \
        $(REPO_DIR)/user_repo.c \
