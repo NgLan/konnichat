@@ -2,7 +2,7 @@
 #define LOGGER_UTILS_H
 
 #include <android/log.h>
-#include "../../protocol.h"
+#include "../protocol.h"
 
 #define TAG "KONNI_NATIVE"
 

@@ -5,7 +5,6 @@
 
 // --- CẤU HÌNH CHUNG ---
 #define SERVER_PORT 8080
-// #define UDP_PORT 8888
 #define PROTOCOL_VERSION 1
 
 #define MAX_EMAIL_LEN 256

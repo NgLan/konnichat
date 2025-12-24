@@ -12,13 +12,13 @@ import java.util.Date
     foreignKeys = [
         ForeignKey(
             entity = UserEntity::class,
-            parentColumns = ["id"],
+            parentColumns = ["server_id"],
             childColumns = ["user_id"],
             onDelete = ForeignKey.CASCADE
         ),
         ForeignKey(
             entity = UserEntity::class,
-            parentColumns = ["id"],
+            parentColumns = ["server_id"],
             childColumns = ["friend_id"],
             onDelete = ForeignKey.CASCADE
         )

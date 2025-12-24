@@ -10,8 +10,18 @@ import java.util.Date
     tableName = "group_members",
     primaryKeys = ["group_id", "member_id"],
     foreignKeys = [
-        ForeignKey(entity = GroupEntity::class, parentColumns = ["id"], childColumns = ["group_id"], onDelete = ForeignKey.CASCADE),
-        ForeignKey(entity = UserEntity::class, parentColumns = ["id"], childColumns = ["member_id"], onDelete = ForeignKey.CASCADE)
+        ForeignKey(
+            entity = GroupEntity::class,
+            parentColumns = ["server_id"],
+            childColumns = ["group_id"],
+            onDelete = ForeignKey.CASCADE
+        ),
+        ForeignKey(
+            entity = UserEntity::class,
+            parentColumns = ["server_id"],
+            childColumns = ["member_id"],
+            onDelete = ForeignKey.CASCADE
+        )
     ],
     indices = [Index("group_id"), Index("member_id")]
 )

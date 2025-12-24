@@ -12,7 +12,7 @@ import java.util.Date
     foreignKeys = [
         ForeignKey(
             entity = UserEntity::class,
-            parentColumns = ["id"],
+            parentColumns = ["server_id"],
             childColumns = ["sender_id"],
             onDelete = ForeignKey.CASCADE
         )

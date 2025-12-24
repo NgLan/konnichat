@@ -4,8 +4,16 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.example.konnichat.data.local.converter.DateConverter
-import com.example.konnichat.data.local.dao.*
-import com.example.konnichat.data.local.entity.*
+import com.example.konnichat.data.local.dao.MessageDao
+import com.example.konnichat.data.local.dao.UserDao
+import com.example.konnichat.data.local.entity.FriendEntity
+import com.example.konnichat.data.local.entity.FriendRequestEntity
+import com.example.konnichat.data.local.entity.GroupEntity
+import com.example.konnichat.data.local.entity.GroupMemberEntity
+import com.example.konnichat.data.local.entity.IconEntity
+import com.example.konnichat.data.local.entity.MessageEntity
+import com.example.konnichat.data.local.entity.ReactionEntity
+import com.example.konnichat.data.local.entity.UserEntity
 
 @Database(
     entities = [
@@ -15,7 +23,8 @@ import com.example.konnichat.data.local.entity.*
         MessageEntity::class,
         GroupEntity::class,
         GroupMemberEntity::class,
-        ReactionEntity::class
+        ReactionEntity::class,
+        IconEntity::class
     ],
     version = 1,
     exportSchema = false

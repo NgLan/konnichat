@@ -2,7 +2,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "../include/native_core.h"
-#include "../../include/utils/logger_utils.h"
+#include "../include/utils/logger_utils.h"
 #include <android/log.h>
 
 // --- Global Cache (Để tối ưu hiệu năng) ---
@@ -17,6 +17,9 @@ static jclass g_ServerException;
 static jclass g_NetworkException;
 static jclass g_ProtocolException;
 static jclass g_UnknownException;
+
+// Helper
+void throw_unified_error(JNIEnv *env, int result_code);
 
 // --- JNI_OnLoad: Chạy 1 lần khi App start ---
 jint JNI_OnLoad(JavaVM *vm, void *reserved) {
@@ -62,8 +65,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 
 // --- Implementation ---
 
-jint
-Java_com_example_konnichat_data_remote_NativeClient_connect(JNIEnv *env, jobject thiz, jstring ip,
+jint Java_com_example_konnichat_data_remote_NativeClient_connect(JNIEnv *env, jobject thiz, jstring ip,
                                                             jint port) {
     const char *native_ip = (*env)->GetStringUTFChars(env, ip, 0);
     int result = client_init(native_ip, (int) port);
@@ -126,7 +128,7 @@ jobject Java_com_example_konnichat_data_remote_NativeClient_loginUser(JNIEnv *en
                                             userInfo.user_id, jName, jEmail, jIsOnline);
         return userObj;
     } else {
-        throw_native_error(env, status);
+        throw_unified_error(env, status);
         return NULL;
     }
 }

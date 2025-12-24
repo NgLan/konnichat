@@ -1,5 +1,5 @@
 #include "../include/native_core.h"
-#include "../../include/utils/logger_utils.h"
+#include "../include/utils/logger_utils.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,9 +8,11 @@
 #include <arpa/inet.h>
 #include <android/log.h>
 #include <time.h>
+#include <pthread.h>
 
 static int g_socket = -1;
 static int g_req_id = 0;
+static pthread_mutex_t g_client_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 // Helper: Lấy timestamp hiện tại
 static uint64_t get_timestamp() {
@@ -152,6 +154,8 @@ void client_close() {
 }
 
 int client_register(const char *name, const char *email, const char *password) {
+    pthread_mutex_lock(&g_client_mutex);
+
     RegisterPayload payload;
     memset(&payload, 0, sizeof(payload));
     strncpy(payload.name, name, MAX_NAME_LEN - 1);
@@ -160,20 +164,27 @@ int client_register(const char *name, const char *email, const char *password) {
 
     // Gửi Request
     if (send_request(CMD_REGISTER, &payload, sizeof(payload)) < 0) {
+        pthread_mutex_unlock(&g_client_mutex);
         return ERR_NETWORK_SEND_FAILED;
     }
 
     // Nhận Response
     PacketHeader resp;
-    int status = recv_header_response(&resp, CMD_REGISTER_RESP);
-    if (status < 0) return status;
+    int status = recv_and_validate_header(&resp, CMD_REGISTER_RESP);
+    if (status < 0) {
+        pthread_mutex_unlock(&g_client_mutex);
+        return status;
+    }
 
     if (resp.payload_size > 0) discard_payload(g_socket, resp.payload_size);
 
+    pthread_mutex_unlock(&g_client_mutex);
     return resp.status_code;
 }
 
 int client_login(const char *email, const char *password, UserInfoPayload *user_out) {
+    pthread_mutex_lock(&g_client_mutex);
+
     LoginPayload payload;
     memset(&payload, 0, sizeof(payload));
     strncpy(payload.email, email, MAX_EMAIL_LEN - 1);
@@ -181,6 +192,7 @@ int client_login(const char *email, const char *password, UserInfoPayload *user_
 
     // Gửi Request
     if (send_request(CMD_LOGIN, &payload, sizeof(payload)) < 0) {
+        pthread_mutex_unlock(&g_client_mutex);
         return ERR_NETWORK_SEND_FAILED;
     }
 
@@ -193,13 +205,17 @@ int client_login(const char *email, const char *password, UserInfoPayload *user_
         // Nếu thành công, Server sẽ gửi kèm UserInfoPayload
         if (resp.payload_size == sizeof(UserInfoPayload)) {
             if (recv_all(g_socket, user_out, sizeof(UserInfoPayload)) < 0) {
+                pthread_mutex_unlock(&g_client_mutex);
                 return ERR_NETWORK_RECV_FAILED;
             }
+
+            pthread_mutex_unlock(&g_client_mutex);
             return STATUS_SUCCESS;
         } else {
             LOGE("Payload size mismatch! Expected %zu, got %d", sizeof(UserInfoPayload),
                  resp.payload_size);
             discard_payload(g_socket, resp.payload_size);
+            pthread_mutex_unlock(&g_client_mutex);
             return ERR_PROTOCOL_SIZE_ERR;
         }
     } else {
@@ -207,6 +223,7 @@ int client_login(const char *email, const char *password, UserInfoPayload *user_
         if (resp.payload_size > 0) {
             discard_payload(g_socket, resp.payload_size);
         }
+        pthread_mutex_unlock(&g_client_mutex);
         return resp.status_code;
     }
 }
