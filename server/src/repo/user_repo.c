@@ -22,10 +22,15 @@ int db_register_user(const char *name, const char *email, const char *password)
 
     if (mysql_query(conn, query))
     {
-        LOG_ERROR("Register DB Error: %s", mysql_error(conn));
-        return 0;
+        unsigned int err_no = mysql_errno(conn);
+        LOG_ERROR("Register DB Error (%u): %s", err_no, mysql_error(conn));
+        
+        if (err_no == 1062) { // ER_DUP_ENTRY
+            return -1; // Lỗi trùng email
+        }
+        return 0; // Lỗi DB khác
     }
-    return 1;
+    return 1; // Thành công
 }
 
 /**

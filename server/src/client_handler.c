@@ -162,8 +162,16 @@ static void handle_register(int sock, PacketHeader *reqHeader, void *payload)
     RegisterPayload *data = (RegisterPayload *)payload;
     LOG_INFO("Register Request: %s", data->email);
 
-    int success = db_register_user(data->name, data->email, data->password);
-    int status = success ? STATUS_SUCCESS : STATUS_ERROR_AUTH;
+    int result = db_register_user(data->name, data->email, data->password);
+    
+    int status;
+    if (result == 1) {
+        status = STATUS_SUCCESS;
+    } else if (result == -1) {
+        status = STATUS_ERROR_ALREADY_EXIST; 
+    } else {
+        status = STATUS_ERROR_DB;
+    }
 
     send_response(sock, CMD_REGISTER_RESP, reqHeader->request_id, status, NULL, 0);
 }
