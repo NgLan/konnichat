@@ -18,7 +18,7 @@ static pthread_mutex_t g_client_mutex = PTHREAD_MUTEX_INITIALIZER;
 static uint64_t get_timestamp() {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    return (uint64_t)(ts.tv_sec) * 1000 + (uint64_t)(ts.tv_nsec) / 1000000;
+    return (uint64_t) (ts.tv_sec) * 1000 + (uint64_t) (ts.tv_nsec) / 1000000;
 }
 
 // Helper: Gửi full data
@@ -226,4 +226,66 @@ int client_login(const char *email, const char *password, UserInfoPayload *user_
         pthread_mutex_unlock(&g_client_mutex);
         return resp.status_code;
     }
+}
+
+/*
+ * Hàm lấy danh sách bạn bè
+ * out_friends: Danh sách bạn bè
+ * offset: Bắt đầu từ 0
+ * limit: Mặc định 20 - 100
+ * return: Số lượng thực tế lấy được (hoặc mã lỗi âm)
+ */
+int client_get_friends(int offset, int limit, UserInfoPayload *out_friends) {
+
+    // 1. Chuẩn bị Request Payload
+    GetFriendListReq req;
+    req.offset = offset;
+    req.limit = limit;
+
+    // 2. Gửi Request
+    if (send_request(CMD_GET_FRIEND_LIST, &req, sizeof(req)) < 0) {
+        return ERR_NETWORK_SEND_FAILED;
+    }
+
+    // 3. Nhận Header
+    PacketHeader resp;
+    int err = recv_and_validate_header(&resp, CMD_GET_FRIEND_LIST_RESP);
+    if (err < 0) return err;
+
+    if (resp.status_code != STATUS_SUCCESS) {
+        if (resp.payload_size > 0) discard_payload(g_socket, resp.payload_size);
+        return resp.status_code; // Trả về lỗi Server (dương)
+    }
+
+    // 4. Xử lý Payload danh sách
+    // Cấu trúc: [Count (4 bytes)] + [Array]
+    int32_t count = 0;
+
+    // Đọc Count trước
+    if (recv_all(g_socket, &count, sizeof(int32_t)) < 0) {
+        return ERR_NETWORK_RECV_FAILED;
+    }
+
+    LOGI("Friend List Resp: Count=%d", count);
+
+    // Nếu Count = 0, xong
+    if (count == 0) return 0;
+
+    // Nếu Count > limit request -> Có vấn đề (Server trả về quá nhiều so với bộ nhớ Client chuẩn bị)
+    if (count > limit) {
+        LOGE("Server returned too many items (%d) vs buffer size (%d)", count, limit);
+        // Đọc phần cho phép
+        recv_all(g_socket, out_friends, limit * sizeof(UserInfoPayload));
+        // Discard phần thừa
+        discard_payload(g_socket, (count - limit) * sizeof(UserInfoPayload));
+        return limit; // Chỉ trả về số lượng đã đọc
+    }
+
+    // Đọc Array Data
+    int data_size = count * sizeof(UserInfoPayload);
+    if (recv_all(g_socket, out_friends, data_size) < 0) {
+        return ERR_NETWORK_RECV_FAILED;
+    }
+
+    return count;
 }

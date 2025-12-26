@@ -3,7 +3,11 @@
 
 #include "../../include/protocol.h"
 
-int db_get_friends(int user_id, UserInfoPayload *friends_out, int max_count);
+// Lấy danh sách bạn bè với phân trang
+int db_get_friends(int user_id, int offset, int limit, UserInfoPayload *friends_out);
+
+// Lấy danh sách ID bạn bè
+int db_get_friend_ids(int user_id, int *ids_out, int limit, int offset);
 
 // Gửi lời mời kết bạn. Trả về RequestID (>0) nếu thành công.
 int db_send_friend_request(int sender_id, int target_id);

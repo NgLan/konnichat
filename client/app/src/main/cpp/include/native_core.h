@@ -38,4 +38,6 @@ int client_register(const char *name, const char *email, const char *password);
 // Gửi lệnh đăng nhập (Trả về STATUS code, nếu thành công thì điền dữ liệu vào user_out)
 int client_login(const char *email, const char *password, UserInfoPayload *user_out);
 
+int client_get_friends(int offset, int limit, UserInfoPayload *out_friends);
+
 #endif // NATIVE_CORE_H
