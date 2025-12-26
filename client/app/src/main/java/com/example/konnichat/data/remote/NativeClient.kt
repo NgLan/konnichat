@@ -7,6 +7,8 @@ object NativeClient {
         System.loadLibrary("konnichat")
     }
 
+    external fun startListening(listener: NativeEventListener)
+
     // Kết nối đến server socket
     external fun connect(ip: String, port: Int): Int
 
