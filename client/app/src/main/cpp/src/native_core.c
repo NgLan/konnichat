@@ -12,13 +12,18 @@
 
 static int g_socket = -1;
 static int g_req_id = 0;
+static int g_is_running = 0;
+static pthread_t g_read_thread;
+static pthread_mutex_t g_send_mutex = PTHREAD_MUTEX_INITIALIZER; // Khóa bảo vệ khi gửi
 static pthread_mutex_t g_client_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static NativeCallbacks g_callbacks;
 
 // Helper: Lấy timestamp hiện tại
 static uint64_t get_timestamp() {
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    return (uint64_t)(ts.tv_sec) * 1000 + (uint64_t)(ts.tv_nsec) / 1000000;
+    return (uint64_t) (ts.tv_sec) * 1000 + (uint64_t) (ts.tv_nsec) / 1000000;
 }
 
 // Helper: Gửi full data
@@ -199,7 +204,10 @@ int client_login(const char *email, const char *password, UserInfoPayload *user_
     // Nhận Header
     PacketHeader resp;
     int status = recv_and_validate_header(&resp, CMD_LOGIN_RESP);
-    if (status < 0) return status;
+    if (status < 0) {
+        pthread_mutex_unlock(&g_client_mutex);
+        return status;
+    }
 
     if (resp.status_code == STATUS_SUCCESS) {
         // Nếu thành công, Server sẽ gửi kèm UserInfoPayload
@@ -226,4 +234,113 @@ int client_login(const char *email, const char *password, UserInfoPayload *user_
         pthread_mutex_unlock(&g_client_mutex);
         return resp.status_code;
     }
+}
+
+/*
+ * Hàm lấy danh sách bạn bè
+ * out_friends: Danh sách bạn bè
+ * offset: Bắt đầu từ 0
+ * limit: Mặc định 20 - 100
+ * return: Số lượng thực tế lấy được (hoặc mã lỗi âm)
+ */
+int client_get_friends(int offset, int limit, UserInfoPayload *out_friends) {
+    if (limit < 1) limit = 20;
+    if (limit > 100) limit = 100;
+
+    // 1. Chuẩn bị Request Payload
+    GetFriendListReq req;
+    req.offset = offset;
+    req.limit = limit;
+
+    // 2. Gửi Request
+    pthread_mutex_lock(&g_send_mutex);
+    int res = send_request(CMD_GET_FRIEND_LIST, &req, sizeof(req));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
+// --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
+static void handle_incoming_packet(PacketHeader *header) {
+    // 1. Xử lý FRIEND LIST
+    if (header->command_type == CMD_GET_FRIEND_LIST_RESP) {
+        int32_t count = 0;
+        if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
+
+        if (count > 0) {
+            int data_size = count * sizeof(UserInfoPayload);
+            UserInfoPayload* friends = (UserInfoPayload*)malloc(data_size);
+            if (recv_all(g_socket, friends, data_size) > 0) {
+                // GỌI CALLBACK
+                if (g_callbacks.on_friend_list) {
+                    g_callbacks.on_friend_list(count, friends);
+                }
+            }
+            free(friends);
+        } else {
+            if (g_callbacks.on_friend_list) g_callbacks.on_friend_list(0, NULL);
+        }
+    }
+
+    // 2. Xử lý TIN NHẮN ĐẾN
+    else if (header->command_type == CMD_RECEIVE_MESSAGE) {
+        ChatPayload msg;
+        // Đọc payload tin nhắn
+        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
+            if (g_callbacks.on_message) {
+                g_callbacks.on_message(&msg);
+            }
+        }
+    }
+
+    // 3. Xử lý STATUS (Online/Offline)
+    else if (header->command_type == CMD_NOTIFY_STATUS) {
+        StatusNotifyPayload notify;
+        if (recv_all(g_socket, &notify, sizeof(StatusNotifyPayload)) > 0) {
+            if (g_callbacks.on_status_change) {
+                g_callbacks.on_status_change(notify.friend_id, notify.is_online);
+            }
+        }
+    }
+
+    // ... Các case khác ...
+    else {
+        LOGW("Unhandled Packet Type: %d. Size: %d", header->command_type, header->payload_size);
+        discard_payload(g_socket, header->payload_size);
+    }
+}
+
+// --- THREAD LOOP ---
+static void* read_thread_func(void* arg) {
+    PacketHeader header;
+
+    while (g_is_running) {
+        if (g_socket == -1) break;
+
+        // Blocking Read Header
+        int n = recv_all(g_socket, &header, sizeof(PacketHeader));
+
+        if (n <= 0) {
+            LOGE("Server disconnected or Read Error.");
+            g_is_running = 0;
+            if (g_callbacks.on_disconnect) g_callbacks.on_disconnect("Connection Lost");
+            break;
+        }
+
+        // Có gói tin -> Xử lý
+        handle_incoming_packet(&header);
+    }
+    return NULL;
+}
+
+// --- PUBLIC FUNCTIONS ---
+void start_reader_thread(NativeCallbacks callbacks) {
+    if (g_is_running) return;
+
+    g_callbacks = callbacks; // Lưu callback
+    g_is_running = 1;
+
+    // Tạo thread riêng
+    pthread_create(&g_read_thread, NULL, read_thread_func, NULL);
+    LOGI("Reader Thread Started.");
 }

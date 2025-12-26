@@ -22,11 +22,23 @@ typedef enum {
     ERR_INTERNAL_MEM = -300  // Malloc fail
 } ClientErrorCode;
 
+// --- 1. ĐỊNH NGHĨA CALLBACKS ---
+typedef struct {
+    void (*on_friend_list)(int count, UserInfoPayload* friends);
+    void (*on_message)(ChatPayload* msg);
+    void (*on_status_change)(int friend_id, int is_online);
+    void (*on_disconnect)(const char* reason);
+} NativeCallbacks;
+
+// --- 2. CÁC HÀM QUẢN LÝ ---
+
 // Khởi tạo kết nối Socket
 int client_init(const char *ip, int port);
 
 // Đóng kết nối
 void client_close();
+
+void start_reader_thread(NativeCallbacks callbacks);
 
 // Các hàm này trả về:
 // >= 0: StatusCode của Server (STATUS_SUCCESS, STATUS_ERROR_AUTH...)
@@ -37,5 +49,7 @@ int client_register(const char *name, const char *email, const char *password);
 
 // Gửi lệnh đăng nhập (Trả về STATUS code, nếu thành công thì điền dữ liệu vào user_out)
 int client_login(const char *email, const char *password, UserInfoPayload *user_out);
+
+int client_get_friends(int offset, int limit, UserInfoPayload *out_friends);
 
 #endif // NATIVE_CORE_H

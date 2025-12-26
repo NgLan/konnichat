@@ -215,4 +215,10 @@ typedef struct __attribute__((packed)) {
     int8_t is_online;
 } StatusNotifyPayload;
 
+// 10. Get Friend List Request
+typedef struct __attribute__((packed)) {
+    int32_t offset; // Bắt đầu từ 0
+    int32_t limit;  // Mặc định 20 - 100
+} GetFriendListReq;
+
 #endif
