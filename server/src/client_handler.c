@@ -381,9 +381,13 @@ static void handle_send_friend_req(int sock, PacketHeader *reqHeader, void *payl
 {
     FriendReqPayload *req = (FriendReqPayload *)payload;
 
+    LOG_INFO("=== HANDLE_SEND_FRIEND_REQ: User %d -> Target %d ===", current_user_id, req->target_id);
+
     // 1. Gọi Repo
     int result = db_send_friend_request(current_user_id, req->target_id);
     
+    LOG_INFO("db_send_friend_request returned: %d", result);
+
     // 2. Map kết quả DB sang Status Code Protocol
     int status = STATUS_SUCCESS;
     if (result > 0) status = STATUS_SUCCESS;
@@ -392,9 +396,12 @@ static void handle_send_friend_req(int sock, PacketHeader *reqHeader, void *payl
     else if (result == -3) status = STATUS_ERROR_INVALID_PARAM; // Tự kết bạn
     else status = STATUS_ERROR_DB;
     
+    LOG_INFO("Mapped status code: %d", status);
+
     // 3. Phản hồi cho người gửi (để UI hiện Toast Success/Fail)
     send_response(sock, CMD_SEND_FRIEND_REQ_RESP, reqHeader->request_id, status, NULL, 0);
-
+    LOG_INFO("Sent CMD_SEND_FRIEND_REQ_RESP with status %d to User %d", status, current_user_id);
+    
     // 4. Nếu thành công -> Thông báo cho người nhận
     if (result > 0) {
         notify_friend_req_received(result, current_user_id, req->target_id);

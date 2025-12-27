@@ -1,6 +1,6 @@
 /**
  * @file user_repo.c
- * @brief Handles database operations related to Users (Auth, Status).
+ * @brief Handles database operations related to users (Auth, Status).
  */
 
 #include "../../include/repo/user_repo.h"
@@ -17,23 +17,25 @@ int db_register_user(const char *name, const char *email, const char *password)
 {
     char query[1024];
     snprintf(query, sizeof(query),
-             "INSERT INTO Users (name, email, password) VALUES ('%s', '%s', '%s')",
+             "INSERT INTO users (name, email, password) VALUES ('%s', '%s', '%s')",
              name, email, password);
 
-    pthread_mutex_lock(&db_mutex);
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
+
     if (mysql_query(conn, query))
     {
         unsigned int err_no = mysql_errno(conn);
         LOG_ERROR("Register DB Error (%u): %s", err_no, mysql_error(conn));
 
-        pthread_mutex_unlock(&db_mutex);
+        db_release_conn(conn);
         if (err_no == 1062)
         {              // ER_DUP_ENTRY
             return -1; // Lỗi trùng email
         }
         return 0; // Lỗi DB khác
     }
-    pthread_mutex_unlock(&db_mutex);
+    db_release_conn(conn);
     return 1; // Thành công
 }
 
@@ -46,19 +48,19 @@ int db_check_login(const char *email, const char *password, UserInfoPayload *use
 {
     char query[1024];
     snprintf(query, sizeof(query),
-             "SELECT id, name, email FROM Users WHERE email='%s' AND password='%s'",
+             "SELECT id, name, email FROM users WHERE email='%s' AND password='%s'",
              email, password);
 
-    pthread_mutex_lock(&db_mutex);
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Login DB Error: %s", mysql_error(conn));
-        pthread_mutex_unlock(&db_mutex);
+        db_release_conn(conn);
         return -1;
     }
 
     MYSQL_RES *result = mysql_store_result(conn);
-    pthread_mutex_unlock(&db_mutex);
 
     int user_id = -1;
 
@@ -81,6 +83,7 @@ int db_check_login(const char *email, const char *password, UserInfoPayload *use
         mysql_free_result(result);
     }
 
+    db_release_conn(conn);
     return user_id;
 }
 
@@ -91,10 +94,12 @@ void db_update_user_status(int user_id, int is_online)
 {
     char query[256];
     snprintf(query, sizeof(query),
-             "UPDATE Users SET is_online = %d WHERE id = %d",
+             "UPDATE users SET is_online = %d WHERE id = %d",
              is_online, user_id);
 
-    pthread_mutex_lock(&db_mutex);
+    MYSQL *conn = db_get_conn();
+    if (!conn) return;
+    
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Update Status Error for User %d: %s", user_id, mysql_error(conn));
@@ -103,24 +108,25 @@ void db_update_user_status(int user_id, int is_online)
     {
         LOG_INFO("User %d status updated to: %s", user_id, is_online ? "online" : "offline");
     }
-    pthread_mutex_unlock(&db_mutex);
+    db_release_conn(conn);
 }
 
 int db_search_users(const char *keyword, int current_id, UserSearchInfo *out, int max)
 {
     char query[1024];
     snprintf(query, sizeof(query),
-             "SELECT id, name, email FROM Users WHERE name LIKE '%%%s%%' AND id != %d LIMIT %d",
+             "SELECT id, name, email FROM users WHERE name LIKE '%%%s%%' AND id != %d LIMIT %d",
              keyword, current_id, max);
 
-    pthread_mutex_lock(&db_mutex);
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
+
     if (mysql_query(conn, query)) {
-        pthread_mutex_unlock(&db_mutex);
+        db_release_conn(conn);
         return 0;
     }
         
     MYSQL_RES *res = mysql_store_result(conn);
-    pthread_mutex_unlock(&db_mutex);
 
     int count = 0;
     if (res)
@@ -135,22 +141,25 @@ int db_search_users(const char *keyword, int current_id, UserSearchInfo *out, in
         }
         mysql_free_result(res);
     }
+
+    db_release_conn(conn);
     return count;
 }
 
 void get_user_name_by_id(int user_id, char *name_buf, int buf_len)
 {
     char query[256];
-    snprintf(query, sizeof(query), "SELECT name FROM Users WHERE id=%d", user_id);
+    snprintf(query, sizeof(query), "SELECT name FROM users WHERE id=%d", user_id);
     
-    pthread_mutex_lock(&db_mutex);
+    MYSQL *conn = db_get_conn();
+    if (!conn) return;
+
     if (mysql_query(conn, query)) {
-        pthread_mutex_unlock(&db_mutex);
+        db_release_conn(conn);
         return;
     }
         
     MYSQL_RES *res = mysql_store_result(conn);
-    pthread_mutex_unlock(&db_mutex);
     
     if (res)
     {
@@ -161,4 +170,6 @@ void get_user_name_by_id(int user_id, char *name_buf, int buf_len)
             strncpy(name_buf, "Unknown", buf_len - 1);
         mysql_free_result(res);
     }
+
+    db_release_conn(conn);
 }
