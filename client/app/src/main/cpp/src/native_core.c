@@ -243,7 +243,7 @@ int client_login(const char *email, const char *password, UserInfoPayload *user_
  * limit: Mặc định 20 - 100
  * return: Số lượng thực tế lấy được (hoặc mã lỗi âm)
  */
-int client_get_friends(int offset, int limit, UserInfoPayload *out_friends) {
+int client_get_friends(int offset, int limit) {
     if (limit < 1) limit = 20;
     if (limit > 100) limit = 100;
 
@@ -315,7 +315,10 @@ static void* read_thread_func(void* arg) {
     PacketHeader header;
 
     while (g_is_running) {
-        if (g_socket == -1) break;
+        if (g_socket == -1) {
+            g_is_running = 0; // <--- THÊM DÒNG NÀY (Reset cờ nếu chưa connect)
+            break;
+        }
 
         // Blocking Read Header
         int n = recv_all(g_socket, &header, sizeof(PacketHeader));

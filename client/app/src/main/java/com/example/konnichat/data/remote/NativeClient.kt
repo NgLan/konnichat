@@ -21,4 +21,7 @@ object NativeClient {
     // Đăng nhập: Trả về UserDto nếu OK, ném Exception nếu lỗi
     @Throws(Exception::class)
     external fun loginUser(email: String, pass: String): UserDto?
+
+    // Gửi lệnh lấy danh sách bạn bè. Trả về 0 nếu gửi thành công.
+    external fun getFriends(offset: Int, limit: Int): Int
 }
