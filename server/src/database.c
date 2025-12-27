@@ -20,6 +20,11 @@
 MYSQL *conn;
 
 /**
+ * @brief Mutex for thread-safe database operations.
+ */
+pthread_mutex_t db_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+/**
  * @brief Initializes the database connection.
  *
  * Steps performed:

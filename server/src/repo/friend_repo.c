@@ -26,13 +26,18 @@ int db_get_friends(int user_id, int offset, int limit, UserInfoPayload *friends_
              "LIMIT %d OFFSET %d",
              user_id, limit, offset);
 
+    pthread_mutex_lock(&db_mutex);
+
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Get Friends DB Error: %s", mysql_error(conn));
+        pthread_mutex_unlock(&db_mutex);
         return 0;
     }
 
     MYSQL_RES *result = mysql_store_result(conn);
+    pthread_mutex_unlock(&db_mutex);
+
     int count = 0;
 
     if (result)
@@ -60,13 +65,18 @@ int db_get_friend_ids(int user_id, int *ids_out, int limit, int offset)
              "SELECT friend_id FROM Friends WHERE user_id = %d LIMIT %d OFFSET %d",
              user_id, limit, offset);
 
+    pthread_mutex_lock(&db_mutex);
+
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Get Friend IDs Error: %s", mysql_error(conn));
+        pthread_mutex_unlock(&db_mutex);
         return 0;
     }
 
     MYSQL_RES *result = mysql_store_result(conn);
+    pthread_mutex_unlock(&db_mutex);
+
     int count = 0;
     if (result)
     {
@@ -88,37 +98,56 @@ int db_send_friend_request(int sender_id, int target_id)
 {
     char query[1024];
 
-    // 1. Kiểm tra đã là bạn chưa
+    // 1. Không tự kết bạn với chính mình
+    if (sender_id == target_id)
+        return -3;
+
+    // [LOCK] Bắt đầu Transaction
+    pthread_mutex_lock(&db_mutex);
+
+    // 2. Kiểm tra đã là bạn chưa
     snprintf(query, sizeof(query),
              "SELECT id FROM Friends WHERE (user_id=%d AND friend_id=%d) OR (user_id=%d AND friend_id=%d)",
              sender_id, target_id, target_id, sender_id);
     if (mysql_query(conn, query))
-        return 0;
-    MYSQL_RES *res = mysql_store_result(conn);
-    if (res && mysql_num_rows(res) > 0)
     {
-        mysql_free_result(res);
-        return -1;
-    } // Đã là bạn
+        pthread_mutex_unlock(&db_mutex);
+        return 0;
+    }
+    MYSQL_RES *res = mysql_store_result(conn);
     if (res)
+    {
+        int exists = (mysql_num_rows(res) > 0);
         mysql_free_result(res);
+        if (exists)
+        {
+            pthread_mutex_unlock(&db_mutex);
+            return -1; // Đã là bạn
+        }
+    }
 
-    // 2. Kiểm tra có request đang chờ không
+    // 3. Kiểm tra có request đang chờ không
     snprintf(query, sizeof(query),
              "SELECT id FROM FriendRequests WHERE sender_id=%d AND receiver_id=%d AND status='waiting'",
              sender_id, target_id);
     if (mysql_query(conn, query))
-        return 0;
-    res = mysql_store_result(conn);
-    if (res && mysql_num_rows(res) > 0)
     {
-        mysql_free_result(res);
-        return -2;
-    } // Đang chờ
+        pthread_mutex_unlock(&db_mutex);
+        return 0;
+    }
+    res = mysql_store_result(conn);
     if (res)
+    {
+        int exists = (mysql_num_rows(res) > 0);
         mysql_free_result(res);
+        if (exists)
+        {
+            pthread_mutex_unlock(&db_mutex);
+            return -2; // Đang chờ duyệt
+        }
+    }
 
-    // 3. Insert Request mới
+    // 4. Insert Request mới
     snprintf(query, sizeof(query),
              "INSERT INTO FriendRequests (sender_id, receiver_id, status) VALUES (%d, %d, 'waiting') "
              "ON DUPLICATE KEY UPDATE status='waiting', created_at=CURRENT_TIMESTAMP",
@@ -127,6 +156,7 @@ int db_send_friend_request(int sender_id, int target_id)
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Send Friend Req Error: %s", mysql_error(conn));
+        pthread_mutex_unlock(&db_mutex);
         return 0;
     }
     return (int)mysql_insert_id(conn);
@@ -143,10 +173,13 @@ int db_get_pending_requests(int user_id, PendingReqInfo *list_out, int max_count
              "LIMIT %d",
              user_id, max_count);
 
+    pthread_mutex_lock(&db_mutex);
     if (mysql_query(conn, query))
         return 0;
 
     MYSQL_RES *result = mysql_store_result(conn);
+    pthread_mutex_unlock(&db_mutex);
+
     int count = 0;
     if (result)
     {
@@ -168,10 +201,15 @@ int db_respond_friend_request(int request_id, int current_user_id, int is_accept
     char query[1024];
     int sender_id = 0, receiver_id = 0;
 
+    pthread_mutex_lock(&db_mutex);
+
     // 1. Lấy thông tin request
     snprintf(query, sizeof(query), "SELECT sender_id, receiver_id FROM FriendRequests WHERE id=%d", request_id);
     if (mysql_query(conn, query))
+    {
+        pthread_mutex_unlock(&db_mutex);
         return 0;
+    }
     MYSQL_RES *res = mysql_store_result(conn);
     if (res)
     {
@@ -185,7 +223,10 @@ int db_respond_friend_request(int request_id, int current_user_id, int is_accept
     }
 
     if (receiver_id != current_user_id)
+    {
+        pthread_mutex_unlock(&db_mutex);
         return 0; // Bảo mật: Không được duyệt hộ người khác
+    }
     if (sender_id_out)
         *sender_id_out = sender_id;
 
@@ -193,7 +234,10 @@ int db_respond_friend_request(int request_id, int current_user_id, int is_accept
     snprintf(query, sizeof(query), "UPDATE FriendRequests SET status='%s' WHERE id=%d",
              is_accepted ? "approved" : "denied", request_id);
     if (mysql_query(conn, query))
+    {
+        pthread_mutex_unlock(&db_mutex);
         return 0;
+    }
 
     // 3. Nếu đồng ý -> Insert vào bảng Friends
     if (is_accepted)
@@ -203,6 +247,8 @@ int db_respond_friend_request(int request_id, int current_user_id, int is_accept
                  sender_id, receiver_id, receiver_id, sender_id);
         mysql_query(conn, query);
     }
+
+    pthread_mutex_unlock(&db_mutex);
     return 1;
 }
 
@@ -212,7 +258,16 @@ int db_remove_friend(int user_id, int friend_id)
     snprintf(query, sizeof(query),
              "DELETE FROM Friends WHERE (user_id=%d AND friend_id=%d) OR (user_id=%d AND friend_id=%d)",
              user_id, friend_id, friend_id, user_id);
+
+    pthread_mutex_lock(&db_mutex);
     if (mysql_query(conn, query))
+    {
+        pthread_mutex_unlock(&db_mutex);
         return 0;
-    return (mysql_affected_rows(conn) > 0);
+    }
+
+    int rows = mysql_affected_rows(conn);
+
+    pthread_mutex_unlock(&db_mutex);
+    return (rows > 0);
 }
