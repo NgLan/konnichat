@@ -156,6 +156,25 @@ static void notify_friends_status(int user_id, int status)
     LOG_INFO("User %d status (%d). Processed check for %d friends.", user_id, status, offset);
 }
 
+static void notify_friend_req_received(int request_id, int sender_id, int target_id) {
+    // 1. Kiểm tra target có online không
+    int target_sock = get_socket_by_user_id(target_id);
+    if (target_sock == -1) return; // Offline -> Thôi
+
+    // 2. Chuẩn bị payload thông báo
+    PendingReqInfo notif;
+    memset(&notif, 0, sizeof(PendingReqInfo));
+    notif.request_id = request_id;
+    notif.sender_id = sender_id;
+    
+    // 3. Lấy tên người gửi để hiện thông báo
+    get_user_name_by_id(sender_id, notif.sender_name, sizeof(notif.sender_name));
+
+    // 4. Gửi
+    send_response(target_sock, CMD_NOTIFY_FRIEND_REQ, 0, STATUS_SUCCESS, &notif, sizeof(PendingReqInfo));
+    LOG_INFO("Notified User %d about friend req from %s (ID: %d)", target_id, notif.sender_name, sender_id);
+}
+
 // --- LOGIC HANDLERS ---
 static void handle_register(int sock, PacketHeader *reqHeader, void *payload)
 {
@@ -362,30 +381,30 @@ static void handle_send_friend_req(int sock, PacketHeader *reqHeader, void *payl
 {
     FriendReqPayload *req = (FriendReqPayload *)payload;
 
-    // Gọi Repo xử lý logic
-    int result_id = db_send_friend_request(current_user_id, req->target_id);
+    LOG_INFO("=== HANDLE_SEND_FRIEND_REQ: User %d -> Target %d ===", current_user_id, req->target_id);
 
-    // Phản hồi cho người gửi
-    int status = (result_id > 0) ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
+    // 1. Gọi Repo
+    int result = db_send_friend_request(current_user_id, req->target_id);
+    
+    LOG_INFO("db_send_friend_request returned: %d", result);
+
+    // 2. Map kết quả DB sang Status Code Protocol
+    int status = STATUS_SUCCESS;
+    if (result > 0) status = STATUS_SUCCESS;
+    else if (result == -1) status = STATUS_ERROR_ALREADY_FRIEND;
+    else if (result == -2) status = STATUS_ERROR_REQ_PENDING;
+    else if (result == -3) status = STATUS_ERROR_INVALID_PARAM; // Tự kết bạn
+    else status = STATUS_ERROR_DB;
+    
+    LOG_INFO("Mapped status code: %d", status);
+
+    // 3. Phản hồi cho người gửi (để UI hiện Toast Success/Fail)
     send_response(sock, CMD_SEND_FRIEND_REQ_RESP, reqHeader->request_id, status, NULL, 0);
-
-    // --- REAL-TIME NOTIFICATION ---
-    if (result_id > 0)
-    {
-        int target_sock = get_socket_by_user_id(req->target_id);
-        if (target_sock > 0)
-        {
-            PendingReqInfo notif;
-            notif.request_id = result_id;
-            notif.sender_id = current_user_id;
-
-            // Lấy tên người gửi để hiển thị thông báo đẹp hơn
-            // (Tạm thời hardcode hoặc query DB thêm 1 lần nữa nếu cần thiết)
-            snprintf(notif.sender_name, sizeof(notif.sender_name), "User %d", current_user_id);
-
-            send_response(target_sock, CMD_NOTIFY_FRIEND_REQ, 0, STATUS_SUCCESS, &notif, sizeof(PendingReqInfo));
-            LOG_INFO("Sent friend request notification to socket %d", target_sock);
-        }
+    LOG_INFO("Sent CMD_SEND_FRIEND_REQ_RESP with status %d to User %d", status, current_user_id);
+    
+    // 4. Nếu thành công -> Thông báo cho người nhận
+    if (result > 0) {
+        notify_friend_req_received(result, current_user_id, req->target_id);
     }
 }
 

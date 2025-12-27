@@ -1,6 +1,6 @@
 /**
  * @file friend_repo.c
- * @brief Handles database operations related to Friends.
+ * @brief Handles database operations related to friends.
  */
 
 #include "../../include/repo/friend_repo.h"
@@ -20,19 +20,24 @@ int db_get_friends(int user_id, int offset, int limit, UserInfoPayload *friends_
 
     snprintf(query, sizeof(query),
              "SELECT u.id, u.name, u.email, u.is_online "
-             "FROM Users u "
-             "JOIN Friends f ON u.id = f.friend_id "
+             "FROM users u "
+             "JOIN friends f ON u.id = f.friend_id "
              "WHERE f.user_id = %d "
              "LIMIT %d OFFSET %d",
              user_id, limit, offset);
 
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
+
     if (mysql_query(conn, query))
     {
-        LOG_ERROR("Get Friends DB Error: %s", mysql_error(conn));
+        LOG_ERROR("Get friends DB Error: %s", mysql_error(conn));
+        db_release_conn(conn);
         return 0;
     }
 
     MYSQL_RES *result = mysql_store_result(conn);
+
     int count = 0;
 
     if (result)
@@ -50,6 +55,7 @@ int db_get_friends(int user_id, int offset, int limit, UserInfoPayload *friends_
         mysql_free_result(result);
     }
 
+    db_release_conn(conn);
     return count;
 }
 
@@ -57,16 +63,21 @@ int db_get_friend_ids(int user_id, int *ids_out, int limit, int offset)
 {
     char query[256];
     snprintf(query, sizeof(query),
-             "SELECT friend_id FROM Friends WHERE user_id = %d LIMIT %d OFFSET %d",
+             "SELECT friend_id FROM friends WHERE user_id = %d LIMIT %d OFFSET %d",
              user_id, limit, offset);
+
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
 
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Get Friend IDs Error: %s", mysql_error(conn));
+        db_release_conn(conn);
         return 0;
     }
 
     MYSQL_RES *result = mysql_store_result(conn);
+
     int count = 0;
     if (result)
     {
@@ -81,6 +92,8 @@ int db_get_friend_ids(int user_id, int *ids_out, int limit, int offset)
         }
         mysql_free_result(result);
     }
+
+    db_release_conn(conn);
     return count;
 }
 
@@ -88,48 +101,85 @@ int db_send_friend_request(int sender_id, int target_id)
 {
     char query[1024];
 
-    // 1. Kiểm tra đã là bạn chưa
+    LOG_INFO("=== db_send_friend_request: Sender %d -> Target %d ===", sender_id, target_id);
+    
+    // 1. Không tự kết bạn với chính mình
+    if (sender_id == target_id) {
+        LOG_WARN("Self-friend request rejected");
+        return -3;
+    }        
+
+    // [LOCK] Bắt đầu Transaction
+    MYSQL *conn = db_get_conn();
+    if (!conn) {
+        LOG_ERROR("Failed to get DB connection");
+        return 0;
+    } 
+
+    // 2. Kiểm tra đã là bạn chưa
     snprintf(query, sizeof(query),
-             "SELECT id FROM Friends WHERE (user_id=%d AND friend_id=%d) OR (user_id=%d AND friend_id=%d)",
+             "SELECT id FROM friends WHERE (user_id=%d AND friend_id=%d) OR (user_id=%d AND friend_id=%d)",
              sender_id, target_id, target_id, sender_id);
     if (mysql_query(conn, query))
-        return 0;
-    MYSQL_RES *res = mysql_store_result(conn);
-    if (res && mysql_num_rows(res) > 0)
     {
-        mysql_free_result(res);
-        return -1;
-    } // Đã là bạn
-    if (res)
-        mysql_free_result(res);
-
-    // 2. Kiểm tra có request đang chờ không
-    snprintf(query, sizeof(query),
-             "SELECT id FROM FriendRequests WHERE sender_id=%d AND receiver_id=%d AND status='waiting'",
-             sender_id, target_id);
-    if (mysql_query(conn, query))
-        return 0;
-    res = mysql_store_result(conn);
-    if (res && mysql_num_rows(res) > 0)
-    {
-        mysql_free_result(res);
-        return -2;
-    } // Đang chờ
-    if (res)
-        mysql_free_result(res);
-
-    // 3. Insert Request mới
-    snprintf(query, sizeof(query),
-             "INSERT INTO FriendRequests (sender_id, receiver_id, status) VALUES (%d, %d, 'waiting') "
-             "ON DUPLICATE KEY UPDATE status='waiting', created_at=CURRENT_TIMESTAMP",
-             sender_id, target_id);
-
-    if (mysql_query(conn, query))
-    {
-        LOG_ERROR("Send Friend Req Error: %s", mysql_error(conn));
+        LOG_ERROR("Query friends table failed: %s", mysql_error(conn));
+        db_release_conn(conn);
         return 0;
     }
-    return (int)mysql_insert_id(conn);
+    MYSQL_RES *res = mysql_store_result(conn);
+    if (res)
+    {
+        int exists = (mysql_num_rows(res) > 0);
+        mysql_free_result(res);
+        if (exists)
+        {
+            LOG_WARN("Already friends: %d <-> %d", sender_id, target_id);
+            db_release_conn(conn);
+            return -1; // Đã là bạn
+        }
+    }
+
+    // 3. Kiểm tra có request đang chờ không
+    snprintf(query, sizeof(query),
+             "SELECT id FROM friend_requests WHERE sender_id=%d AND receiver_id=%d AND status='waiting'",
+             sender_id, target_id);
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Query friend_requests failed: %s", mysql_error(conn));
+        db_release_conn(conn);
+        return 0;
+    }
+    res = mysql_store_result(conn);
+    if (res)
+    {
+        int exists = (mysql_num_rows(res) > 0);
+        mysql_free_result(res);
+        if (exists)
+        {
+            LOG_WARN("Friend request already pending: %d -> %d", sender_id, target_id);
+            db_release_conn(conn);
+            return -2; // Đang chờ duyệt
+        }
+    }
+
+    // 4. Insert Request mới
+    snprintf(query, sizeof(query),
+             "INSERT INTO friend_requests (sender_id, receiver_id, status) VALUES (%d, %d, 'waiting')",
+             sender_id, target_id);
+
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Insert Friend Req Error: %s", mysql_error(conn));
+        db_release_conn(conn);
+        return 0;
+    }
+
+    int req_id = (int)mysql_insert_id(conn);
+    LOG_INFO("mysql_insert_id returned: %d", req_id);
+
+    db_release_conn(conn);
+    LOG_INFO("Friend request created with ID: %d", req_id);
+    return req_id;
 }
 
 int db_get_pending_requests(int user_id, PendingReqInfo *list_out, int max_count)
@@ -137,16 +187,23 @@ int db_get_pending_requests(int user_id, PendingReqInfo *list_out, int max_count
     char query[1024];
     snprintf(query, sizeof(query),
              "SELECT fr.id, fr.sender_id, u.name "
-             "FROM FriendRequests fr "
-             "JOIN Users u ON fr.sender_id = u.id "
+             "FROM friend_requests fr "
+             "JOIN users u ON fr.sender_id = u.id "
              "WHERE fr.receiver_id = %d AND fr.status = 'waiting' "
              "LIMIT %d",
              user_id, max_count);
 
-    if (mysql_query(conn, query))
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
+
+    if (mysql_query(conn, query)) {
+        LOG_ERROR("Get Pending Reqs Error: %s", mysql_error(conn));
+        db_release_conn(conn);
         return 0;
+    }
 
     MYSQL_RES *result = mysql_store_result(conn);
+
     int count = 0;
     if (result)
     {
@@ -160,6 +217,8 @@ int db_get_pending_requests(int user_id, PendingReqInfo *list_out, int max_count
         }
         mysql_free_result(result);
     }
+
+    db_release_conn(conn);
     return count;
 }
 
@@ -168,10 +227,16 @@ int db_respond_friend_request(int request_id, int current_user_id, int is_accept
     char query[1024];
     int sender_id = 0, receiver_id = 0;
 
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
+
     // 1. Lấy thông tin request
-    snprintf(query, sizeof(query), "SELECT sender_id, receiver_id FROM FriendRequests WHERE id=%d", request_id);
+    snprintf(query, sizeof(query), "SELECT sender_id, receiver_id FROM friend_requests WHERE id=%d", request_id);
     if (mysql_query(conn, query))
+    {
+        db_release_conn(conn);
         return 0;
+    }
     MYSQL_RES *res = mysql_store_result(conn);
     if (res)
     {
@@ -185,24 +250,32 @@ int db_respond_friend_request(int request_id, int current_user_id, int is_accept
     }
 
     if (receiver_id != current_user_id)
+    {
+        db_release_conn(conn);
         return 0; // Bảo mật: Không được duyệt hộ người khác
+    }
     if (sender_id_out)
         *sender_id_out = sender_id;
 
     // 2. Update status
-    snprintf(query, sizeof(query), "UPDATE FriendRequests SET status='%s' WHERE id=%d",
+    snprintf(query, sizeof(query), "UPDATE friend_requests SET status='%s' WHERE id=%d",
              is_accepted ? "approved" : "denied", request_id);
     if (mysql_query(conn, query))
+    {
+        db_release_conn(conn);
         return 0;
+    }
 
-    // 3. Nếu đồng ý -> Insert vào bảng Friends
+    // 3. Nếu đồng ý -> Insert vào bảng friends
     if (is_accepted)
     {
         // Insert 2 chiều
-        snprintf(query, sizeof(query), "INSERT IGNORE INTO Friends (user_id, friend_id) VALUES (%d, %d), (%d, %d)",
+        snprintf(query, sizeof(query), "INSERT IGNORE INTO friends (user_id, friend_id) VALUES (%d, %d), (%d, %d)",
                  sender_id, receiver_id, receiver_id, sender_id);
         mysql_query(conn, query);
     }
+
+    db_release_conn(conn);
     return 1;
 }
 
@@ -210,9 +283,20 @@ int db_remove_friend(int user_id, int friend_id)
 {
     char query[512];
     snprintf(query, sizeof(query),
-             "DELETE FROM Friends WHERE (user_id=%d AND friend_id=%d) OR (user_id=%d AND friend_id=%d)",
+             "DELETE FROM friends WHERE (user_id=%d AND friend_id=%d) OR (user_id=%d AND friend_id=%d)",
              user_id, friend_id, friend_id, user_id);
+
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
+
     if (mysql_query(conn, query))
+    {
+        db_release_conn(conn);
         return 0;
-    return (mysql_affected_rows(conn) > 0);
+    }
+
+    int rows = mysql_affected_rows(conn);
+
+    db_release_conn(conn);
+    return (rows > 0);
 }

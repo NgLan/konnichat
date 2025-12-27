@@ -1,6 +1,6 @@
 /**
  * @file message_repo.c
- * @brief Handles database operations related to Chat Messages.
+ * @brief Handles database operations related to Chat messages.
  */
 
 #include "../../include/repo/message_repo.h"
@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <time.h>    // <--- Cần thêm cái này để dùng struct tm, time_t
+#include <time.h> // <--- Cần thêm cái này để dùng struct tm, time_t
 #include <stdint.h>
 
 static uint64_t parse_mysql_time(const char *str);
@@ -30,16 +30,22 @@ int db_save_message(int sender_id, int receiver_id, const char *content, uint64_
 
     // 2. Insert vào DB
     snprintf(query, sizeof(query),
-             "INSERT INTO Messages (sender_id, receiver_id, content, status, created_at) "
+             "INSERT INTO messages (sender_id, receiver_id, content, status, created_at) "
              "VALUES (%d, %d, '%s', 'sent', '%s')",
              sender_id, receiver_id, content, time_str);
 
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Save Msg Error: %s", mysql_error(conn));
+        db_release_conn(conn);
         return 0;
     }
-    return (int)mysql_insert_id(conn);
+
+    int new_id = (int)mysql_insert_id(conn);
+    db_release_conn(conn);
+    return new_id;
 }
 
 /**
@@ -49,11 +55,16 @@ void db_mark_message_delivered(int message_id)
 {
     char query[256];
     snprintf(query, sizeof(query),
-             "UPDATE Messages SET status = 'delivered' WHERE id = %d", message_id);
+             "UPDATE messages SET status = 'delivered' WHERE id = %d", message_id);
+
+    MYSQL *conn = db_get_conn();
+    if (!conn) return;
+
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Mark Delivered Error (MsgID %d): %s", message_id, mysql_error(conn));
     }
+    db_release_conn(conn);
 }
 
 /**
@@ -64,17 +75,21 @@ int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
     char query[1024];
     snprintf(query, sizeof(query),
              "SELECT id, sender_id, receiver_id, content, created_at "
-             "FROM Messages WHERE receiver_id = %d AND status = 'sent' "
+             "FROM messages WHERE receiver_id = %d AND status = 'sent' "
              "ORDER BY created_at ASC LIMIT %d",
              user_id, limit);
 
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Get Offline Msgs Error: %s", mysql_error(conn));
+        db_release_conn(conn);
         return 0;
     }
 
     MYSQL_RES *result = mysql_store_result(conn);
+
     int count = 0;
     if (result)
     {
@@ -100,6 +115,8 @@ int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
         }
         mysql_free_result(result);
     }
+
+    db_release_conn(conn);
     return count;
 }
 
@@ -111,19 +128,23 @@ int db_get_chat_history(int user1, int user2, ChatPayload *messages_out, int lim
     char query[1024];
     snprintf(query, sizeof(query),
              "SELECT id, sender_id, receiver_id, content, created_at "
-             "FROM Messages "
+             "FROM messages "
              "WHERE (sender_id = %d AND receiver_id = %d) "
              "   OR (sender_id = %d AND receiver_id = %d) "
              "ORDER BY created_at DESC LIMIT %d", // Lấy tin mới nhất trở về trước
              user1, user2, user2, user1, limit);
 
+    MYSQL *conn = db_get_conn();
+    if (!conn) return 0;
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Get History Error: %s", mysql_error(conn));
+        db_release_conn(conn);
         return 0;
     }
 
     MYSQL_RES *result = mysql_store_result(conn);
+    
     int count = 0;
     if (result)
     {
@@ -134,7 +155,7 @@ int db_get_chat_history(int user1, int user2, ChatPayload *messages_out, int lim
             messages_out[count].sender_id = atoi(row[1]);
             messages_out[count].receiver_id = atoi(row[2]);
             messages_out[count].msg_type = 1;
-            strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);       
+            strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);
             if (row[4])
             {
                 messages_out[count].created_at = parse_mysql_time(row[4]);
@@ -148,6 +169,8 @@ int db_get_chat_history(int user1, int user2, ChatPayload *messages_out, int lim
         }
         mysql_free_result(result);
     }
+
+    db_release_conn(conn);
     return count;
 }
 
