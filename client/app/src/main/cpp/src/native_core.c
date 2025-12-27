@@ -9,6 +9,7 @@
 #include <android/log.h>
 #include <time.h>
 #include <pthread.h>
+#include <syslog.h>
 
 static int g_socket = -1;
 static int g_req_id = 0;
@@ -96,7 +97,9 @@ static int recv_and_validate_header(PacketHeader *header, int expected_cmd) {
     if (g_socket == -1) return ERR_NETWORK_CONN_FAILED;
 
     // 1. Nhận Header
+    LOGI("Dang cho doc Header...");
     int n = recv_all(g_socket, header, sizeof(PacketHeader));
+    LOGI("Da doc duoc %d bytes, Cmd Type: %d", n, header->command_type );
     if (n <= 0) {
         LOGE("Socket Error or Closed while waiting for %s", cmd_to_string(expected_cmd));
         return ERR_NETWORK_RECV_FAILED;
@@ -243,7 +246,7 @@ int client_login(const char *email, const char *password, UserInfoPayload *user_
  * limit: Mặc định 20 - 100
  * return: Số lượng thực tế lấy được (hoặc mã lỗi âm)
  */
-int client_get_friends(int offset, int limit, UserInfoPayload *out_friends) {
+int client_get_friends(int offset, int limit) {
     if (limit < 1) limit = 20;
     if (limit > 100) limit = 100;
 
@@ -315,7 +318,10 @@ static void* read_thread_func(void* arg) {
     PacketHeader header;
 
     while (g_is_running) {
-        if (g_socket == -1) break;
+        if (g_socket == -1) {
+            g_is_running = 0; // <--- THÊM DÒNG NÀY (Reset cờ nếu chưa connect)
+            break;
+        }
 
         // Blocking Read Header
         int n = recv_all(g_socket, &header, sizeof(PacketHeader));

@@ -4,6 +4,7 @@ import androidx.room.Database
 import androidx.room.RoomDatabase
 import androidx.room.TypeConverters
 import com.example.konnichat.data.local.converter.DateConverter
+import com.example.konnichat.data.local.dao.ConversationDao
 import com.example.konnichat.data.local.dao.MessageDao
 import com.example.konnichat.data.local.dao.UserDao
 import com.example.konnichat.data.local.entity.FriendEntity
@@ -33,4 +34,6 @@ import com.example.konnichat.data.local.entity.UserEntity
 abstract class AppDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun messageDao(): MessageDao
+
+    abstract fun conversationDao(): ConversationDao
 }

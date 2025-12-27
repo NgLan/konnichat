@@ -291,3 +291,15 @@ jobject Java_com_example_konnichat_data_remote_NativeClient_loginUser(JNIEnv *en
         return NULL;
     }
 }
+
+/**
+ * Gửi yêu cầu lấy danh sách bạn bè.
+ * Kotlin: external fun getFriends(offset: Int, limit: Int): Int
+ */
+JNIEXPORT jint JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_getFriends(JNIEnv *env, jobject thiz,
+                                                               jint offset, jint limit) {
+    // Gọi thẳng xuống native_core.c
+    // offset: vị trí bắt đầu, limit: số lượng muốn lấy (VD: 100)
+    return client_get_friends(offset, limit);
+}
