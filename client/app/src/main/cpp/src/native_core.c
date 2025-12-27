@@ -9,6 +9,7 @@
 #include <android/log.h>
 #include <time.h>
 #include <pthread.h>
+#include <syslog.h>
 
 static int g_socket = -1;
 static int g_req_id = 0;
@@ -96,7 +97,9 @@ static int recv_and_validate_header(PacketHeader *header, int expected_cmd) {
     if (g_socket == -1) return ERR_NETWORK_CONN_FAILED;
 
     // 1. Nhận Header
+    LOGI("Dang cho doc Header...");
     int n = recv_all(g_socket, header, sizeof(PacketHeader));
+    LOGI("Da doc duoc %d bytes, Cmd Type: %d", n, header->command_type );
     if (n <= 0) {
         LOGE("Socket Error or Closed while waiting for %s", cmd_to_string(expected_cmd));
         return ERR_NETWORK_RECV_FAILED;

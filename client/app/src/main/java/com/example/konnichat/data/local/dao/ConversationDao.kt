@@ -14,16 +14,18 @@ interface ConversationDao {
         SELECT 
             u.server_id AS friendId,
             u.name AS friendName,
-            u.avatar_url AS avatar, 
+            u.avatar_url AS avatar,
             u.is_online AS isOnline,
-            (SELECT content FROM messages m 
-             WHERE (m.sender_id = u.server_id OR m.receiver_id = u.server_id) 
-             ORDER BY m.created_at DESC LIMIT 1) AS lastMessage,
-            (SELECT created_at FROM messages m 
-             WHERE (m.sender_id = u.server_id OR m.receiver_id = u.server_id) 
-             ORDER BY m.created_at DESC LIMIT 1) AS lastMessageTime
+            m.content AS lastMessage,
+            m.created_at AS lastMessageTime
         FROM users u
-        ORDER BY lastMessageTime DESC
+        LEFT JOIN messages m ON m.server_id = (
+            SELECT server_id FROM messages 
+            WHERE (sender_id = u.server_id OR receiver_id = u.server_id)
+            ORDER BY created_at DESC 
+            LIMIT 1
+        )
+        WHERE u.server_id != :myUserId
     """)
-    fun getConversationList(): Flow<List<ConversationItem>>
+    fun getConversationList(myUserId: Int): Flow<List<ConversationItem>>
 }
