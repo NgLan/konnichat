@@ -28,6 +28,8 @@ typedef struct {
     void (*on_message)(ChatPayload* msg);
     void (*on_status_change)(int friend_id, int is_online);
     void (*on_disconnect)(const char* reason);
+    void (*on_friend_req)(int req_id, int sender_id, const char* sender_name);
+    void (*on_req_response)(int cmd, int status);
 } NativeCallbacks;
 
 // --- 2. CÁC HÀM QUẢN LÝ ---
@@ -51,5 +53,7 @@ int client_register(const char *name, const char *email, const char *password);
 int client_login(const char *email, const char *password, UserInfoPayload *user_out);
 
 int client_get_friends(int offset, int limit);
+
+int client_send_friend_request(int target_id);
 
 #endif // NATIVE_CORE_H

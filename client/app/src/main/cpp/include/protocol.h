@@ -99,7 +99,9 @@ typedef enum {
     STATUS_ERROR_USER_NOT_FOUND = 3,
     STATUS_ERROR_DB = 4,
     STATUS_ERROR_INVALID_PARAM = 5,
-    STATUS_ERROR_ALREADY_EXIST = 6
+    STATUS_ERROR_ALREADY_EXIST = 6,
+    STATUS_ERROR_ALREADY_FRIEND = 7,  // Đã là bạn rồi
+    STATUS_ERROR_REQ_PENDING = 8      // Đã gửi rồi, đừng spam
 } StatusCode;
 
 // --- HEADER ---
@@ -185,7 +187,7 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     int32_t request_id;
     int32_t sender_id;
-    char sender_name[64];
+    char sender_name[MAX_NAME_LEN];
     uint64_t created_at; // Optional
 } PendingReqInfo;
 

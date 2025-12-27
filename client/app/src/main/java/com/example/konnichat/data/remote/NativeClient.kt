@@ -22,6 +22,12 @@ object NativeClient {
     @Throws(Exception::class)
     external fun loginUser(email: String, pass: String): UserDto?
 
-    // Gửi lệnh lấy danh sách bạn bè. Trả về 0 nếu gửi thành công.
+    /**
+     * Gửi yêu cầu lấy danh sách bạn bè.
+     * Lưu ý: Dữ liệu sẽ gửi về qua callback onFriendListReceived.
+     * @throws NativeException nếu lỗi mạng (gửi thất bại).
+     */
     external fun getFriends(offset: Int, limit: Int): Int
+    
+    external fun sendFriendRequest(targetId: Int)
 }

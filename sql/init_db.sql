@@ -138,7 +138,7 @@ WHERE email IN (
 INSERT INTO Friends (user_id, friend_id)
 SELECT 2, id FROM Users 
 WHERE email IN (
-    'an.nguyen@test.com', 'cuong.le@test.com', 
+    'cuong.le@test.com', 
     'dung.pham@test.com', 'em.hoang@test.com', 'phuong.vu@test.com', 
     'giang.dang@test.com'
 );
