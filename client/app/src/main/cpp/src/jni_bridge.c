@@ -13,6 +13,8 @@ static jmethodID m_onFriendList;
 static jmethodID m_onMessage;
 static jmethodID m_onStatus;
 static jmethodID m_onDisconnect;
+static jmethodID m_onFriendReq;
+static jmethodID m_onReqResp;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -28,15 +30,19 @@ static jclass g_UnknownException;
 
 // --- 1. IMPLEMENT CALLBACKS C ---
 // Helper: Lấy JNIEnv cho thread hiện tại
-static JNIEnv *get_jni_env() {
+static JNIEnv *get_jni_env()
+{
     JNIEnv *env = NULL;
-    if (g_jvm == NULL) return NULL;
+    if (g_jvm == NULL)
+        return NULL;
 
     // Kiểm tra xem thread này đã attach chưa
-    int stat = (*g_jvm)->GetEnv(g_jvm, (void **) &env, JNI_VERSION_1_6);
-    if (stat == JNI_EDETACHED) {
+    int stat = (*g_jvm)->GetEnv(g_jvm, (void **)&env, JNI_VERSION_1_6);
+    if (stat == JNI_EDETACHED)
+    {
         // Chưa attach -> Attach ngay
-        if ((*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL) != 0) {
+        if ((*g_jvm)->AttachCurrentThread(g_jvm, &env, NULL) != 0)
+        {
             LOGE("Failed to attach thread to JVM");
             return NULL;
         }
@@ -45,15 +51,18 @@ static JNIEnv *get_jni_env() {
 }
 
 // Impl: Khi nhận danh sách bạn bè
-void jni_on_friend_list(int count, UserInfoPayload *friends) {
+void jni_on_friend_list(int count, UserInfoPayload *friends)
+{
     JNIEnv *env = get_jni_env();
-    if (!env || !g_listener) return;
+    if (!env || !g_listener)
+        return;
 
     // 1. Tạo mảng Java UserDto[]
     jobjectArray jArray = (*env)->NewObjectArray(env, count, c_UserDto, NULL);
 
     // 2. Loop convert C struct -> Java Object
-    for (int i = 0; i < count; i++) {
+    for (int i = 0; i < count; i++)
+    {
         jstring jName = (*env)->NewStringUTF(env, friends[i].name);
         jstring jEmail = (*env)->NewStringUTF(env, friends[i].email);
         jboolean jOnline = (friends[i].is_online == 1);
@@ -76,83 +85,114 @@ void jni_on_friend_list(int count, UserInfoPayload *friends) {
 }
 
 // Impl: Khi nhận status
-void jni_on_status_change(int friend_id, int is_online) {
+void jni_on_status_change(int friend_id, int is_online)
+{
     JNIEnv *env = get_jni_env();
-    if (!env || !g_listener) return;
+    if (!env || !g_listener)
+        return;
 
-    (*env)->CallVoidMethod(env, g_listener, m_onStatus, friend_id, (jboolean) (is_online == 1));
+    (*env)->CallVoidMethod(env, g_listener, m_onStatus, friend_id, (jboolean)(is_online == 1));
 }
 
-//void jni_on_message(ChatPayload *msg) {
-//    // Tự implement tương tự (Convert ChatPayload -> MessageDto -> CallVoidMethod)
-//}
-
-void jni_on_disconnect(const char *reason) {
+void jni_on_friend_req(int req_id, int sender_id, const char *sender_name)
+{
     JNIEnv *env = get_jni_env();
-    if (!env || !g_listener) return;
+    if (!env || !g_listener)
+        return;
+
+    jstring jName = (*env)->NewStringUTF(env, sender_name);
+
+    // Gọi Kotlin: onFriendRequestReceived(reqId, senderId, name)
+    (*env)->CallVoidMethod(env, g_listener, m_onFriendReq, req_id, sender_id, jName);
+
+    (*env)->DeleteLocalRef(env, jName);
+}
+
+void jni_on_req_response(int cmd, int status)
+{
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener)
+        return;
+    (*env)->CallVoidMethod(env, g_listener, m_onReqResp, cmd, status);
+}
+
+// void jni_on_message(ChatPayload *msg) {
+//     // Tự implement tương tự (Convert ChatPayload -> MessageDto -> CallVoidMethod)
+// }
+
+void jni_on_disconnect(const char *reason)
+{
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener)
+        return;
     jstring jReason = (*env)->NewStringUTF(env, reason);
     (*env)->CallVoidMethod(env, g_listener, m_onDisconnect, jReason);
     (*env)->DeleteLocalRef(env, jReason);
 }
 
 // --- Helper ném lỗi ---
-void throw_unified_error(JNIEnv *env, int result_code) {
+void throw_unified_error(JNIEnv *env, int result_code)
+{
     jclass exClass = g_UnknownException;
     const char *msg = "Lỗi không xác định";
 
     // 1. Xử lý Lỗi Client (Số Âm)
-    if (result_code < 0) {
-        switch (result_code) {
-            case ERR_NETWORK_CONN_FAILED:
-            case ERR_NETWORK_SEND_FAILED:
-            case ERR_NETWORK_RECV_FAILED:
-                exClass = g_NetworkException;
-                msg = "Lỗi kết nối mạng hoặc Socket bị đóng";
-                break;
-            case ERR_PROTOCOL_MISMATCH:
-                exClass = g_ProtocolException;
-                msg = "Lỗi giao thức: Phản hồi từ Server không khớp lệnh";
-                break;
-            case ERR_PROTOCOL_SIZE_ERR:
-                exClass = g_ProtocolException;
-                msg = "Lỗi giao thức: Kích thước dữ liệu không hợp lệ";
-                break;
-            case ERR_INTERNAL_MEM:
-                msg = "Lỗi bộ nhớ thiết bị (Malloc fail)";
-                break;
-            default:
-                msg = "Lỗi nội bộ Client không xác định";
-                break;
+    if (result_code < 0)
+    {
+        switch (result_code)
+        {
+        case ERR_NETWORK_CONN_FAILED:
+        case ERR_NETWORK_SEND_FAILED:
+        case ERR_NETWORK_RECV_FAILED:
+            exClass = g_NetworkException;
+            msg = "Lỗi kết nối mạng hoặc Socket bị đóng";
+            break;
+        case ERR_PROTOCOL_MISMATCH:
+            exClass = g_ProtocolException;
+            msg = "Lỗi giao thức: Phản hồi từ Server không khớp lệnh";
+            break;
+        case ERR_PROTOCOL_SIZE_ERR:
+            exClass = g_ProtocolException;
+            msg = "Lỗi giao thức: Kích thước dữ liệu không hợp lệ";
+            break;
+        case ERR_INTERNAL_MEM:
+            msg = "Lỗi bộ nhớ thiết bị (Malloc fail)";
+            break;
+        default:
+            msg = "Lỗi nội bộ Client không xác định";
+            break;
         }
     }
 
     // 2. Xử lý Lỗi Server (Số Dương)
-    else {
-        switch (result_code) {
-            case STATUS_ERROR_AUTH:
-                exClass = g_AuthException;
-                msg = "Sai email hoặc mật khẩu";
-                break;
-            case STATUS_ERROR_USER_NOT_FOUND:
-                exClass = g_UserNotFoundException;
-                msg = "Tài khoản không tồn tại";
-                break;
-            case STATUS_ERROR_ALREADY_EXIST:
-                exClass = g_UserExistException;
-                msg = "Email này đã được đăng ký";
-                break;
-            case STATUS_ERROR_DB:
-                exClass = g_ServerException;
-                msg = "Lỗi xử lý Database phía Server";
-                break;
-            case STATUS_ERROR_INVALID_PARAM:
-                msg = "Dữ liệu gửi lên không hợp lệ";
-                break;
-            case STATUS_ERROR_UNKNOWN:
-            default:
-                exClass = g_ServerException;
-                msg = "Server trả về lỗi không xác định";
-                break;
+    else
+    {
+        switch (result_code)
+        {
+        case STATUS_ERROR_AUTH:
+            exClass = g_AuthException;
+            msg = "Sai email hoặc mật khẩu";
+            break;
+        case STATUS_ERROR_USER_NOT_FOUND:
+            exClass = g_UserNotFoundException;
+            msg = "Tài khoản không tồn tại";
+            break;
+        case STATUS_ERROR_ALREADY_EXIST:
+            exClass = g_UserExistException;
+            msg = "Email này đã được đăng ký";
+            break;
+        case STATUS_ERROR_DB:
+            exClass = g_ServerException;
+            msg = "Lỗi xử lý Database phía Server";
+            break;
+        case STATUS_ERROR_INVALID_PARAM:
+            msg = "Dữ liệu gửi lên không hợp lệ";
+            break;
+        case STATUS_ERROR_UNKNOWN:
+        default:
+            exClass = g_ServerException;
+            msg = "Server trả về lỗi không xác định";
+            break;
         }
     }
 
@@ -161,61 +201,69 @@ void throw_unified_error(JNIEnv *env, int result_code) {
 
 // --- 2. JNI INIT & EXPORTS ---
 // --- JNI_OnLoad: Chạy 1 lần khi App start ---
-jint JNI_OnLoad(JavaVM *vm, void *reserved) {
+jint JNI_OnLoad(JavaVM *vm, void *reserved)
+{
     g_jvm = vm;
     JNIEnv *env;
-    if ((*vm)->GetEnv(vm, (void **) &env, JNI_VERSION_1_6) != JNI_OK) return JNI_ERR;
+    if ((*vm)->GetEnv(vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK)
+        return JNI_ERR;
 
     jclass lClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/NativeEventListener");
     m_onFriendList = (*env)->GetMethodID(env, lClass, "onFriendListReceived", "([Lcom/example/konnichat/data/remote/dto/UserDto;)V");
     m_onStatus = (*env)->GetMethodID(env, lClass, "onFriendStatusChanged", "(IZ)V");
+    m_onFriendReq = (*env)->GetMethodID(env, lClass, "onFriendRequestReceived", "(IILjava/lang/String;)V");
+    m_onReqResp = (*env)->GetMethodID(env, lClass, "onRequestResponse", "(II)V");
     // m_onMessage = (*env)->GetMethodID(env, lClass, "onMessageReceived", "(Lcom/example/konnichat/data/remote/dto/MessageDto;)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed", "(Ljava/lang/String;)V");
 
     // Cache UserDto
     jclass uClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/UserDto");
-    c_UserDto = (jclass) (*env)->NewGlobalRef(env, uClass);
+    c_UserDto = (jclass)(*env)->NewGlobalRef(env, uClass);
     m_UserDtoInit = (*env)->GetMethodID(env, c_UserDto, "<init>",
                                         "(ILjava/lang/String;Ljava/lang/String;Z)V");
 
     // Cache Exceptions
     jclass c1 = (*env)->FindClass(env,
                                   "com/example/konnichat/core/exception/AuthenticationException");
-    g_AuthException = (jclass) (*env)->NewGlobalRef(env, c1);
+    g_AuthException = (jclass)(*env)->NewGlobalRef(env, c1);
 
     jclass c2 = (*env)->FindClass(env,
                                   "com/example/konnichat/core/exception/UserNotFoundException");
-    g_UserNotFoundException = (jclass) (*env)->NewGlobalRef(env, c2);
+    g_UserNotFoundException = (jclass)(*env)->NewGlobalRef(env, c2);
 
     jclass c3 = (*env)->FindClass(env,
                                   "com/example/konnichat/core/exception/UserAlreadyExistsException");
-    g_UserExistException = (jclass) (*env)->NewGlobalRef(env, c3);
+    g_UserExistException = (jclass)(*env)->NewGlobalRef(env, c3);
 
     jclass c4 = (*env)->FindClass(env,
                                   "com/example/konnichat/core/exception/ServerInternalException");
-    g_ServerException = (jclass) (*env)->NewGlobalRef(env, c4);
+    g_ServerException = (jclass)(*env)->NewGlobalRef(env, c4);
 
     jclass c5 = (*env)->FindClass(env, "com/example/konnichat/core/exception/NetworkException");
-    g_NetworkException = (jclass) (*env)->NewGlobalRef(env, c5);
+    g_NetworkException = (jclass)(*env)->NewGlobalRef(env, c5);
 
     jclass c6 = (*env)->FindClass(env, "com/example/konnichat/core/exception/ProtocolException");
-    g_ProtocolException = (jclass) (*env)->NewGlobalRef(env, c6);
+    g_ProtocolException = (jclass)(*env)->NewGlobalRef(env, c6);
 
     jclass c7 = (*env)->FindClass(env, "java/lang/Exception"); // Fallback
-    g_UnknownException = (jclass) (*env)->NewGlobalRef(env, c7);
+    g_UnknownException = (jclass)(*env)->NewGlobalRef(env, c7);
 
     return JNI_VERSION_1_6;
 }
 
-void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *env, jobject thiz, jobject listener) {
+void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *env, jobject thiz, jobject listener)
+{
     // 1. Giữ Global Ref cho listener để không bị GC thu hồi
-    if (g_listener != NULL) (*env)->DeleteGlobalRef(env, g_listener);
+    if (g_listener != NULL)
+        (*env)->DeleteGlobalRef(env, g_listener);
     g_listener = (*env)->NewGlobalRef(env, listener);
 
     // 2. Chuẩn bị struct callbacks
     NativeCallbacks cbs;
     cbs.on_friend_list = jni_on_friend_list;
     cbs.on_status_change = jni_on_status_change;
+    cbs.on_friend_req = jni_on_friend_req;
+    cbs.on_req_response = jni_on_req_response;
     // cbs.on_message = jni_on_message;
     cbs.on_disconnect = jni_on_disconnect;
 
@@ -225,20 +273,23 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
 
 // --- Implementation ---
 jint Java_com_example_konnichat_data_remote_NativeClient_connect(JNIEnv *env, jobject thiz, jstring ip,
-                                                            jint port) {
+                                                                 jint port)
+{
     const char *native_ip = (*env)->GetStringUTFChars(env, ip, 0);
-    int result = client_init(native_ip, (int) port);
+    int result = client_init(native_ip, (int)port);
     (*env)->ReleaseStringUTFChars(env, ip, native_ip);
     return result;
 }
 
-void Java_com_example_konnichat_data_remote_NativeClient_disconnect(JNIEnv *env, jobject thiz) {
+void Java_com_example_konnichat_data_remote_NativeClient_disconnect(JNIEnv *env, jobject thiz)
+{
     client_close();
 }
 
 jint Java_com_example_konnichat_data_remote_NativeClient_registerUser(JNIEnv *env, jobject thiz,
                                                                       jstring name, jstring email,
-                                                                      jstring password) {
+                                                                      jstring password)
+{
     const char *n_name = (*env)->GetStringUTFChars(env, name, 0);
     const char *n_email = (*env)->GetStringUTFChars(env, email, 0);
     const char *n_pass = (*env)->GetStringUTFChars(env, password, 0);
@@ -249,7 +300,8 @@ jint Java_com_example_konnichat_data_remote_NativeClient_registerUser(JNIEnv *en
     (*env)->ReleaseStringUTFChars(env, email, n_email);
     (*env)->ReleaseStringUTFChars(env, password, n_pass);
 
-    if (status != STATUS_SUCCESS) {
+    if (status != STATUS_SUCCESS)
+    {
         throw_unified_error(env, status);
         return status;
     }
@@ -265,7 +317,8 @@ jint Java_com_example_konnichat_data_remote_NativeClient_registerUser(JNIEnv *en
  */
 jobject Java_com_example_konnichat_data_remote_NativeClient_loginUser(JNIEnv *env, jobject thiz,
                                                                       jstring email,
-                                                                      jstring password) {
+                                                                      jstring password)
+{
     const char *n_email = (*env)->GetStringUTFChars(env, email, 0);
     const char *n_pass = (*env)->GetStringUTFChars(env, password, 0);
 
@@ -277,7 +330,8 @@ jobject Java_com_example_konnichat_data_remote_NativeClient_loginUser(JNIEnv *en
     (*env)->ReleaseStringUTFChars(env, email, n_email);
     (*env)->ReleaseStringUTFChars(env, password, n_pass);
 
-    if (status == STATUS_SUCCESS) {
+    if (status == STATUS_SUCCESS)
+    {
         jstring jName = (*env)->NewStringUTF(env, userInfo.name);
         jstring jEmail = (*env)->NewStringUTF(env, userInfo.email);
         jboolean jIsOnline = (userInfo.is_online == 1) ? JNI_TRUE : JNI_FALSE;
@@ -286,7 +340,9 @@ jobject Java_com_example_konnichat_data_remote_NativeClient_loginUser(JNIEnv *en
         jobject userObj = (*env)->NewObject(env, c_UserDto, m_UserDtoInit,
                                             userInfo.user_id, jName, jEmail, jIsOnline);
         return userObj;
-    } else {
+    }
+    else
+    {
         throw_unified_error(env, status);
         return NULL;
     }
@@ -296,10 +352,24 @@ jobject Java_com_example_konnichat_data_remote_NativeClient_loginUser(JNIEnv *en
  * Gửi yêu cầu lấy danh sách bạn bè.
  * Kotlin: external fun getFriends(offset: Int, limit: Int): Int
  */
-JNIEXPORT jint JNICALL
-Java_com_example_konnichat_data_remote_NativeClient_getFriends(JNIEnv *env, jobject thiz,
-                                                               jint offset, jint limit) {
-    // Gọi thẳng xuống native_core.c
-    // offset: vị trí bắt đầu, limit: số lượng muốn lấy (VD: 100)
-    return client_get_friends(offset, limit);
+jint Java_com_example_konnichat_data_remote_NativeClient_getFriends(JNIEnv *env, jobject thiz,
+                                                                    jint offset, jint limit)
+{
+    // Gọi hàm C
+    int result = client_get_friends(offset, limit);
+
+    // Nếu gửi thất bại (mất mạng, lỗi socket), ném lỗi
+    if (result < 0)
+    {
+        throw_unified_error(env, result);
+    }
+
+    return (jint)result;
+}
+
+void Java_com_example_konnichat_data_remote_NativeClient_sendFriendRequest(JNIEnv *env, jobject thiz, jint targetId)
+{
+    int res = client_send_friend_request(targetId);
+    if (res < 0)
+        throw_unified_error(env, res);
 }

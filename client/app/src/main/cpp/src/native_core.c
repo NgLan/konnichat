@@ -155,9 +155,17 @@ int client_init(const char *ip, int port) {
 
 void client_close() {
     if (g_socket != -1) {
+        shutdown(g_socket, SHUT_RDWR);
         close(g_socket);
         g_socket = -1;
-        LOGI("Connection closed");
+        LOGI("Connection socket closed");
+    }
+
+    if (g_is_running) {
+        LOGI("Waiting for read thread to join...");
+        pthread_join(g_read_thread, NULL);
+        g_is_running = 0; // Đảm bảo chắc chắn là 0
+        LOGI("Read thread joined and stopped.");
     }
 }
 
@@ -263,8 +271,31 @@ int client_get_friends(int offset, int limit) {
     return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
+int client_send_friend_request(int target_id) {
+    LOGI("=== client_send_friend_request: Sending request to target %d ===", target_id);
+
+    // 1. Chuẩn bị Payload
+    FriendReqPayload payload;
+    payload.target_id = target_id;
+
+    // 2. Khóa Mutex và Gửi
+    pthread_mutex_lock(&g_send_mutex);
+    int res = send_request(CMD_SEND_FRIEND_REQ, &payload, sizeof(payload));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    if (res > 0) {
+        LOGI("Request sent successfully with req_id=%d", res);
+        return CLIENT_OK;
+    } else {
+        LOGE("Failed to send request");
+        return ERR_NETWORK_SEND_FAILED;
+    }
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header) {
+    LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
+
     // 1. Xử lý FRIEND LIST
     if (header->command_type == CMD_GET_FRIEND_LIST_RESP) {
         int32_t count = 0;
@@ -306,7 +337,33 @@ static void handle_incoming_packet(PacketHeader *header) {
         }
     }
 
-    // ... Các case khác ...
+    // 4. Xử lý THÔNG BÁO phản hồi của lệnh gửi kết bạn
+    else if (header->command_type == CMD_SEND_FRIEND_REQ_RESP) {
+        LOGI("Received CMD_SEND_FRIEND_REQ_RESP with status=%d", header->status_code);
+
+        if (header->payload_size > 0) discard_payload(g_socket, header->payload_size);
+
+        if (g_callbacks.on_req_response) {
+            LOGI("Calling callback on_req_response(%d, %d)", header->command_type, header->status_code);
+            g_callbacks.on_req_response(header->command_type, header->status_code);
+        } else {
+            LOGW("Callback on_req_response is NULL!");
+        }
+    }
+
+    // Xử lý thông báo kết bạn (Real-time)
+    else if (header->command_type == CMD_NOTIFY_FRIEND_REQ) {
+        PendingReqInfo info;
+        // Đọc payload
+        if (recv_all(g_socket, &info, sizeof(PendingReqInfo)) > 0) {
+            LOGI("Received Friend Request from: %s (ID: %d)", info.sender_name, info.sender_id);
+
+            // Gọi callback lên JNI
+            if (g_callbacks.on_friend_req) {
+                g_callbacks.on_friend_req(info.request_id, info.sender_id, info.sender_name);
+            }
+        }
+    }
     else {
         LOGW("Unhandled Packet Type: %d. Size: %d", header->command_type, header->payload_size);
         discard_payload(g_socket, header->payload_size);
@@ -316,26 +373,32 @@ static void handle_incoming_packet(PacketHeader *header) {
 // --- THREAD LOOP ---
 static void* read_thread_func(void* arg) {
     PacketHeader header;
+    LOGI("=== READ THREAD STARTED ===");
 
     while (g_is_running) {
         if (g_socket == -1) {
-            g_is_running = 0; // <--- THÊM DÒNG NÀY (Reset cờ nếu chưa connect)
+            g_is_running = 0; // Reset cờ nếu chưa connect
+            LOGW("Socket closed, exiting read thread");
             break;
         }
 
+        LOGI("Waiting for packet...");
         // Blocking Read Header
         int n = recv_all(g_socket, &header, sizeof(PacketHeader));
 
         if (n <= 0) {
-            LOGE("Server disconnected or Read Error.");
+            LOGE("Server disconnected or Read Error (recv returned %d)", n);
             g_is_running = 0;
             if (g_callbacks.on_disconnect) g_callbacks.on_disconnect("Connection Lost");
             break;
         }
 
         // Có gói tin -> Xử lý
+        LOGI("Received packet header");
         handle_incoming_packet(&header);
     }
+
+    LOGI("=== READ THREAD EXITED ===");
     return NULL;
 }
 

@@ -12,6 +12,11 @@ interface NativeEventListener {
     // Khi bạn bè online/offline (Push từ Server)
     fun onFriendStatusChanged(friendId: Int, isOnline: Boolean)
 
+    // Khi nhận được lời mời kết bạn real-time
+    fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String)
+
+    fun onRequestResponse(cmd: Int, status: Int)
+
     // Khi bị ngắt kết nối
     fun onConnectionClosed(reason: String)
 }
