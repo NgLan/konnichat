@@ -165,13 +165,15 @@ typedef struct __attribute__((packed)) {
 
 // Search (Tìm kiếm)
 typedef struct __attribute__((packed)) {
-    char keyword[50];
+    char keyword[MAX_NAME_LEN];
+    int32_t offset; // Vị trí bắt đầu (cho phân trang)
+    int32_t limit;  // Số lượng muốn lấy
 } SearchReqPayload;
 
 typedef struct __attribute__((packed)) {
     int32_t user_id;
-    char name[64];
-    char email[256];
+    char name[MAX_NAME_LEN];
+    char email[MAX_EMAIL_LEN];
 } UserSearchInfo;
 
 typedef struct __attribute__((packed)) {

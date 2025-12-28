@@ -3,6 +3,7 @@ package com.example.konnichat.data.remote
 import android.util.Log
 import com.example.konnichat.data.remote.NativeEventListenerImpl.userRepository
 import com.example.konnichat.data.remote.dto.UserDto
+import com.example.konnichat.data.remote.dto.UserSearchDto
 import com.example.konnichat.data.repository.UserRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,6 +52,10 @@ object NativeEventListenerImpl : NativeEventListener {
     }
 
     override fun onFriendRemoved(exFriendId: Int) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onSearchResult(results: Array<UserSearchDto>) {
         TODO("Not yet implemented")
     }
 

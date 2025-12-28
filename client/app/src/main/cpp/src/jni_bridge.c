@@ -17,9 +17,12 @@ static jmethodID m_onFriendReq;
 static jmethodID m_onReqResp;
 static jmethodID m_onReqAccepted;
 static jmethodID m_onUnfriended;
+static jmethodID m_onSearchResult;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
+static jclass c_UserSearchDto;
+static jmethodID m_UserSearchDtoInit;
 
 // Các class Exception
 static jclass g_AuthException;
@@ -139,6 +142,34 @@ void jni_on_unfriended(int ex_friend_id) {
     (*env)->CallVoidMethod(env, g_listener, m_onUnfriended, (jint)ex_friend_id);
 }
 
+void jni_on_search_result(int count, UserSearchInfo *results) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    // 1. Tạo mảng Java UserDto[]
+    jobjectArray jArray = (*env)->NewObjectArray(env, count, c_UserSearchDto, NULL);
+
+    // 2. Convert từng phần tử
+    for (int i = 0; i < count; i++) {
+        jstring jName = (*env)->NewStringUTF(env, results[i].name);
+        jstring jEmail = (*env)->NewStringUTF(env, results[i].email);
+
+        jobject jObj = (*env)->NewObject(env, c_UserSearchDto, m_UserSearchDtoInit,
+                                         results[i].user_id, jName, jEmail);
+
+        (*env)->SetObjectArrayElement(env, jArray, i, jObj);
+
+        (*env)->DeleteLocalRef(env, jName);
+        (*env)->DeleteLocalRef(env, jEmail);
+        (*env)->DeleteLocalRef(env, jObj);
+    }
+
+    // 3. Gọi callback Kotlin
+    (*env)->CallVoidMethod(env, g_listener, m_onSearchResult, jArray);
+
+    (*env)->DeleteLocalRef(env, jArray);
+}
+
 // void jni_on_message(ChatPayload *msg) {
 //     // Tự implement tương tự (Convert ChatPayload -> MessageDto -> CallVoidMethod)
 // }
@@ -234,6 +265,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onReqAccepted = (*env)->GetMethodID(env, lClass, "onFriendRequestAccepted",
                                           "(Lcom/example/konnichat/data/remote/dto/UserDto;)V");
     m_onUnfriended = (*env)->GetMethodID(env, lClass, "onFriendRemoved", "(I)V");
+    m_onSearchResult = (*env)->GetMethodID(env, lClass, "onSearchResult", "([Lcom/example/konnichat/data/remote/dto/UserSearchDto;)V");
     // m_onMessage = (*env)->GetMethodID(env, lClass, "onMessageReceived", "(Lcom/example/konnichat/data/remote/dto/MessageDto;)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
@@ -243,6 +275,9 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     c_UserDto = (jclass) (*env)->NewGlobalRef(env, uClass);
     m_UserDtoInit = (*env)->GetMethodID(env, c_UserDto, "<init>",
                                         "(ILjava/lang/String;Ljava/lang/String;Z)V");
+    jclass sClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/UserSearchDto");
+    c_UserSearchDto = (jclass) (*env)->NewGlobalRef(env, sClass);
+    m_UserSearchDtoInit = (*env)->GetMethodID(env, c_UserSearchDto, "<init>", "(ILjava/lang/String;Ljava/lang/String;)V");
 
     // Cache Exceptions
     jclass c1 = (*env)->FindClass(env,
@@ -288,6 +323,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_req_response = jni_on_req_response;
     cbs.on_request_accepted = jni_on_req_accepted;
     cbs.on_unfriended = jni_on_unfriended;
+    cbs.on_search_result = jni_on_search_result;
     // cbs.on_message = jni_on_message;
     cbs.on_disconnect = jni_on_disconnect;
 
@@ -410,4 +446,12 @@ Java_com_example_konnichat_data_remote_NativeClient_unfriendUser(JNIEnv *env, jo
     if (status != CLIENT_OK) {
         throw_unified_error(env, status);
     }
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_searchUsers(JNIEnv *env, jobject thiz,
+                                                                jstring keyword, jint offset, jint limit) {
+    const char *n_keyword = (*env)->GetStringUTFChars(env, keyword, 0);
+    client_search_users(n_keyword, offset, limit);
+    (*env)->ReleaseStringUTFChars(env, keyword, n_keyword);
 }

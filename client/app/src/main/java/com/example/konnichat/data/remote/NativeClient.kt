@@ -34,4 +34,5 @@ object NativeClient {
     external fun respondFriendRequest(requestId: Int, isAccepted: Boolean)
 
     external fun unfriendUser(targetId: Int)
+    external fun searchUsers(keyword: String, offset: Int, limit: Int)
 }

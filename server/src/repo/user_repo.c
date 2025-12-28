@@ -114,43 +114,74 @@ void db_update_user_status(int user_id, int is_online)
     db_release_conn(conn);
 }
 
-int db_search_users(const char *keyword, int current_id, UserSearchInfo *out, int max)
+/**
+ * @brief Tìm kiếm người dùng theo từ khóa (Partial match).
+ * 
+ * @param keyword Từ khóa tìm kiếm (Tên hoặc Email).
+ * @param current_id ID của người đang thực hiện tìm kiếm (để loại trừ khỏi kết quả).
+ * @param out_list Mảng UserSearchInfo để lưu kết quả.
+ * @param limit Số lượng kết quả tối đa.
+ * @return int Số lượng bản ghi tìm thấy (0 nếu lỗi hoặc không có).
+ */
+int db_search_users(const char *keyword, int current_id, UserSearchInfo *out_list, int limit, int offset)
 {
-    char query[1024];
-    snprintf(query, sizeof(query),
-             "SELECT id, name, email FROM users WHERE name LIKE '%%%s%%' AND id != %d LIMIT %d",
-             keyword, current_id, max);
+    // Validate input
+    if (!keyword || strlen(keyword) == 0) return 0;
 
     MYSQL *conn = db_get_conn();
-    if (!conn)
+    if (!conn) {
+        LOG_ERROR("Search User: Failed to connect to DB.");
         return 0;
+    }
 
-    if (mysql_query(conn, query))
-    {
+    char query[1024];
+    // Sử dụng LIKE %keyword% để tìm kiếm gần đúng
+    // Loại trừ bản thân (id != current_id)
+    snprintf(query, sizeof(query),
+             "SELECT id, name, email FROM users "
+             "WHERE (name LIKE '%%%s%%' OR email LIKE '%%%s%%') "
+             "AND id != %d "
+             "LIMIT %d OFFSET %d",
+             keyword, keyword, current_id, limit, offset);
+
+    if (mysql_query(conn, query)) {
+        LOG_ERROR("Search DB Error: %s", mysql_error(conn));
         db_release_conn(conn);
         return 0;
     }
 
     MYSQL_RES *res = mysql_store_result(conn);
-
     int count = 0;
-    if (res)
-    {
+
+    if (res) {
         MYSQL_ROW row;
-        while ((row = mysql_fetch_row(res)) && count < max)
-        {
-            out[count].user_id = atoi(row[0]);
-            strncpy(out[count].name, row[1], 63);
-            strncpy(out[count].email, row[2], 255);
+        while ((row = mysql_fetch_row(res)) && count < limit) {
+            out_list[count].user_id = atoi(row[0]);
+            
+            // Xử lý an toàn chuỗi
+            if (row[1]) strncpy(out_list[count].name, row[1], MAX_NAME_LEN - 1);
+            else strcpy(out_list[count].name, "Unknown");
+            
+            if (row[2]) strncpy(out_list[count].email, row[2], MAX_EMAIL_LEN - 1);
+            else strcpy(out_list[count].email, "");
+
             count++;
         }
         mysql_free_result(res);
     }
 
     db_release_conn(conn);
+    LOG_INFO("User %d searched '%s'. Found %d results.", current_id, keyword, count);    
     return count;
 }
 
+/**
+ * @brief Lấy tên user theo ID.
+ * 
+ * @param user_id ID của user cần lấy tên.
+ * @param name_buf Bộ đệm để lưu tên.
+ * @param buf_len Độ dài bộ đệm.
+ */
 void get_user_name_by_id(int user_id, char *name_buf, int buf_len)
 {
     char query[256];

@@ -10,6 +10,7 @@
 #include <time.h>
 #include <pthread.h>
 #include <syslog.h>
+#include <ctype.h>
 
 static int g_socket = -1;
 static int g_req_id = 0;
@@ -121,6 +122,22 @@ static int recv_and_validate_header(PacketHeader *header, int expected_cmd) {
     }
 
     return CLIENT_OK;
+}
+
+// Helper: Xóa khoảng trắng đầu và cuối chuỗi
+static void trim_string(char *str) {
+    if (!str) return;
+    char *ptr = str;
+    int len = strlen(ptr);
+
+    // Trim trailing (cuối chuỗi)
+    while (len > 0 && isspace(ptr[len - 1])) ptr[--len] = 0;
+
+    // Trim leading (đầu chuỗi)
+    while (*ptr && isspace(*ptr)) ptr++, len--;
+
+    // Move về đầu buffer
+    memmove(str, ptr, len + 1);
 }
 
 int client_init(const char *ip, int port) {
@@ -337,6 +354,28 @@ int client_unfriend(int target_id) {
     return CLIENT_OK;
 }
 
+int client_search_users(const char *keyword, int offset, int limit) {
+    if (!keyword || strlen(keyword) == 0) return CLIENT_OK;
+
+    SearchReqPayload payload;
+    memset(&payload, 0, sizeof(payload));
+    strncpy(payload.keyword, keyword, 49);
+
+    trim_string(payload.keyword);
+
+    // Nếu trim xong mà rỗng thì thôi không gửi
+    if (strlen(payload.keyword) == 0) return CLIENT_OK;
+
+    payload.offset = offset;
+    payload.limit = limit;
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_SEARCH_USERS, &payload, sizeof(payload));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header) {
     LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
@@ -453,6 +492,36 @@ static void handle_incoming_packet(PacketHeader *header) {
                 g_callbacks.on_unfriended(payload.target_id);
             }
         }
+    }
+
+    else if (header->command_type == CMD_SEARCH_USERS_RESP) {
+        int32_t count = 0;
+
+        // 1. Đọc số lượng kết quả
+        if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
+
+        UserSearchInfo *results = NULL;
+        if (count > 0) {
+            int data_size = count * sizeof(UserSearchInfo);
+            results = (UserSearchInfo *)malloc(data_size);
+
+            // 2. Đọc mảng dữ liệu
+            if (results && recv_all(g_socket, results, data_size) > 0) {
+                // Thành công -> Gọi callback
+                if (g_callbacks.on_search_result) {
+                    g_callbacks.on_search_result(count, results);
+                }
+            } else {
+                LOGE("Failed to read search results body");
+            }
+        } else {
+            // Không có kết quả
+            if (g_callbacks.on_search_result) {
+                g_callbacks.on_search_result(0, NULL);
+            }
+        }
+
+        if (results) free(results);
     }
 
     else {

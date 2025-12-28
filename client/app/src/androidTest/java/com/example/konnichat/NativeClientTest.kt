@@ -6,6 +6,7 @@ import com.example.konnichat.core.exception.UserAlreadyExistsException
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListener
 import com.example.konnichat.data.remote.dto.UserDto
+import com.example.konnichat.data.remote.dto.UserSearchDto
 import org.junit.After
 import org.junit.Assert
 import org.junit.Before
@@ -530,6 +531,122 @@ class NativeClientTest {
         Assert.assertTrue("A không nhận được thông báo bị hủy kết bạn", success)
         Assert.assertEquals("Người hủy phải là B", idB, whoUnfriendedMe)
     }
+
+    // ==========================================
+    // MODULE 6: SEARCH USERS (PAGINATION & TRIM)
+    // ==========================================
+
+    @Test
+    fun test08_SearchUsers_Pagination_Trim() {
+        val time = System.nanoTime()
+        val searcherEmail = "searcher_$time@konni.com"
+        val pass = "123"
+
+        // 1. Đăng ký người đi tìm (Searcher)
+        NativeClient.registerUser("Searcher", searcherEmail, pass)
+
+        // 2. Đăng ký 25 người dùng mục tiêu để test phân trang
+        // Tên sẽ là: "TargetUser 00", "TargetUser 01", ... "TargetUser 24"
+        // Keyword chung là "TargetUser"
+        val prefix = "TargetUser_$time"
+        for (i in 0 until 25) {
+            val email = "target_${i}_$time@konni.com"
+            val name = "$prefix $i"
+            NativeClient.registerUser(name, email, pass)
+        }
+
+        // 3. Login Searcher
+        NativeClient.disconnect()
+        Thread.sleep(200)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(searcherEmail, pass)
+
+        // --- TEST CASE 1: PAGINATION PAGE 1 (Offset 0, Limit 10) ---
+        val latchPage1 = CountDownLatch(1)
+        var resultsPage1: Array<UserSearchDto>? = null
+
+        val listener = object : StubNativeEventListener() {
+            override fun onSearchResult(results: Array<UserSearchDto>) {
+                if (resultsPage1 == null) {
+                    resultsPage1 = results
+                    latchPage1.countDown()
+                } else {
+                    // Xử lý cho các lần gọi sau (Page 2, Trim...)
+                }
+            }
+        }
+        NativeClient.startListening(listener)
+
+        // Gọi tìm kiếm Page 1
+        NativeClient.searchUsers(prefix, 0, 10)
+
+        Assert.assertTrue("Timeout Page 1", latchPage1.await(5, TimeUnit.SECONDS))
+        Assert.assertNotNull(resultsPage1)
+        Assert.assertEquals("Page 1 phải trả về 10 kết quả", 10, resultsPage1!!.size)
+        // Kiểm tra tên có chứa keyword không
+        Assert.assertTrue(resultsPage1!![0].name.contains(prefix))
+
+        // --- TEST CASE 2: PAGINATION PAGE 2 (Offset 10, Limit 10) ---
+        // Khi lướt xuống, lấy tiếp 10 người nữa
+        val latchPage2 = CountDownLatch(1)
+        var resultsPage2: Array<UserSearchDto>? = null
+
+        // Update listener hoặc dùng logic check biến flag, ở đây ta gán đè listener mới cho gọn
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onSearchResult(results: Array<UserSearchDto>) {
+                resultsPage2 = results
+                latchPage2.countDown()
+            }
+        })
+
+        // Gọi tìm kiếm Page 2 (Offset = 10)
+        NativeClient.searchUsers(prefix, 10, 10)
+
+        Assert.assertTrue("Timeout Page 2", latchPage2.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Page 2 phải trả về 10 kết quả", 10, resultsPage2!!.size)
+
+        // Kiểm tra Page 2 không trùng Page 1 (So sánh ID phần tử đầu tiên)
+        Assert.assertNotEquals("Page 2 phải khác Page 1",
+            resultsPage1!![0].id, resultsPage2!![0].id)
+
+        // --- TEST CASE 3: PAGINATION PAGE 3 (Offset 20, Limit 10) ---
+        // Chỉ còn 5 người (Tổng 25, đã lấy 20) -> Phải trả về 5
+        val latchPage3 = CountDownLatch(1)
+        var countPage3 = 0
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onSearchResult(results: Array<UserSearchDto>) {
+                countPage3 = results.size
+                latchPage3.countDown()
+            }
+        })
+
+        NativeClient.searchUsers(prefix, 20, 10)
+        Assert.assertTrue("Timeout Page 3", latchPage3.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Page 3 phải trả về 5 kết quả còn lại", 5, countPage3)
+
+        // --- TEST CASE 4: TRIM STRING ---
+        // Gửi chuỗi có khoảng trắng: "  TargetUser...  "
+        // Nếu Client không trim, Server sẽ tìm chính xác và không ra kết quả (vì tên trong DB không có space ở đầu/cuối).
+        // Nếu Client trim đúng, Server sẽ tìm ra kết quả.
+
+        val latchTrim = CountDownLatch(1)
+        var countTrim = 0
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onSearchResult(results: Array<UserSearchDto>) {
+                countTrim = results.size
+                latchTrim.countDown()
+            }
+        })
+
+        val dirtyKeyword = "   $prefix   " // Thêm space đầu cuối
+        NativeClient.searchUsers(dirtyKeyword, 0, 10)
+
+        Assert.assertTrue("Timeout Trim Test", latchTrim.await(5, TimeUnit.SECONDS))
+        Assert.assertTrue("Phải tìm thấy kết quả dù keyword có space (Client phải trim)", countTrim > 0)
+    }
+
 }
 
 // =========================================================
@@ -543,6 +660,7 @@ open class StubNativeEventListener : NativeEventListener {
     override fun onRequestResponse(cmd: Int, status: Int) {}
     override fun onFriendRequestAccepted(user: UserDto) {}
     override fun onFriendRemoved(exFriendId: Int) {}
+    override fun onSearchResult(results: Array<UserSearchDto>) {}
     override fun onConnectionClosed(reason: String) {}
 }
 
@@ -661,3 +779,9 @@ class FakeTcpClient(ip: String, port: Int) {
         socket.close()
     }
 }
+
+data class UserSearchDto(
+    val id: Int,
+    val name: String,
+    val email: String
+)

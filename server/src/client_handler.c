@@ -106,13 +106,13 @@ static void discard_payload(int sock, int size)
     }
 }
 
-/** 
+/**
  * Gửi thông báo trạng thái cho TOÀN BỘ bạn bè
  * status: 1 = Online, 0 = Offline
  */
 static void notify_friends_status(int user_id, int status)
 {
-    // 1. Lấy danh sách ID bạn bè 
+    // 1. Lấy danh sách ID bạn bè
     int batch_size = 1000; // Mỗi lần lấy 1000 bạn
     int offset = 0;
     int *friend_ids = (int *)malloc(batch_size * sizeof(int));
@@ -132,8 +132,9 @@ static void notify_friends_status(int user_id, int status)
     while (1)
     {
         int count = db_get_friend_ids(user_id, friend_ids, batch_size, offset);
-        
-        if (count <= 0) break; // Hết bạn rồi, thoát vòng lặp
+
+        if (count <= 0)
+            break; // Hết bạn rồi, thoát vòng lặp
 
         // Loop gửi thông báo
         for (int i = 0; i < count; i++)
@@ -149,24 +150,27 @@ static void notify_friends_status(int user_id, int status)
         offset += count;
 
         // Nếu số lượng lấy được < batch_size nghĩa là đã là trang cuối cùng
-        if (count < batch_size) break; 
+        if (count < batch_size)
+            break;
     }
 
     free(friend_ids);
     LOG_INFO("User %d status (%d). Processed check for %d friends.", user_id, status, offset);
 }
 
-static void notify_friend_req_received(int request_id, int sender_id, int target_id) {
+static void notify_friend_req_received(int request_id, int sender_id, int target_id)
+{
     // 1. Kiểm tra target có online không
     int target_sock = get_socket_by_user_id(target_id);
-    if (target_sock == -1) return; // Offline -> Thôi
+    if (target_sock == -1)
+        return; // Offline -> Thôi
 
     // 2. Chuẩn bị payload thông báo
     PendingReqInfo notif;
     memset(&notif, 0, sizeof(PendingReqInfo));
     notif.request_id = request_id;
     notif.sender_id = sender_id;
-    
+
     // 3. Lấy tên người gửi để hiện thông báo
     get_user_name_by_id(sender_id, notif.sender_name, sizeof(notif.sender_name));
 
@@ -176,32 +180,35 @@ static void notify_friend_req_received(int request_id, int sender_id, int target
 }
 
 /**
- * @brief Thông báo cho người đã gửi lời mời biết rằng lời mời đã được chấp nhận 
- * 
+ * @brief Thông báo cho người đã gửi lời mời biết rằng lời mời đã được chấp nhận
+ *
  * @param acceptor_id ID của người vừa chấp nhận lời mời (B)
  * @param receiver_id ID của người nhận thông báo (A - người đã gửi lời mời trước đó)
  */
-static void notify_req_accepted_realtime(int acceptor_id, int receiver_id) {
+static void notify_req_accepted_realtime(int acceptor_id, int receiver_id)
+{
     int sock_receiver = get_socket_by_user_id(receiver_id);
-    if (sock_receiver == -1) return; // Người nhận không online -> Bỏ qua
+    if (sock_receiver == -1)
+        return; // Người nhận không online -> Bỏ qua
 
     UserInfoPayload acceptor_info;
     memset(&acceptor_info, 0, sizeof(UserInfoPayload));
 
     // Lấy thông tin người chấp nhận để gửi cho người kia
     // Hàm này giả định bạn đã có hoặc tự viết thêm trong user_repo
-    if (db_get_user_info_by_id(acceptor_id, &acceptor_info) == 0) {
+    if (db_get_user_info_by_id(acceptor_id, &acceptor_info) == 0)
+    {
         // Fallback nếu không query được DB
         acceptor_info.user_id = acceptor_id;
-        acceptor_info.is_online = 1; 
+        acceptor_info.is_online = 1;
         snprintf(acceptor_info.name, sizeof(acceptor_info.name), "User %d", acceptor_id);
     }
     acceptor_info.is_online = 1; // Chắc chắn đang online vì vừa bấm nút
 
     // Gửi đi
-    send_response(sock_receiver, CMD_NOTIFY_REQ_ACCEPTED, 0, STATUS_SUCCESS, 
+    send_response(sock_receiver, CMD_NOTIFY_REQ_ACCEPTED, 0, STATUS_SUCCESS,
                   &acceptor_info, sizeof(UserInfoPayload));
-                  
+
     LOG_INFO("Real-time: Notified User %d that User %d accepted.", receiver_id, acceptor_id);
 }
 
@@ -212,13 +219,18 @@ static void handle_register(int sock, PacketHeader *reqHeader, void *payload)
     LOG_INFO("Register Request: %s", data->email);
 
     int result = db_register_user(data->name, data->email, data->password);
-    
+
     int status;
-    if (result == 1) {
+    if (result == 1)
+    {
         status = STATUS_SUCCESS;
-    } else if (result == -1) {
-        status = STATUS_ERROR_ALREADY_EXIST; 
-    } else {
+    }
+    else if (result == -1)
+    {
+        status = STATUS_ERROR_ALREADY_EXIST;
+    }
+    else
+    {
         status = STATUS_ERROR_DB;
     }
 
@@ -383,28 +395,45 @@ static void handle_fetch_offline(int sock, PacketHeader *reqHeader, int current_
     LOG_INFO("Synced %d offline msgs for User %d.", count, current_user_id);
 }
 
+/**
+ * @brief Xử lý yêu cầu tìm kiếm người dùng.
+ */
 static void handle_search_users(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
 {
     SearchReqPayload *req = (SearchReqPayload *)payload;
-    LOG_INFO("User %d searching for: %s", current_user_id, req->keyword);
 
-    // Chuẩn bị buffer kết quả
-    UserSearchInfo results[20];
-    int count = db_search_users(req->keyword, current_user_id, results, 20);
-
-    // Payload trả về: [Count (4 bytes)] + [Array Data]
-    int payload_size = sizeof(int32_t) + (count * sizeof(UserSearchInfo));
-    void *resp_buffer = malloc(payload_size);
-
-    // Đóng gói
-    memcpy(resp_buffer, &count, sizeof(int32_t));
-    if (count > 0)
+    // Validate độ dài từ khóa
+    if (strlen(req->keyword) < 1)
     {
-        memcpy((char *)resp_buffer + sizeof(int32_t), results, count * sizeof(UserSearchInfo));
+        send_response(sock, CMD_SEARCH_USERS_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
     }
 
-    send_response(sock, CMD_SEARCH_USERS_RESP, reqHeader->request_id, STATUS_SUCCESS, resp_buffer, payload_size);
-    free(resp_buffer);
+    // Xử lý Limit/Offset
+    int limit = req->limit;
+    int offset = req->offset;
+
+    if (limit <= 0 || limit > 50)
+        limit = 20; // Mặc định 20, max 50
+    if (offset < 0)
+        offset = 0;
+
+    UserSearchInfo *results = (UserSearchInfo *)malloc(limit * sizeof(UserSearchInfo));
+
+    if (!results)
+    {
+        LOG_ERROR("Malloc failed in handle_search_users");
+        send_response(sock, CMD_SEARCH_USERS_RESP, reqHeader->request_id, STATUS_ERROR_UNKNOWN, NULL, 0);
+        return;
+    }
+
+    int count = db_search_users(req->keyword, current_user_id, results, limit, offset);
+
+    send_list_response(sock, CMD_SEARCH_USERS_RESP, reqHeader->request_id, STATUS_SUCCESS,
+                       count, results, sizeof(UserSearchInfo));
+
+    free(results);
+    LOG_INFO("Search '%s' (Off:%d, Lim:%d) -> Found %d", req->keyword, offset, limit, count);
 }
 
 static void handle_send_friend_req(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
@@ -415,25 +444,31 @@ static void handle_send_friend_req(int sock, PacketHeader *reqHeader, void *payl
 
     // 1. Gọi Repo
     int result = db_send_friend_request(current_user_id, req->target_id);
-    
+
     LOG_INFO("db_send_friend_request returned: %d", result);
 
     // 2. Map kết quả DB sang Status Code Protocol
     int status = STATUS_SUCCESS;
-    if (result > 0) status = STATUS_SUCCESS;
-    else if (result == -1) status = STATUS_ERROR_ALREADY_FRIEND;
-    else if (result == -2) status = STATUS_ERROR_REQ_PENDING;
-    else if (result == -3) status = STATUS_ERROR_INVALID_PARAM; // Tự kết bạn
-    else status = STATUS_ERROR_DB;
-    
+    if (result > 0)
+        status = STATUS_SUCCESS;
+    else if (result == -1)
+        status = STATUS_ERROR_ALREADY_FRIEND;
+    else if (result == -2)
+        status = STATUS_ERROR_REQ_PENDING;
+    else if (result == -3)
+        status = STATUS_ERROR_INVALID_PARAM; // Tự kết bạn
+    else
+        status = STATUS_ERROR_DB;
+
     LOG_INFO("Mapped status code: %d", status);
 
     // 3. Phản hồi cho người gửi (để UI hiện Toast Success/Fail)
     send_response(sock, CMD_SEND_FRIEND_REQ_RESP, reqHeader->request_id, status, NULL, 0);
     LOG_INFO("Sent CMD_SEND_FRIEND_REQ_RESP with status %d to User %d", status, current_user_id);
-    
+
     // 4. Nếu thành công -> Thông báo cho người nhận
-    if (result > 0) {
+    if (result > 0)
+    {
         notify_friend_req_received(result, current_user_id, req->target_id);
     }
 }
@@ -461,7 +496,7 @@ static void handle_respond_friend_req(int sock, PacketHeader *reqHeader, void *p
 {
     FriendRespondPayload *resp = (FriendRespondPayload *)payload;
     int sender_id_of_req = 0;
- 
+
     // 1. Cập nhật DB (Chấp nhận/Từ chối)
     int success = db_respond_friend_request(resp->request_id, current_user_id, resp->is_accepted, &sender_id_of_req);
 
@@ -469,7 +504,7 @@ static void handle_respond_friend_req(int sock, PacketHeader *reqHeader, void *p
     int status = success ? STATUS_SUCCESS : STATUS_ERROR_DB;
     send_response(sock, CMD_RESPOND_FRIEND_REQ_RESP, reqHeader->request_id, status, NULL, 0);
 
-    LOG_INFO("User %d responded to req %d (Accepted: %d). Status: %d", 
+    LOG_INFO("User %d responded to req %d (Accepted: %d). Status: %d",
              current_user_id, resp->request_id, resp->is_accepted, status);
 
     // --- REAL-TIME NOTIFICATION (Nếu chấp nhận -> Báo cho người gửi biết) ---
@@ -481,28 +516,31 @@ static void handle_respond_friend_req(int sock, PacketHeader *reqHeader, void *p
 
 static void handle_unfriend(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
 {
-    FriendReqPayload *req = (FriendReqPayload *)payload; 
+    FriendReqPayload *req = (FriendReqPayload *)payload;
     int target_id = req->target_id; // Người bị unfriend
     LOG_INFO("User %d requesting UNFRIEND target %d", current_user_id, req->target_id);
-    
+
     int success = db_remove_friend(current_user_id, req->target_id);
     int status = STATUS_SUCCESS;
-    if (!success) {
+    if (!success)
+    {
         LOG_WARN("Unfriend failed or relationship not found.");
-        status = STATUS_ERROR_DB; 
+        status = STATUS_ERROR_DB;
     }
 
     send_response(sock, CMD_UNFRIEND_RESP, reqHeader->request_id, status, NULL, 0);
 
-    if (success) {
+    if (success)
+    {
         int target_sock = get_socket_by_user_id(target_id);
-        if (target_sock != -1) {
+        if (target_sock != -1)
+        {
             FriendReqPayload notifyPayload;
             notifyPayload.target_id = current_user_id; // ID của người vừa unfriend mình
 
-            send_response(target_sock, CMD_NOTIFY_UNFRIENDED, 0, STATUS_SUCCESS, 
+            send_response(target_sock, CMD_NOTIFY_UNFRIENDED, 0, STATUS_SUCCESS,
                           &notifyPayload, sizeof(FriendReqPayload));
-            
+
             LOG_INFO("Real-time: Notified User %d that User %d unfriended them.", target_id, current_user_id);
         }
     }
