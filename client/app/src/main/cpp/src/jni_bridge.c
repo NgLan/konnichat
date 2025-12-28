@@ -16,6 +16,7 @@ static jmethodID m_onDisconnect;
 static jmethodID m_onFriendReq;
 static jmethodID m_onReqResp;
 static jmethodID m_onReqAccepted;
+static jmethodID m_onUnfriended;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -130,6 +131,14 @@ void jni_on_req_accepted(UserInfoPayload *user) {
     (*env)->DeleteLocalRef(env, jUser);
 }
 
+void jni_on_unfriended(int ex_friend_id) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    // Gọi hàm Kotlin: onFriendRemoved(int)
+    (*env)->CallVoidMethod(env, g_listener, m_onUnfriended, (jint)ex_friend_id);
+}
+
 // void jni_on_message(ChatPayload *msg) {
 //     // Tự implement tương tự (Convert ChatPayload -> MessageDto -> CallVoidMethod)
 // }
@@ -224,6 +233,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onReqResp = (*env)->GetMethodID(env, lClass, "onRequestResponse", "(II)V");
     m_onReqAccepted = (*env)->GetMethodID(env, lClass, "onFriendRequestAccepted",
                                           "(Lcom/example/konnichat/data/remote/dto/UserDto;)V");
+    m_onUnfriended = (*env)->GetMethodID(env, lClass, "onFriendRemoved", "(I)V");
     // m_onMessage = (*env)->GetMethodID(env, lClass, "onMessageReceived", "(Lcom/example/konnichat/data/remote/dto/MessageDto;)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
@@ -277,6 +287,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_friend_req = jni_on_friend_req;
     cbs.on_req_response = jni_on_req_response;
     cbs.on_request_accepted = jni_on_req_accepted;
+    cbs.on_unfriended = jni_on_unfriended;
     // cbs.on_message = jni_on_message;
     cbs.on_disconnect = jni_on_disconnect;
 
@@ -389,6 +400,14 @@ Java_com_example_konnichat_data_remote_NativeClient_respondFriendRequest(JNIEnv 
     int status = client_respond_friend_req(requestId, acceptVal);
 
     if (status != STATUS_SUCCESS) {
+        throw_unified_error(env, status);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_unfriendUser(JNIEnv *env, jobject thiz, jint targetId) {
+    int status = client_unfriend(targetId);
+    if (status != CLIENT_OK) {
         throw_unified_error(env, status);
     }
 }

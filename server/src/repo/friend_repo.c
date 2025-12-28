@@ -307,6 +307,7 @@ int db_remove_friend(int user_id, int friend_id)
 
     if (mysql_query(conn, query))
     {
+        LOG_ERROR("Unfriend Error (Delete Friends): %s", mysql_error(conn));
         db_release_conn(conn);
         return 0;
     }

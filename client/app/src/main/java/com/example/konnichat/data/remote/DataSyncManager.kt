@@ -70,6 +70,10 @@ class DataSyncManager(private val db: AppDatabase) : NativeEventListener {
         TODO("Not yet implemented")
     }
 
+    override fun onFriendRemoved(exFriendId: Int) {
+        TODO("Not yet implemented")
+    }
+
     // 3. Khi mất kết nối (Log để debug)
     override fun onConnectionClosed(reason: String) {
         Log.e("DataSync", "Mất kết nối: $reason")

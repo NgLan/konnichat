@@ -321,6 +321,22 @@ int client_respond_friend_req(int request_id, int is_accepted) {
     return CLIENT_OK;
 }
 
+int client_unfriend(int target_id) {
+    FriendReqPayload payload;
+    payload.target_id = target_id;
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_UNFRIEND, &payload, sizeof(payload));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    if (req_id < 0) {
+        LOGE("Failed to send Unfriend request");
+        return ERR_NETWORK_SEND_FAILED;
+    }
+
+    return CLIENT_OK;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header) {
     LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
@@ -414,6 +430,27 @@ static void handle_incoming_packet(PacketHeader *header) {
             // Gọi callback lên JNI để hiện thông báo
             if (g_callbacks.on_request_accepted) {
                 g_callbacks.on_request_accepted(&friend_info);
+            }
+        }
+    }
+
+    else if (header->command_type == CMD_UNFRIEND_RESP) {
+        LOGI("Received CMD_UNFRIEND_RESP with status=%d", header->status_code);
+        if (header->payload_size > 0) discard_payload(g_socket, header->payload_size);
+
+        if (g_callbacks.on_req_response) {
+            g_callbacks.on_req_response(header->command_type, header->status_code);
+        }
+    }
+
+    else if (header->command_type == CMD_NOTIFY_UNFRIENDED) {
+        FriendReqPayload payload;
+        if (recv_all(g_socket, &payload, sizeof(FriendReqPayload)) > 0) {
+            LOGI("Notification: You have been unfriended by User ID %d", payload.target_id);
+
+            if (g_callbacks.on_unfriended) {
+                // payload.target_id ở đây chính là ID người vừa unfriend mình
+                g_callbacks.on_unfriended(payload.target_id);
             }
         }
     }
