@@ -21,13 +21,17 @@ int db_get_friends(int user_id, int offset, int limit, UserInfoPayload *friends_
     snprintf(query, sizeof(query),
              "SELECT u.id, u.name, u.email, u.is_online "
              "FROM users u "
-             "JOIN friends f ON u.id = f.friend_id "
-             "WHERE f.user_id = %d "
+             "JOIN friends f ON ( "
+             "   (f.user_id = %d AND f.friend_id = u.id) " // Trường hợp mình là cột trái -> lấy cột phải
+             "   OR "
+             "   (f.friend_id = %d AND f.user_id = u.id) " // Trường hợp mình là cột phải -> lấy cột trái
+             ") "
              "LIMIT %d OFFSET %d",
-             user_id, limit, offset);
+             user_id, user_id, limit, offset);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
 
     if (mysql_query(conn, query))
     {
@@ -63,11 +67,18 @@ int db_get_friend_ids(int user_id, int *ids_out, int limit, int offset)
 {
     char query[256];
     snprintf(query, sizeof(query),
-             "SELECT friend_id FROM friends WHERE user_id = %d LIMIT %d OFFSET %d",
-             user_id, limit, offset);
+             "SELECT CASE "
+             "  WHEN user_id = %d THEN friend_id "
+             "  ELSE user_id "
+             "END as friend_id "
+             "FROM friends "
+             "WHERE user_id = %d OR friend_id = %d "
+             "LIMIT %d OFFSET %d",
+             user_id, user_id, user_id, limit, offset);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
 
     if (mysql_query(conn, query))
     {
@@ -102,19 +113,21 @@ int db_send_friend_request(int sender_id, int target_id)
     char query[1024];
 
     LOG_INFO("=== db_send_friend_request: Sender %d -> Target %d ===", sender_id, target_id);
-    
+
     // 1. Không tự kết bạn với chính mình
-    if (sender_id == target_id) {
+    if (sender_id == target_id)
+    {
         LOG_WARN("Self-friend request rejected");
         return -3;
-    }        
+    }
 
     // [LOCK] Bắt đầu Transaction
     MYSQL *conn = db_get_conn();
-    if (!conn) {
+    if (!conn)
+    {
         LOG_ERROR("Failed to get DB connection");
         return 0;
-    } 
+    }
 
     // 2. Kiểm tra đã là bạn chưa
     snprintf(query, sizeof(query),
@@ -194,9 +207,11 @@ int db_get_pending_requests(int user_id, PendingReqInfo *list_out, int max_count
              user_id, max_count);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
 
-    if (mysql_query(conn, query)) {
+    if (mysql_query(conn, query))
+    {
         LOG_ERROR("Get Pending Reqs Error: %s", mysql_error(conn));
         db_release_conn(conn);
         return 0;
@@ -228,7 +243,8 @@ int db_respond_friend_request(int request_id, int current_user_id, int is_accept
     int sender_id = 0, receiver_id = 0;
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
 
     // 1. Lấy thông tin request
     snprintf(query, sizeof(query), "SELECT sender_id, receiver_id FROM friend_requests WHERE id=%d", request_id);
@@ -269,9 +285,8 @@ int db_respond_friend_request(int request_id, int current_user_id, int is_accept
     // 3. Nếu đồng ý -> Insert vào bảng friends
     if (is_accepted)
     {
-        // Insert 2 chiều
-        snprintf(query, sizeof(query), "INSERT IGNORE INTO friends (user_id, friend_id) VALUES (%d, %d), (%d, %d)",
-                 sender_id, receiver_id, receiver_id, sender_id);
+        snprintf(query, sizeof(query), "INSERT IGNORE INTO friends (user_id, friend_id) VALUES (%d, %d)",
+                 sender_id, receiver_id);
         mysql_query(conn, query);
     }
 
@@ -287,7 +302,8 @@ int db_remove_friend(int user_id, int friend_id)
              user_id, friend_id, friend_id, user_id);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
 
     if (mysql_query(conn, query))
     {

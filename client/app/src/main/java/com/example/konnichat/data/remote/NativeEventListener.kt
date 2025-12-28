@@ -17,6 +17,8 @@ interface NativeEventListener {
 
     fun onRequestResponse(cmd: Int, status: Int)
 
+    fun onFriendRequestAccepted(user: UserDto)
+
     // Khi bị ngắt kết nối
     fun onConnectionClosed(reason: String)
 }

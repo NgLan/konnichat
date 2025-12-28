@@ -37,9 +37,15 @@ class NativeClientTest {
         // --- Cập nhật Command ID theo protocol.h ---
         const val CMD_REGISTER = 10
         const val CMD_LOGIN = 12
+
         const val CMD_SEND_FRIEND_REQ = 42
         const val CMD_SEND_FRIEND_REQ_RESP = 43
+
+        const val CMD_RESPOND_FRIEND_REQ = 44
+        const val CMD_RESPOND_FRIEND_REQ_RESP = 45
+
         const val CMD_NOTIFY_FRIEND_REQ = 80
+        const val CMD_NOTIFY_REQ_ACCEPTED = 81
 
         // --- Status Codes ---
         const val STATUS_SUCCESS = 0
@@ -241,6 +247,172 @@ class NativeClientTest {
         // Lưu ý: Tên User đăng ký ở bước 1 là "Sender", check xem trả về có đúng không
         Assert.assertTrue(incomingSenderName.contains("Sender"))
     }
+
+    // ==========================================
+    // MODULE 4: RESPOND FRIEND REQUEST (ACCEPT/DENY)
+    // ==========================================
+
+    @Test
+    fun test05_RespondFriendRequest_Flow() {
+        val time = System.currentTimeMillis()
+        val emailA = "requester_$time@konni.com" // Người gửi
+        val emailB = "responder_$time@konni.com" // Người nhận (Sẽ chấp nhận)
+
+        // 1. Đăng ký 2 user
+        NativeClient.registerUser("Requester", emailA, "123")
+        NativeClient.registerUser("Responder", emailB, "123")
+
+        // 2. Login User B (Người nhận) trước để hứng Notification lấy RequestID
+        // (Vì API getPendingRequests chưa có trong bài test này nên ta dùng cách bắt Notif để lấy ID)
+        val userB = NativeClient.loginUser(emailB, "123")!!
+        val targetId = userB.id
+
+        val latchId = CountDownLatch(1)
+        var capturedRequestId = -1
+
+        val listenerB = object : StubNativeEventListener() {
+            override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {
+                capturedRequestId = requestId
+                latchId.countDown()
+            }
+        }
+        NativeClient.startListening(listenerB)
+        Thread.sleep(200)
+
+        // 3. Dùng Thread giả lập User A gửi Request cho B
+        val threadA = Thread {
+            val fakeA = FakeTcpClient(SERVER_IP, SERVER_PORT)
+            fakeA.login(emailA, "123")
+            Thread.sleep(500)
+            fakeA.sendFriendRequest(targetId)
+            fakeA.close()
+        }
+        threadA.start()
+
+        // 4. Chờ B nhận được thông báo có Request mới
+        val receivedReq = latchId.await(5, TimeUnit.SECONDS)
+        Assert.assertTrue("User B không nhận được thông báo Request để lấy ID", receivedReq)
+        Assert.assertTrue("Request ID phải > 0", capturedRequestId > 0)
+
+        // 5. User B thực hiện CHẤP NHẬN kết bạn
+        val latchRespond = CountDownLatch(1)
+        var respondStatus = -1
+
+        // Đăng ký listener mới để bắt phản hồi của lệnh Respond
+        val listenerRespond = object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_RESPOND_FRIEND_REQ_RESP) {
+                    respondStatus = status
+                    latchRespond.countDown()
+                }
+            }
+        }
+        NativeClient.startListening(listenerRespond)
+
+        // Gọi hàm Native (Giả định bạn đã mapping hàm này ở bước trước)
+        NativeClient.respondFriendRequest(capturedRequestId, true)
+
+        val responded = latchRespond.await(5, TimeUnit.SECONDS)
+        Assert.assertTrue("Không nhận được phản hồi từ Server sau khi Respond", responded)
+        Assert.assertEquals("Status chấp nhận phải là SUCCESS (0)", STATUS_SUCCESS, respondStatus)
+    }
+
+    @Test
+    fun test06_Realtime_Accept_Notification() {
+        // Kịch bản:
+        // 1. Login B (Native) để hứng Request ID.
+        // 2. Fake A gửi Request kết bạn.
+        // 3. Login A (Native) để chờ thông báo.
+        // 4. Fake B gửi lệnh Chấp nhận (Accept).
+        // 5. A nhận thông báo -> Success.
+
+        val time = System.currentTimeMillis()
+        val emailA = "userA_$time@konni.com"
+        val emailB = "userB_$time@konni.com"
+        val pass = "123"
+
+        // 1. Đăng ký
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        // --- BƯỚC 1: Login B (Native) để lấy ID của B và Hứng Request ID ---
+        // Cần đảm bảo kết nối mới sạch sẽ
+        NativeClient.disconnect()
+        Thread.sleep(200)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+
+        val userB = NativeClient.loginUser(emailB, pass)!!
+        val myIdB = userB.id
+
+        val latchGetId = CountDownLatch(1)
+        var reqId = 0
+
+        val listenerB = object : StubNativeEventListener() {
+            override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {
+                println("TEST: B nhận được request $requestId từ $senderName")
+                reqId = requestId
+                latchGetId.countDown()
+            }
+        }
+        NativeClient.startListening(listenerB)
+
+        // --- BƯỚC 2: Fake A đăng nhập và gửi Request cho B ---
+        val threadFakeA = Thread {
+            try {
+                val fakeA = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fakeA.login(emailA, pass)
+                Thread.sleep(300) // Chờ server xử lý login
+                fakeA.sendFriendRequest(myIdB) // Gửi tới ID của B
+                Thread.sleep(300)
+                fakeA.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadFakeA.start()
+
+        // Chờ B nhận được Request ID
+        val receivedId = latchGetId.await(5, TimeUnit.SECONDS)
+        Assert.assertTrue("User B không nhận được thông báo Request", receivedId)
+        Assert.assertTrue("Request ID phải > 0", reqId > 0)
+
+        // B thoát ra để nhường sân khấu cho A
+        NativeClient.disconnect()
+        Thread.sleep(500) // [QUAN TRỌNG] Chờ Socket B đóng hẳn
+
+        // --- BƯỚC 3: Login A (Native) và chờ thông báo Accepted ---
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchNotif = CountDownLatch(1)
+        var acceptorName = ""
+
+        val listenerA = object : StubNativeEventListener() {
+            override fun onFriendRequestAccepted(user: UserDto) {
+                println("TEST: A nhận thông báo chấp nhận từ ${user.name} (ID: ${user.id})")
+                acceptorName = user.name
+                latchNotif.countDown()
+            }
+        }
+        NativeClient.startListening(listenerA)
+
+        // --- BƯỚC 4: Fake B đăng nhập và gửi lệnh ACCEPT ---
+        val threadFakeB = Thread {
+            try {
+                val fakeB = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fakeB.login(emailB, pass)
+                Thread.sleep(300)
+                // Gửi lệnh Accept với reqId đã lấy được ở Bước 1
+                fakeB.respondFriendRequest(reqId, true)
+                Thread.sleep(300)
+                fakeB.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadFakeB.start()
+
+        // --- BƯỚC 5: Kiểm tra A nhận được thông báo ---
+        val success = latchNotif.await(8, TimeUnit.SECONDS)
+        Assert.assertTrue("User A (Online) không nhận được thông báo Accepted", success)
+        Assert.assertTrue("Tên người chấp nhận không được rỗng", acceptorName.isNotEmpty())
+    }
 }
 
 // =========================================================
@@ -252,6 +424,7 @@ open class StubNativeEventListener : NativeEventListener {
     override fun onFriendStatusChanged(friendId: Int, isOnline: Boolean) {}
     override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {}
     override fun onRequestResponse(cmd: Int, status: Int) {}
+    override fun onFriendRequestAccepted(user: UserDto) {}
     override fun onConnectionClosed(reason: String) {}
 }
 
@@ -270,6 +443,7 @@ class FakeTcpClient(ip: String, port: Int) {
     private val CMD_LOGIN = 12
     private val CMD_SEND_FRIEND_REQ = 42
 
+    private val CMD_RESPOND_FRIEND_REQ = 44
     private val MAX_EMAIL_LEN = 256
     private val MAX_PASS_LEN = 128
 
@@ -278,6 +452,8 @@ class FakeTcpClient(ip: String, port: Int) {
     private val LOGIN_PAYLOAD_SIZE = MAX_EMAIL_LEN + MAX_PASS_LEN
     // FriendReqPayload: target_id (int32) = 4 bytes
     private val FRIEND_REQ_PAYLOAD_SIZE = 4
+    // Payload FriendRespondPayload: request_id(4) + is_accepted(1) = 5 bytes
+    private val RESPOND_PAYLOAD_SIZE = 5
 
     fun login(email: String, pass: String) {
         val totalSize = PACKET_HEADER_SIZE + LOGIN_PAYLOAD_SIZE
@@ -307,6 +483,22 @@ class FakeTcpClient(ip: String, port: Int) {
 
         // 2. Body (FriendReqPayload)
         buffer.putInt(targetId)
+
+        output.write(buffer.array())
+        output.flush()
+    }
+
+    fun respondFriendRequest(requestId: Int, isAccepted: Boolean) {
+        val totalSize = PACKET_HEADER_SIZE + RESPOND_PAYLOAD_SIZE
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        // 1. Header
+        writeHeader(buffer, CMD_RESPOND_FRIEND_REQ, RESPOND_PAYLOAD_SIZE)
+
+        // 2. Payload
+        buffer.putInt(requestId)
+        buffer.put((if (isAccepted) 1 else 0).toByte())
 
         output.write(buffer.array())
         output.flush()

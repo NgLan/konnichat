@@ -14,7 +14,7 @@
 static int g_socket = -1;
 static int g_req_id = 0;
 static int g_is_running = 0;
-static pthread_t g_read_thread;
+static pthread_t g_read_thread = 0;
 static pthread_mutex_t g_send_mutex = PTHREAD_MUTEX_INITIALIZER; // Khóa bảo vệ khi gửi
 static pthread_mutex_t g_client_mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -124,7 +124,10 @@ static int recv_and_validate_header(PacketHeader *header, int expected_cmd) {
 }
 
 int client_init(const char *ip, int port) {
-    if (g_socket != -1) return 0; // Đã connect rồi
+    if (g_socket != -1) {
+        LOGW("client_init called but socket is already open (%d)", g_socket);
+        return 0;
+    }
 
     g_socket = socket(AF_INET, SOCK_STREAM, 0);
     if (g_socket < 0) {
@@ -139,6 +142,8 @@ int client_init(const char *ip, int port) {
 
     if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0) {
         LOGE("Invalid address/ Address not supported");
+        close(g_socket);
+        g_socket = -1;
         return -2;
     }
 
@@ -149,23 +154,28 @@ int client_init(const char *ip, int port) {
         return -3;
     }
 
+    g_is_running = 0;
+
     LOGI("Connected to Server %s:%d", ip, port);
     return 0;
 }
 
 void client_close() {
+    g_is_running = 0; // 1. Báo hiệu dừng vòng lặp
+
     if (g_socket != -1) {
+        // Shutdown giúp ngắt recv() đang bị block
         shutdown(g_socket, SHUT_RDWR);
         close(g_socket);
         g_socket = -1;
-        LOGI("Connection socket closed");
+        LOGI("Connection closed");
     }
 
-    if (g_is_running) {
-        LOGI("Waiting for read thread to join...");
+    // 2. Chờ thread đọc cũ chết hẳn để không ảnh hưởng lần connect sau
+    if (g_read_thread != 0) {
         pthread_join(g_read_thread, NULL);
-        g_is_running = 0; // Đảm bảo chắc chắn là 0
-        LOGI("Read thread joined and stopped.");
+        g_read_thread = 0;
+        LOGI("Reader thread stopped and joined.");
     }
 }
 
@@ -292,6 +302,25 @@ int client_send_friend_request(int target_id) {
     }
 }
 
+/**
+ * Hàm gửi phản hồi chấp nhận/từ chối yêu cầu kết bạn
+ * @param request_id
+ * @param is_accepted
+ * @return 0 nếu thành công, mã lỗi âm nếu thất bại
+ */
+int client_respond_friend_req(int request_id, int is_accepted) {
+    FriendRespondPayload payload;
+    payload.request_id = request_id;
+    payload.is_accepted = (int8_t)is_accepted;
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_RESPOND_FRIEND_REQ, &payload, sizeof(payload));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    if (req_id < 0) return ERR_NETWORK_SEND_FAILED;
+    return CLIENT_OK;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header) {
     LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
@@ -351,7 +380,7 @@ static void handle_incoming_packet(PacketHeader *header) {
         }
     }
 
-    // Xử lý thông báo kết bạn (Real-time)
+    // Có lời mời kết bạn (Real-time)
     else if (header->command_type == CMD_NOTIFY_FRIEND_REQ) {
         PendingReqInfo info;
         // Đọc payload
@@ -364,6 +393,31 @@ static void handle_incoming_packet(PacketHeader *header) {
             }
         }
     }
+
+    else if (header->command_type == CMD_RESPOND_FRIEND_REQ_RESP) {
+        LOGI("Received CMD_RESPOND_FRIEND_REQ_RESP with status=%d", header->status_code);
+        if (header->payload_size > 0) discard_payload(g_socket, header->payload_size);
+
+        if (g_callbacks.on_req_response) {
+            LOGI("Calling callback on_req_response(Cmd: %d, Status: %d)", header->command_type, header->status_code);
+            g_callbacks.on_req_response(header->command_type, header->status_code);
+        } else {
+            LOGW("Callback on_req_response is NULL!");
+        }
+    }
+
+    else if (header->command_type == CMD_NOTIFY_REQ_ACCEPTED) {
+        UserInfoPayload friend_info;
+        if (recv_all(g_socket, &friend_info, sizeof(UserInfoPayload)) > 0) {
+            LOGI("Notification: User %s (%d) accepted your friend request.", friend_info.name, friend_info.user_id);
+
+            // Gọi callback lên JNI để hiện thông báo
+            if (g_callbacks.on_request_accepted) {
+                g_callbacks.on_request_accepted(&friend_info);
+            }
+        }
+    }
+
     else {
         LOGW("Unhandled Packet Type: %d. Size: %d", header->command_type, header->payload_size);
         discard_payload(g_socket, header->payload_size);
@@ -404,12 +458,19 @@ static void* read_thread_func(void* arg) {
 
 // --- PUBLIC FUNCTIONS ---
 void start_reader_thread(NativeCallbacks callbacks) {
-    if (g_is_running) return;
+    if (g_read_thread != 0) {
+        LOGW("Reader thread already running.");
+        return;
+    }
 
     g_callbacks = callbacks; // Lưu callback
     g_is_running = 1;
 
     // Tạo thread riêng
-    pthread_create(&g_read_thread, NULL, read_thread_func, NULL);
-    LOGI("Reader Thread Started.");
+    if (pthread_create(&g_read_thread, NULL, read_thread_func, NULL) != 0) {
+        LOGE("Failed to create reader thread");
+        g_read_thread = 0;
+    } else {
+        LOGI("Reader Thread Started.");
+    }
 }
