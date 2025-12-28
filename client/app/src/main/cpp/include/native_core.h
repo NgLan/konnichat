@@ -31,6 +31,7 @@ typedef struct {
     void (*on_friend_req)(int req_id, int sender_id, const char* sender_name);
     void (*on_req_response)(int cmd, int status);
     void (*on_request_accepted)(UserInfoPayload* user);
+    void (*on_unfriended)(int ex_friend_id);
 } NativeCallbacks;
 
 // --- 2. CÁC HÀM QUẢN LÝ ---
@@ -58,5 +59,7 @@ int client_get_friends(int offset, int limit);
 int client_send_friend_request(int target_id);
 
 int client_respond_friend_req(int request_id, int is_accepted);
+
+int client_unfriend(int target_id);
 
 #endif // NATIVE_CORE_H

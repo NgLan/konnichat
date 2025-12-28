@@ -82,10 +82,11 @@ typedef enum {
     CMD_REACT_MESSAGE = 53,      // Thả tim, like...
 
     // 6. Notifications
-    CMD_NOTIFY_FRIEND_REQ = 80,  // Có lời mời kết bạn mới
-    CMD_NOTIFY_REQ_ACCEPTED = 81,  // Lời mời đã được chấp nhận
-    CMD_NOTIFY_STATUS = 82,  // Bạn bè on/off
-    CMD_NOTIFY_UPDATE_MSG = 83,  // Tin nhắn bị thu hồi/react
+    CMD_NOTIFY_FRIEND_REQ   = 80,   // Có lời mời kết bạn mới
+    CMD_NOTIFY_REQ_ACCEPTED = 81,   // Lời mời đã được chấp nhận
+    CMD_NOTIFY_STATUS       = 82,   // Bạn bè on/off
+    CMD_NOTIFY_UPDATE_MSG   = 83,   // Tin nhắn bị thu hồi/react
+    CMD_NOTIFY_UNFRIENDED   = 84,   // Thông báo bị unfriend
 
     // 99. Error 
     CMD_ERROR_UNKNOWN = 999

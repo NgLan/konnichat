@@ -481,12 +481,31 @@ static void handle_respond_friend_req(int sock, PacketHeader *reqHeader, void *p
 
 static void handle_unfriend(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
 {
-    FriendReqPayload *req = (FriendReqPayload *)payload; // Dùng chung struct vì chỉ cần target_id
-
+    FriendReqPayload *req = (FriendReqPayload *)payload; 
+    int target_id = req->target_id; // Người bị unfriend
+    LOG_INFO("User %d requesting UNFRIEND target %d", current_user_id, req->target_id);
+    
     int success = db_remove_friend(current_user_id, req->target_id);
-    int status = success ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
+    int status = STATUS_SUCCESS;
+    if (!success) {
+        LOG_WARN("Unfriend failed or relationship not found.");
+        status = STATUS_ERROR_DB; 
+    }
 
     send_response(sock, CMD_UNFRIEND_RESP, reqHeader->request_id, status, NULL, 0);
+
+    if (success) {
+        int target_sock = get_socket_by_user_id(target_id);
+        if (target_sock != -1) {
+            FriendReqPayload notifyPayload;
+            notifyPayload.target_id = current_user_id; // ID của người vừa unfriend mình
+
+            send_response(target_sock, CMD_NOTIFY_UNFRIENDED, 0, STATUS_SUCCESS, 
+                          &notifyPayload, sizeof(FriendReqPayload));
+            
+            LOG_INFO("Real-time: Notified User %d that User %d unfriended them.", target_id, current_user_id);
+        }
+    }
 }
 
 // --- MAIN THREAD LOOP ---

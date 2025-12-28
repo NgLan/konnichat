@@ -32,4 +32,6 @@ object NativeClient {
     external fun sendFriendRequest(targetId: Int)
 
     external fun respondFriendRequest(requestId: Int, isAccepted: Boolean)
+
+    external fun unfriendUser(targetId: Int)
 }

@@ -43,6 +43,7 @@ class NativeClientTest {
 
         const val CMD_RESPOND_FRIEND_REQ = 44
         const val CMD_RESPOND_FRIEND_REQ_RESP = 45
+        const val CMD_UNFRIEND_RESP = 47
 
         const val CMD_NOTIFY_FRIEND_REQ = 80
         const val CMD_NOTIFY_REQ_ACCEPTED = 81
@@ -413,6 +414,122 @@ class NativeClientTest {
         Assert.assertTrue("User A (Online) không nhận được thông báo Accepted", success)
         Assert.assertTrue("Tên người chấp nhận không được rỗng", acceptorName.isNotEmpty())
     }
+
+    // ==========================================
+    // MODULE 5: UNFRIEND FLOW
+    // ==========================================
+
+    @Test
+    fun test07_Unfriend_Flow_Realtime() {
+        val time = System.currentTimeMillis()
+        val emailA = "A_$time@konni.com"
+        val emailB = "B_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        // --- BƯỚC 1: Thiết lập quan hệ bạn bè ---
+        // (Để code ngắn gọn, ta dùng FakeClient kết bạn nhanh)
+
+        // 1.1 Login A lấy ID
+        NativeClient.disconnect()
+        Thread.sleep(200)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val userA = NativeClient.loginUser(emailA, pass)!!
+        val idA = userA.id
+
+        // Setup listener A để chờ thông báo Unfriend sau này
+        val latchUnfriendNotif = CountDownLatch(1)
+        var whoUnfriendedMe = 0
+
+        val listenerA = object : StubNativeEventListener() {
+            override fun onFriendRemoved(exFriendId: Int) {
+                println("TEST: Nhận thông báo bị hủy kết bạn bởi ID: $exFriendId")
+                whoUnfriendedMe = exFriendId
+                latchUnfriendNotif.countDown()
+            }
+        }
+        NativeClient.startListening(listenerA)
+
+        // 1.2 Fake B login -> Gửi request -> A accept (Giả lập nhanh)
+        // (Vì bài test trước đã verify flow kết bạn, ở đây ta có thể "cheat" bằng cách insert DB trực tiếp nếu có API test,
+        // nhưng để chuẩn flow ta vẫn làm: B gửi -> A accept).
+
+        // Login B tạm để lấy ID B
+        val fakeB = FakeTcpClient(SERVER_IP, SERVER_PORT)
+        fakeB.login(emailB, pass)
+        Thread.sleep(200)
+        fakeB.sendFriendRequest(idA) // B gửi cho A
+        fakeB.close()
+
+        // A (đang online) nhận request -> Accept
+        // (Để đơn giản, ta assume ID request tăng dần hoặc lấy từ DB,
+        // ở đây ta sẽ cheat bằng cách gọi API accept với RequestID "đoán" hoặc bỏ qua bước verify ID chính xác
+        // mà tập trung vào bước Unfriend. Nhưng để chạy được phải có friend.
+        // -> Ta dùng NativeClient login B để làm flow chuẩn nhanh hơn).
+
+        NativeClient.disconnect() // A out ra
+        Thread.sleep(500)
+
+        // Login B (Native)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val userB = NativeClient.loginUser(emailB, pass)!!
+        val idB = userB.id
+
+        // Fake A gửi request cho B
+        val fakeA = FakeTcpClient(SERVER_IP, SERVER_PORT)
+        fakeA.login(emailA, pass)
+        Thread.sleep(200)
+        fakeA.sendFriendRequest(idB)
+        fakeA.close()
+
+        // B (Native) hứng request và accept
+        val latchReq = CountDownLatch(1)
+        var reqId = 0
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {
+                reqId = requestId
+                latchReq.countDown()
+            }
+        })
+        latchReq.await(3, TimeUnit.SECONDS)
+
+        // B Accept
+        NativeClient.respondFriendRequest(reqId, true)
+        Thread.sleep(200) // Đợi DB commit
+
+        // --- BƯỚC 2: A Online trở lại ---
+        NativeClient.disconnect() // B out
+        Thread.sleep(500)
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        // A lắng nghe sự kiện bị Unfriend
+        NativeClient.startListening(listenerA)
+
+        // --- BƯỚC 3: Fake B login và thực hiện UNFRIEND A ---
+        val threadAction = Thread {
+            try {
+                val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fb.login(emailB, pass)
+                Thread.sleep(300)
+
+                // Gửi lệnh Unfriend (CMD 46)
+                fb.unfriendUser(idA)
+
+                Thread.sleep(300)
+                fb.close()
+            } catch(e: Exception) { e.printStackTrace() }
+        }
+        threadAction.start()
+
+        // --- BƯỚC 4: Kiểm tra A nhận được thông báo ---
+        val success = latchUnfriendNotif.await(5, TimeUnit.SECONDS)
+        Assert.assertTrue("A không nhận được thông báo bị hủy kết bạn", success)
+        Assert.assertEquals("Người hủy phải là B", idB, whoUnfriendedMe)
+    }
 }
 
 // =========================================================
@@ -425,6 +542,7 @@ open class StubNativeEventListener : NativeEventListener {
     override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {}
     override fun onRequestResponse(cmd: Int, status: Int) {}
     override fun onFriendRequestAccepted(user: UserDto) {}
+    override fun onFriendRemoved(exFriendId: Int) {}
     override fun onConnectionClosed(reason: String) {}
 }
 
@@ -444,6 +562,7 @@ class FakeTcpClient(ip: String, port: Int) {
     private val CMD_SEND_FRIEND_REQ = 42
 
     private val CMD_RESPOND_FRIEND_REQ = 44
+    private val CMD_UNFRIEND = 46
     private val MAX_EMAIL_LEN = 256
     private val MAX_PASS_LEN = 128
 
@@ -503,7 +622,19 @@ class FakeTcpClient(ip: String, port: Int) {
         output.write(buffer.array())
         output.flush()
     }
+    fun unfriendUser(targetId: Int) {
+        // FriendReqPayload: target_id (4 bytes)
+        val payloadSize = 4
+        val totalSize = PACKET_HEADER_SIZE + payloadSize
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
 
+        writeHeader(buffer, CMD_UNFRIEND, payloadSize)
+        buffer.putInt(targetId)
+
+        output.write(buffer.array())
+        output.flush()
+    }
     private fun writeHeader(buffer: ByteBuffer, cmd: Int, payloadSize: Int) {
         // Struct PacketHeader: version, cmd, size, reqId, status, timestamp
         buffer.putInt(PROTOCOL_VERSION)
