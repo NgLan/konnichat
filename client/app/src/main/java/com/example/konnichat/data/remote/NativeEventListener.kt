@@ -1,6 +1,7 @@
 package com.example.konnichat.data.remote
 
 import com.example.konnichat.data.remote.dto.UserDto
+import com.example.konnichat.data.remote.dto.UserSearchDto
 
 interface NativeEventListener {
     // Khi nhận được danh sách bạn bè (Response của getFriends)
@@ -15,6 +16,7 @@ interface NativeEventListener {
     fun onRequestResponse(cmd: Int, status: Int)
     fun onFriendRequestAccepted(user: UserDto)
     fun onFriendRemoved(exFriendId: Int)
+    fun onSearchResult(results: Array<UserSearchDto>)
     // Khi bị ngắt kết nối
     fun onConnectionClosed(reason: String)
 }

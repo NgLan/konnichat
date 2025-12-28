@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.konnichat.data.local.AppDatabase
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.remote.dto.UserDto
+import com.example.konnichat.data.remote.dto.UserSearchDto
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -71,6 +72,10 @@ class DataSyncManager(private val db: AppDatabase) : NativeEventListener {
     }
 
     override fun onFriendRemoved(exFriendId: Int) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onSearchResult(results: Array<UserSearchDto>) {
         TODO("Not yet implemented")
     }
 
