@@ -175,6 +175,36 @@ static void notify_friend_req_received(int request_id, int sender_id, int target
     LOG_INFO("Notified User %d about friend req from %s (ID: %d)", target_id, notif.sender_name, sender_id);
 }
 
+/**
+ * @brief Thông báo cho người đã gửi lời mời biết rằng lời mời đã được chấp nhận 
+ * 
+ * @param acceptor_id ID của người vừa chấp nhận lời mời (B)
+ * @param receiver_id ID của người nhận thông báo (A - người đã gửi lời mời trước đó)
+ */
+static void notify_req_accepted_realtime(int acceptor_id, int receiver_id) {
+    int sock_receiver = get_socket_by_user_id(receiver_id);
+    if (sock_receiver == -1) return; // Người nhận không online -> Bỏ qua
+
+    UserInfoPayload acceptor_info;
+    memset(&acceptor_info, 0, sizeof(UserInfoPayload));
+
+    // Lấy thông tin người chấp nhận để gửi cho người kia
+    // Hàm này giả định bạn đã có hoặc tự viết thêm trong user_repo
+    if (db_get_user_info_by_id(acceptor_id, &acceptor_info) == 0) {
+        // Fallback nếu không query được DB
+        acceptor_info.user_id = acceptor_id;
+        acceptor_info.is_online = 1; 
+        snprintf(acceptor_info.name, sizeof(acceptor_info.name), "User %d", acceptor_id);
+    }
+    acceptor_info.is_online = 1; // Chắc chắn đang online vì vừa bấm nút
+
+    // Gửi đi
+    send_response(sock_receiver, CMD_NOTIFY_REQ_ACCEPTED, 0, STATUS_SUCCESS, 
+                  &acceptor_info, sizeof(UserInfoPayload));
+                  
+    LOG_INFO("Real-time: Notified User %d that User %d accepted.", receiver_id, acceptor_id);
+}
+
 // --- LOGIC HANDLERS ---
 static void handle_register(int sock, PacketHeader *reqHeader, void *payload)
 {
@@ -431,26 +461,21 @@ static void handle_respond_friend_req(int sock, PacketHeader *reqHeader, void *p
 {
     FriendRespondPayload *resp = (FriendRespondPayload *)payload;
     int sender_id_of_req = 0;
-
+ 
+    // 1. Cập nhật DB (Chấp nhận/Từ chối)
     int success = db_respond_friend_request(resp->request_id, current_user_id, resp->is_accepted, &sender_id_of_req);
-    int status = success ? STATUS_SUCCESS : STATUS_ERROR_UNKNOWN;
 
+    // 2. Phản hồi cho người đang thao tác
+    int status = success ? STATUS_SUCCESS : STATUS_ERROR_DB;
     send_response(sock, CMD_RESPOND_FRIEND_REQ_RESP, reqHeader->request_id, status, NULL, 0);
 
-    // --- REAL-TIME NOTIFICATION (Báo cho người gửi biết) ---
+    LOG_INFO("User %d responded to req %d (Accepted: %d). Status: %d", 
+             current_user_id, resp->request_id, resp->is_accepted, status);
+
+    // --- REAL-TIME NOTIFICATION (Nếu chấp nhận -> Báo cho người gửi biết) ---
     if (success && resp->is_accepted && sender_id_of_req > 0)
     {
-        int sender_sock = get_socket_by_user_id(sender_id_of_req);
-        if (sender_sock > 0)
-        {
-            UserInfoPayload my_info;
-            my_info.user_id = current_user_id;
-            my_info.is_online = 1;
-            // Cần query lấy tên thật nếu muốn chuẩn, tạm thời để trống hoặc ID
-            snprintf(my_info.name, sizeof(my_info.name), "Friend ID %d", current_user_id);
-
-            send_response(sender_sock, CMD_NOTIFY_REQ_ACCEPTED, 0, STATUS_SUCCESS, &my_info, sizeof(UserInfoPayload));
-        }
+        notify_req_accepted_realtime(current_user_id, sender_id_of_req);
     }
 }
 

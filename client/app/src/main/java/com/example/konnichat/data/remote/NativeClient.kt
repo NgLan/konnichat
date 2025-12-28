@@ -30,4 +30,6 @@ object NativeClient {
     external fun getFriends(offset: Int, limit: Int): Int
     
     external fun sendFriendRequest(targetId: Int)
+
+    external fun respondFriendRequest(requestId: Int, isAccepted: Boolean)
 }

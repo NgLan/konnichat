@@ -21,7 +21,8 @@ int db_register_user(const char *name, const char *email, const char *password)
              name, email, password);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
 
     if (mysql_query(conn, query))
     {
@@ -52,7 +53,8 @@ int db_check_login(const char *email, const char *password, UserInfoPayload *use
              email, password);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Login DB Error: %s", mysql_error(conn));
@@ -98,8 +100,9 @@ void db_update_user_status(int user_id, int is_online)
              is_online, user_id);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return;
-    
+    if (!conn)
+        return;
+
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Update Status Error for User %d: %s", user_id, mysql_error(conn));
@@ -119,13 +122,15 @@ int db_search_users(const char *keyword, int current_id, UserSearchInfo *out, in
              keyword, current_id, max);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
 
-    if (mysql_query(conn, query)) {
+    if (mysql_query(conn, query))
+    {
         db_release_conn(conn);
         return 0;
     }
-        
+
     MYSQL_RES *res = mysql_store_result(conn);
 
     int count = 0;
@@ -150,17 +155,19 @@ void get_user_name_by_id(int user_id, char *name_buf, int buf_len)
 {
     char query[256];
     snprintf(query, sizeof(query), "SELECT name FROM users WHERE id=%d", user_id);
-    
-    MYSQL *conn = db_get_conn();
-    if (!conn) return;
 
-    if (mysql_query(conn, query)) {
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return;
+
+    if (mysql_query(conn, query))
+    {
         db_release_conn(conn);
         return;
     }
-        
+
     MYSQL_RES *res = mysql_store_result(conn);
-    
+
     if (res)
     {
         MYSQL_ROW row = mysql_fetch_row(res);
@@ -172,4 +179,62 @@ void get_user_name_by_id(int user_id, char *name_buf, int buf_len)
     }
 
     db_release_conn(conn);
+}
+
+/**
+ * @brief Lấy thông tin chi tiết user (ID, Name, Email, Online Status)
+ * @param user_id ID user cần lấy
+ * @param out_info Pointer để lưu kết quả
+ * @return 1 nếu tìm thấy, 0 nếu lỗi hoặc không tìm thấy
+ */
+int db_get_user_info_by_id(int user_id, UserInfoPayload *out_info)
+{
+    char query[512];
+    snprintf(query, sizeof(query),
+             "SELECT id, name, email, is_online FROM users WHERE id=%d",
+             user_id);
+
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("db_get_user_info_by_id Error: %s", mysql_error(conn));
+        db_release_conn(conn);
+        return 0;
+    }
+
+    MYSQL_RES *res = mysql_store_result(conn);
+    int found = 0;
+
+    if (res)
+    {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row)
+        {
+            memset(out_info, 0, sizeof(UserInfoPayload));
+
+            out_info->user_id = atoi(row[0]);
+
+            if (row[1])
+                strncpy(out_info->name, row[1], MAX_NAME_LEN - 1);
+            if (row[2])
+                strncpy(out_info->email, row[2], MAX_EMAIL_LEN - 1);
+            if (row[3])
+            {
+                out_info->is_online = (int8_t)atoi(row[3]);
+            }
+            else
+            {
+                out_info->is_online = 0;
+            }
+
+            found = 1;
+        }
+        mysql_free_result(res);
+    }
+
+    db_release_conn(conn);
+    return found;
 }
