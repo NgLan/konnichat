@@ -143,6 +143,13 @@ WHERE email IN (
     'giang.dang@test.com'
 );
 
+INSERT INTO Friends (user_id, friend_id)
+SELECT 10, id FROM Users 
+WHERE email IN (
+    'an.nguyen@test.com', 'cuong.le@test.com', 'khanh.do@test.com', 
+    'linh.ngo@test.com'
+);
+
 -- Thêm bộ icon cơ bản
 -- INSERT INTO Icons (code, image_url) VALUES 
 -- ('like', 'ic_reaction_like'),

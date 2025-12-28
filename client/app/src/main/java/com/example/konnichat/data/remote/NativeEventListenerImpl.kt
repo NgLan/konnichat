@@ -34,6 +34,18 @@ object NativeEventListenerImpl : NativeEventListener {
         // TODO: Update status user
     }
 
+    override fun onFriendRequestReceived(
+        requestId: Int,
+        senderId: Int,
+        senderName: String
+    ) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onRequestResponse(cmd: Int, status: Int) {
+        TODO("Not yet implemented")
+    }
+
     override fun onConnectionClosed(reason: String) {
         Log.e("KONNI_CLIENT", "Socket đóng: $reason")
     }
