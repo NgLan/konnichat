@@ -64,9 +64,14 @@ object NativeEventListenerImpl : NativeEventListener {
     }
 
     override fun onSearchResult(results: Array<UserSearchDto>) {
-        // TODO implementation
+        Log.d("KONNI_CLIENT", "Listener: Nhận ${results.size} kết quả tìm kiếm.")
+        userRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                // Gọi hàm xử lý logic bên Repo
+                repo.processSearchResults(results)
+            }
+        }
     }
-
     override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
         TODO("Not yet implemented")
     }
