@@ -30,6 +30,7 @@ interface NativeEventListener {
 
     // Tin nhắn mình gửi đi đã đến nơi
     fun onMessageDelivered(serverId: Int)
+    fun onHistoryReceived(messages: Array<MessageDto>)
     // Khi bị ngắt kết nối
     fun onConnectionClosed(reason: String)
 

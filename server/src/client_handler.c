@@ -47,7 +47,7 @@ static void send_response(int sock, int32_t cmd_type, int32_t req_id, int32_t st
     PacketHeader header;
     memset(&header, 0, sizeof(PacketHeader));
 
-    header.version = PROTOCOL_VERSION;
+    header.version = SERVER_PROTOCOL_VERSION;
     header.command_type = cmd_type;
     header.request_id = req_id;
     header.status_code = status;
@@ -66,7 +66,7 @@ static void send_list_response(int sock, int32_t cmd, int32_t req_id, int32_t st
     PacketHeader header;
     memset(&header, 0, sizeof(PacketHeader));
 
-    header.version = PROTOCOL_VERSION;
+    header.version = SERVER_PROTOCOL_VERSION;
     header.command_type = cmd;
     header.request_id = req_id;
     header.status_code = status;
@@ -212,6 +212,48 @@ static void notify_req_accepted_realtime(int acceptor_id, int receiver_id)
     LOG_INFO("Real-time: Notified User %d that User %d accepted.", receiver_id, acceptor_id);
 }
 
+/**
+ * @brief Xử lý đẩy tin nhắn offline (Batch processing)
+ * Logic: Lấy 50 tin -> Gửi -> Notify Sender -> Lặp lại đến khi hết tin 'sent'
+ */
+static void push_offline_messages(int sock, int user_id) {
+    int batch_size = 50;
+    ChatPayload msgs[50];
+    int count;
+
+    do {
+        // 1. Lấy batch tin nhắn (Luôn lấy limit 50 tin sent cũ nhất)
+        // Vì sau khi xử lý xong ta update status='delivered', nên lần query sau sẽ ra 50 tin tiếp theo.
+        count = db_get_offline_messages(user_id, msgs, batch_size);
+
+        if (count > 0) {
+            LOG_INFO("Pushing batch of %d offline messages to User %d", count, user_id);
+
+            for (int i = 0; i < count; i++) {
+                // 2. Gửi cho User vừa Login (Offline -> Online)
+                send_response(sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS, 
+                              &msgs[i], sizeof(ChatPayload));
+
+                // 3. Update DB thành Delivered
+                db_mark_message_delivered(msgs[i].message_id);
+
+                // 4. Báo ngược lại cho người gửi (A) biết tin đã đến (Nếu A đang online)
+                int sender_sock = get_socket_by_user_id(msgs[i].sender_id);
+                if (sender_sock != -1) {
+                    MsgDeliveredPayload notify;
+                    notify.message_id = msgs[i].message_id;
+                    notify.receiver_id = user_id;
+                    
+                    send_response(sender_sock, CMD_NOTIFY_MSG_DELIVERED, 0, STATUS_SUCCESS, 
+                                  &notify, sizeof(MsgDeliveredPayload));
+                }
+            }
+        }
+        // Nếu lấy đủ 50 tin, có thể vẫn còn tin nữa -> Lặp tiếp
+        // Nếu lấy < 50 tin -> Đã hết tin -> Dừng vòng lặp
+    } while (count == batch_size);
+}
+
 // --- LOGIC HANDLERS ---
 static void handle_register(int sock, PacketHeader *reqHeader, void *payload)
 {
@@ -320,14 +362,14 @@ static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload
     if (msg->sender_id != current_user_id)
     {
         LOG_WARN("User %d tried to spoof sender_id as %d", current_user_id, msg->sender_id);
-        msg->sender_id = current_user_id; 
+        msg->sender_id = current_user_id;
     }
 
     // 2. Lấy thời gian thực của Server (Server Time)
     uint64_t server_time = get_current_timestamp_ms();
 
     // 3. Lưu vào DB (Trạng thái mặc định là 'sent')
-    int new_msg_id = db_save_message(current_user_id, msg->receiver_id, msg->content, server_time);
+    int new_msg_id = db_save_message(current_user_id, msg->receiver_id, msg->content, server_time, msg->msg_type, "private");
 
     if (new_msg_id <= 0)
     {
@@ -364,7 +406,7 @@ static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload
         // 5.2 Cập nhật trạng thái 'delivered' trong DB Server
         db_mark_message_delivered(new_msg_id);
 
-        // 5.3 [Optional] Báo ngược lại cho A biết là B đã nhận 
+        // 5.3 [Optional] Báo ngược lại cho A biết là B đã nhận
         MsgDeliveredPayload delivPayload;
         delivPayload.message_id = new_msg_id;
         delivPayload.receiver_id = msg->receiver_id;
@@ -378,49 +420,6 @@ static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload
         LOG_INFO("User %d is Offline. Msg %d saved as 'sent'.", msg->receiver_id, new_msg_id);
         // Tin nhắn vẫn nằm trong DB với status 'sent', chờ user B login gọi API fetch_offline
     }
-}
-
-static void handle_fetch_offline(int sock, PacketHeader *reqHeader, int current_user_id)
-{
-    // Kiểm tra login
-    if (current_user_id == -1)
-    {
-        LOG_WARN("Unauthenticated request for Offline Messages.");
-        send_response(sock, CMD_FETCH_OFFLINE_MSGS_RESP, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
-        return;
-    }
-
-    ChatPayload msgs[50];
-    int limit = 50;
-    int count = db_get_offline_messages(current_user_id, msgs, limit);
-
-    PacketHeader respHeader;
-    memset(&respHeader, 0, sizeof(PacketHeader));
-    respHeader.version = PROTOCOL_VERSION;
-    respHeader.command_type = CMD_FETCH_OFFLINE_MSGS_RESP;
-    respHeader.request_id = reqHeader->request_id;
-    respHeader.status_code = STATUS_SUCCESS;
-
-    // Payload gồm: 4 bytes (Count) + N * Kích thước Struct
-    respHeader.payload_size = sizeof(int32_t) + (count * sizeof(ChatPayload));
-    respHeader.timestamp = get_current_timestamp_ms();
-
-    // Gửi Header
-    send(sock, &respHeader, sizeof(PacketHeader), 0);
-
-    // Gửi Payload
-    send(sock, &count, sizeof(int32_t), 0);
-    if (count > 0)
-    {
-        send(sock, msgs, count * sizeof(ChatPayload), 0);
-
-        // Mark delivered
-        for (int i = 0; i < count; i++)
-        {
-            db_mark_message_delivered(msgs[i].message_id);
-        }
-    }
-    LOG_INFO("Synced %d offline msgs for User %d.", count, current_user_id);
 }
 
 /**
@@ -574,6 +573,43 @@ static void handle_unfriend(int sock, PacketHeader *reqHeader, void *payload, in
     }
 }
 
+static void handle_fetch_offline(int sock, PacketHeader *reqHeader, int current_user_id)
+{
+    push_offline_messages(sock, current_user_id);
+    send_response(sock, CMD_FETCH_OFFLINE_MSGS_RESP, reqHeader->request_id, STATUS_SUCCESS, NULL, 0);
+}
+
+static void handle_get_history(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    GetHistoryPayload *req = (GetHistoryPayload *)payload;
+    
+    int target_id = req->target_id;
+    int limit = req->limit;
+    int offset = req->offset;
+
+    if (limit <= 0 || limit > 50) limit = 20; // Default logic
+    if (offset < 0) offset = 0;
+
+    LOG_INFO("User %d fetch history with %d (Off: %d, Lim: %d)", current_user_id, target_id, offset, limit);
+
+    // Cấp phát bộ nhớ
+    ChatPayload *history = (ChatPayload *)malloc(limit * sizeof(ChatPayload));
+    if (!history) {
+        send_response(sock, CMD_GET_HISTORY_RESP, reqHeader->request_id, STATUS_ERROR_UNKNOWN, NULL, 0);
+        return;
+    }
+
+    // Query DB
+    int count = db_get_chat_history(current_user_id, target_id, history, limit, offset);
+
+    // Gửi phản hồi dạng List
+    send_list_response(sock, CMD_GET_HISTORY_RESP, reqHeader->request_id, STATUS_SUCCESS,
+                       count, history, sizeof(ChatPayload));
+
+    free(history);
+    LOG_INFO("Sent %d history messages to User %d", count, current_user_id);
+}
+
 // --- MAIN THREAD LOOP ---
 void *handle_client(void *socket_desc)
 {
@@ -657,7 +693,6 @@ void *handle_client(void *socket_desc)
         case CMD_FETCH_OFFLINE_MSGS:
             handle_fetch_offline(sock, &header, current_user_id);
             break;
-            // --- SEARCH ---
         case CMD_SEARCH_USERS:
             handle_search_users(sock, &header, payload, current_user_id);
             break;
@@ -672,6 +707,9 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_UNFRIEND:
             handle_unfriend(sock, &header, payload, current_user_id);
+            break;
+        case CMD_GET_HISTORY:
+            handle_get_history(sock, &header, payload, current_user_id);
             break;
 
         default:

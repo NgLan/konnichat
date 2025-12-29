@@ -149,6 +149,12 @@ object NativeEventListenerImpl : NativeEventListener {
         }
 
         // (Tùy chọn) Hiện thông báo nếu cần, nhưng thường từ chối thì không cần báo ầm ĩ.
+    override fun onHistoryReceived(messages: Array<MessageDto>) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onConnectionClosed(reason: String) {
+        Log.e("KONNI_CLIENT", "Socket đóng: $reason")
     }
 
     override fun onConnectionClosed(reason: String) { Log.e(TAG, "Mất kết nối: $reason") }

@@ -80,7 +80,7 @@ static int send_request(int cmd, void *payload, int payload_size) {
 
     PacketHeader header;
     memset(&header, 0, sizeof(header));
-    header.version = PROTOCOL_VERSION;
+    header.version = SERVER_PROTOCOL_VERSION;
     header.command_type = cmd;
     header.payload_size = payload_size;
     header.request_id = ++g_req_id;
@@ -278,18 +278,24 @@ int client_search_users(const char *keyword, int offset, int limit) {
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
-int client_send_message(int receiver_id, const char *content, int request_id) {
+int client_send_message(int receiver_id, const char *content, int request_id, const char *chat_type) {
     ChatPayload payload;
     memset(&payload, 0, sizeof(payload));
     payload.receiver_id = receiver_id;
     payload.msg_type = 1;
+    if (chat_type) {
+        strncpy(payload.chat_type, chat_type, sizeof(payload.chat_type) - 1);
+    } else {
+        strcpy(payload.chat_type, "private");
+    }
     strncpy(payload.content, content, MAX_CONTENT_LEN - 1);
+    // created_at gửi lên là client time (chỉ để tham khảo, server sẽ ghi đè)
     payload.created_at = get_timestamp();
 
     pthread_mutex_lock(&g_send_mutex);
     PacketHeader header;
     memset(&header, 0, sizeof(header));
-    header.version = PROTOCOL_VERSION;
+    header.version = SERVER_PROTOCOL_VERSION;
     header.command_type = CMD_SEND_MESSAGE;
     header.payload_size = sizeof(ChatPayload);
     header.request_id = request_id;
@@ -312,6 +318,29 @@ int client_get_pending_requests() {
 }
 
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN (ĐÃ FIX BUG DESYNC) ---
+int client_fetch_offline_msgs() {
+    pthread_mutex_lock(&g_send_mutex);
+    // Gửi lệnh rỗng (không cần payload)
+    int req_id = send_request(CMD_FETCH_OFFLINE_MSGS, NULL, 0);
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
+int client_get_history(int target_id, int offset, int limit) {
+    GetHistoryPayload payload;
+    payload.target_id = target_id;
+    payload.offset = offset;
+    payload.limit = limit;
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_GET_HISTORY, &payload, sizeof(payload));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
+// --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header) {
     LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
 
@@ -349,6 +378,7 @@ static void handle_incoming_packet(PacketHeader *header) {
     }
 
         // 3. STATUS CHANGE
+    // Xử lý STATUS (Online/Offline)
     else if (header->command_type == CMD_NOTIFY_STATUS) {
         StatusNotifyPayload notify;
         if (recv_all(g_socket, &notify, sizeof(StatusNotifyPayload)) > 0) {
@@ -456,6 +486,35 @@ static void handle_incoming_packet(PacketHeader *header) {
              header->command_type == CMD_RESPOND_FRIEND_REQ_RESP ||
              header->command_type == CMD_UNFRIEND_RESP) {
         if (g_callbacks.on_req_response) g_callbacks.on_req_response(header->command_type, header->status_code);
+    else if (header->command_type == CMD_FETCH_OFFLINE_MSGS_RESP) {
+        if (header->payload_size > 0) discard_payload(g_socket, header->payload_size);
+        LOGI("Offline messages fetch started.");
+    }
+
+    else if (header->command_type == CMD_GET_HISTORY_RESP) {
+        int32_t count = 0;
+        if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
+
+        ChatPayload *msgs = NULL;
+        if (count > 0) {
+            int data_size = count * sizeof(ChatPayload);
+            msgs = (ChatPayload *)malloc(data_size);
+
+            if (msgs) {
+                memset(msgs, 0, data_size);
+
+                if (recv_all(g_socket, msgs, data_size) > 0) {
+                    if (g_callbacks.on_history_received) {
+                        g_callbacks.on_history_received(count, msgs);
+                    }
+                }
+            }
+        } else {
+            if (g_callbacks.on_history_received) {
+                g_callbacks.on_history_received(0, NULL);
+            }
+        }
+        if (msgs) free(msgs);
     }
 
     else {
