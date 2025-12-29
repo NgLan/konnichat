@@ -53,7 +53,7 @@ class HomeActivity : AppCompatActivity() {
                 }
                 R.id.nav_search -> {
                     tvTitle.text = "Tìm bạn bè"
-                    Toast.makeText(this, "Chức năng Tìm kiếm đang phát triển", Toast.LENGTH_SHORT).show()
+                    loadFragment(com.example.konnichat.ui.search.SearchFragment()) // <-- SỬA DÒNG NÀY
                     true
                 }
                 R.id.nav_notification -> {

@@ -29,4 +29,7 @@ interface UserDao {
     // Thêm vào interface UserDao
     @Query("UPDATE users SET is_online = 0")
     suspend fun resetAllStatusOffline()
+
+    @Query("SELECT EXISTS(SELECT 1 FROM users WHERE server_id = :id)")
+    suspend fun isFriend(id: Int): Boolean
 }
