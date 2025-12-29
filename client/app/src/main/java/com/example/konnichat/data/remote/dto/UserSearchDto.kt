@@ -4,5 +4,6 @@ package com.example.konnichat.data.remote.dto
 data class UserSearchDto(
     val userId: Int,
     val name: String,
-    val email: String
+    val email: String,
+    val status: Int
 )

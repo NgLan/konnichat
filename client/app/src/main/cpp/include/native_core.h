@@ -38,6 +38,8 @@ typedef struct {
     void (*on_request_accepted)(UserInfoPayload* user);
     void (*on_unfriended)(int ex_friend_id);
     void (*on_search_result)(int count, UserSearchInfo *results);
+
+    void (*on_pending_list)(int count, PendingReqInfo* list);
     void (*on_history_received)(int count, ChatPayload *messages);
 } NativeCallbacks;
 
@@ -76,5 +78,7 @@ int client_send_message(int receiver_id, const char *content, int request_id, co
 int client_fetch_offline_msgs();
 
 int client_get_history(int target_id, int offset, int limit);
+
+int client_get_pending_requests();
 
 #endif // NATIVE_CORE_H

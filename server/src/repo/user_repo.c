@@ -123,9 +123,11 @@ void db_update_user_status(int user_id, int is_online)
  * @param limit Số lượng kết quả tối đa.
  * @return int Số lượng bản ghi tìm thấy (0 nếu lỗi hoặc không có).
  */
+/**
+ * @brief Tìm kiếm người dùng và trả về kèm trạng thái quan hệ.
+ */
 int db_search_users(const char *keyword, int current_id, UserSearchInfo *out_list, int limit, int offset)
 {
-    // Validate input
     if (!keyword || strlen(keyword) == 0) return 0;
 
     MYSQL *conn = db_get_conn();
@@ -134,15 +136,35 @@ int db_search_users(const char *keyword, int current_id, UserSearchInfo *out_lis
         return 0;
     }
 
-    char query[1024];
-    // Sử dụng LIKE %keyword% để tìm kiếm gần đúng
-    // Loại trừ bản thân (id != current_id)
+    char query[2048]; // Tăng kích thước buffer vì query dài hơn
+
+    // SQL Logic:
+    // 1. Tìm user khớp tên/email và không phải chính mình.
+    // 2. Cột 'status':
+    //    - Kiểm tra bảng 'friends': Nếu có cặp (me, them) hoặc (them, me) -> FRIEND (1)
+    //    - Kiểm tra bảng 'friend_requests':
+    //      + Nếu sender=me, receiver=them, status='waiting' -> SENT (2)
+    //      + Nếu sender=them, receiver=me, status='waiting' -> RECEIVED (3)
+    //    - Còn lại -> NONE (0)
+    
     snprintf(query, sizeof(query),
-             "SELECT id, name, email FROM users "
-             "WHERE (name LIKE '%%%s%%' OR email LIKE '%%%s%%') "
-             "AND id != %d "
+             "SELECT u.id, u.name, u.email, "
+             "CASE "
+             "  WHEN EXISTS (SELECT 1 FROM friends f WHERE (f.user_id = %d AND f.friend_id = u.id) OR (f.friend_id = %d AND f.user_id = u.id)) THEN 1 "
+             "  WHEN EXISTS (SELECT 1 FROM friend_requests fr WHERE fr.sender_id = %d AND fr.receiver_id = u.id AND fr.status = 'waiting') THEN 2 "
+             "  WHEN EXISTS (SELECT 1 FROM friend_requests fr WHERE fr.sender_id = u.id AND fr.receiver_id = %d AND fr.status = 'waiting') THEN 3 "
+             "  ELSE 0 "
+             "END as status "
+             "FROM users u "
+             "WHERE (u.name LIKE '%%%s%%' OR u.email LIKE '%%%s%%') "
+             "AND u.id != %d "
              "LIMIT %d OFFSET %d",
-             keyword, keyword, current_id, limit, offset);
+             current_id, current_id, // Cho case FRIEND
+             current_id,             // Cho case SENT
+             current_id,             // Cho case RECEIVED
+             keyword, keyword,       // Cho WHERE LIKE
+             current_id,             // Cho WHERE id !=
+             limit, offset);
 
     if (mysql_query(conn, query)) {
         LOG_ERROR("Search DB Error: %s", mysql_error(conn));
@@ -158,12 +180,15 @@ int db_search_users(const char *keyword, int current_id, UserSearchInfo *out_lis
         while ((row = mysql_fetch_row(res)) && count < limit) {
             out_list[count].user_id = atoi(row[0]);
             
-            // Xử lý an toàn chuỗi
             if (row[1]) strncpy(out_list[count].name, row[1], MAX_NAME_LEN - 1);
             else strcpy(out_list[count].name, "Unknown");
             
             if (row[2]) strncpy(out_list[count].email, row[2], MAX_EMAIL_LEN - 1);
             else strcpy(out_list[count].email, "");
+
+            // Lấy cột status (cột thứ 4, index 3)
+            if (row[3]) out_list[count].status = atoi(row[3]);
+            else out_list[count].status = 0;
 
             count++;
         }
@@ -174,7 +199,6 @@ int db_search_users(const char *keyword, int current_id, UserSearchInfo *out_lis
     LOG_INFO("User %d searched '%s'. Found %d results.", current_id, keyword, count);    
     return count;
 }
-
 /**
  * @brief Lấy tên user theo ID.
  * 

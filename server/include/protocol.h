@@ -105,6 +105,12 @@ typedef enum {
     STATUS_ERROR_REQ_PENDING = 8      // Đã gửi rồi, đừng spam
 } StatusCode;
 
+// --- ĐỊNH NGHĨA TRẠNG THÁI QUAN HỆ ---
+#define RELATION_NONE 0         // Người lạ
+#define RELATION_FRIEND 1       // Bạn bè
+#define RELATION_SENT 2         // Mình đã gửi lời mời (chờ duyệt)
+#define RELATION_RECEIVED 3     // Họ đã gửi lời mời cho mình (chờ duyệt)
+
 // --- HEADER ---
 // Tổng kích thước: 4*5 + 8 = 28 bytes
 typedef struct __attribute__((packed)) {
@@ -180,6 +186,7 @@ typedef struct __attribute__((packed)) {
     int32_t user_id;
     char name[MAX_NAME_LEN];
     char email[MAX_EMAIL_LEN];
+    int32_t status;
 } UserSearchInfo;
 
 typedef struct __attribute__((packed)) {

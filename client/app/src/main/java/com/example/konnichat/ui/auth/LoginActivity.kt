@@ -12,6 +12,11 @@ import androidx.appcompat.app.AppCompatActivity
 import com.example.konnichat.core.state.Resource
 // Import HomeActivity khi bạn tạo nó sau này
  import com.example.konnichat.ui.home.HomeActivity
+import com.example.konnichat.App
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class LoginActivity : AppCompatActivity() {
 
@@ -61,6 +66,20 @@ class LoginActivity : AppCompatActivity() {
                             putString("USER_NAME", userDto.name)
                             putString("USER_EMAIL", userDto.email)
                             apply() // Lưu xuống file
+                        }
+
+                        val app = application as App
+                        CoroutineScope(Dispatchers.IO).launch {
+                            // Xóa sạch bảng users, messages, friends... của người dùng trước
+                            app.db.clearAllTables()
+
+                            // Sau khi xóa xong thì mới chuyển màn hình
+                            withContext(Dispatchers.Main) {
+                                Toast.makeText(this@LoginActivity, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
+                                val intent = Intent(this@LoginActivity, HomeActivity::class.java)
+                                startActivity(intent)
+                                finish()
+                            }
                         }
                     }
 

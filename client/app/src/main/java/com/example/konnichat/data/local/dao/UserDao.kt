@@ -32,4 +32,7 @@ interface UserDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM users WHERE server_id = :id)")
     suspend fun isFriend(id: Int): Boolean
+
+    @Query("DELETE FROM users WHERE server_id = :id")
+    suspend fun deleteUserByServerId(id: Int)
 }

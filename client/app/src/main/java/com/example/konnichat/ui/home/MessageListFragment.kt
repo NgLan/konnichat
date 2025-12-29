@@ -1,4 +1,3 @@
-// File: client/app/src/main/java/com/example/konnichat/ui/home/MessageListFragment.kt
 package com.example.konnichat.ui.home
 
 import android.os.Bundle
@@ -19,7 +18,6 @@ import kotlinx.coroutines.launch
 
 class MessageListFragment : Fragment() {
 
-    // Inject UserRepository từ App
     private val viewModel: HomeViewModel by activityViewModels {
         HomeViewModelFactory((requireActivity().application as App).userRepository)
     }
@@ -39,16 +37,21 @@ class MessageListFragment : Fragment() {
         val rvConversations = view.findViewById<RecyclerView>(R.id.rvConversations)
         val tvEmpty = view.findViewById<TextView>(R.id.tvEmptyState)
 
-        // Dùng FriendAdapter mới
-        adapter = FriendAdapter { user ->
-            // Click vào bạn bè -> Mở chat (Tính năng sau này)
-            Toast.makeText(requireContext(), "Chat với: ${user.name}", Toast.LENGTH_SHORT).show()
-        }
+        // Cập nhật Adapter với callback unfriend
+        adapter = FriendAdapter(
+            onItemClick = { user ->
+                Toast.makeText(requireContext(), "Chat với: ${user.name}", Toast.LENGTH_SHORT).show()
+            },
+            onUnfriendClick = { user ->
+                // Gọi ViewModel để hủy kết bạn
+                viewModel.unfriendUser(user.serverId)
+                Toast.makeText(requireContext(), "Đã hủy kết bạn với ${user.name}", Toast.LENGTH_SHORT).show()
+            }
+        )
 
         rvConversations.layoutManager = LinearLayoutManager(context)
         rvConversations.adapter = adapter
 
-        // Lắng nghe list friends
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.friends.collectLatest { list ->
                 if (list.isEmpty()) {

@@ -34,6 +34,9 @@ class SearchFragment : Fragment() {
     }
 
     private lateinit var adapter: SearchUserAdapter
+    private lateinit var etSearch: EditText
+    private lateinit var btnSearch: ImageButton
+    private lateinit var rvResults: RecyclerView
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -45,14 +48,16 @@ class SearchFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val etSearch = view.findViewById<EditText>(R.id.etSearchQuery)
-        val btnSearch = view.findViewById<ImageButton>(R.id.btnSubmitSearch)
-        val rvResults = view.findViewById<RecyclerView>(R.id.rvSearchResults)
+        // 1. Ánh xạ View (Binding)
+        etSearch = view.findViewById(R.id.etSearchQuery)
+        btnSearch = view.findViewById(R.id.btnSubmitSearch)
+        rvResults = view.findViewById(R.id.rvSearchResults)
 
+        // 2. Setup Adapter
         adapter = SearchUserAdapter(
             onAddFriendClick = { userId ->
                 viewModel.sendFriendRequest(userId)
-                Toast.makeText(context, "Đã gửi lời mời kết bạn!", Toast.LENGTH_SHORT).show()
+                // Toast.makeText(context, "Đã gửi lời mời!", Toast.LENGTH_SHORT).show()
             },
             onChatClick = { userId ->
                 Toast.makeText(context, "Chức năng Chat đang phát triển", Toast.LENGTH_SHORT).show()
@@ -62,19 +67,25 @@ class SearchFragment : Fragment() {
         rvResults.layoutManager = LinearLayoutManager(context)
         rvResults.adapter = adapter
 
-        // Bắt sự kiện bấm nút tìm kiếm
+        // 3. Setup Listener (Sự kiện bấm nút) - ĐỂ Ở NGOÀI COROUTINE
         btnSearch.setOnClickListener {
             val query = etSearch.text.toString().trim()
             if (query.isNotEmpty()) {
                 viewModel.search(query)
+                // Ẩn bàn phím sau khi bấm tìm (Optional)
+                // hideKeyboard()
             }
         }
 
-        // Lắng nghe kết quả trả về
+        // 4. Setup Observer (Lắng nghe dữ liệu) - DÙNG 1 SCOPE DUY NHẤT
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.searchResults.collectLatest { results ->
                 adapter.submitList(results)
-                if (results.isEmpty()) {
+
+                // Logic hiển thị thông báo "Không tìm thấy"
+                // Chỉ hiện khi: List rỗng VÀ Ô tìm kiếm không trống (để tránh hiện lúc mới vào màn hình)
+                val currentQuery = etSearch.text.toString().trim()
+                if (results.isEmpty() && currentQuery.isNotEmpty()) {
                     Toast.makeText(context, "Không tìm thấy kết quả nào", Toast.LENGTH_SHORT).show()
                 }
             }

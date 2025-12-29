@@ -33,32 +33,42 @@ class SearchUserAdapter(
         holder.tvName.text = user.name
         holder.tvEmail.text = user.email
 
-        // --- CẢI TIẾN 1: Click vào bất cứ đâu trên dòng này đều mở chat ---
-        // Giúp xem lại tin nhắn cũ kể cả khi nút bấm đang là "Kết bạn"
-        holder.itemView.setOnClickListener {
-            onChatClick(user.id)
-        }
+        // Click vào item vẫn mở chat (xem lịch sử cũ)
+        holder.itemView.setOnClickListener { onChatClick(user.id) }
 
-        // --- CẢI TIẾN 2: Logic hiển thị nút bấm ---
-        if (user.isFriend) {
-            // Trạng thái: Đã là bạn bè
-            holder.btnAction.text = "Bạn bè"
-            // Đổi màu Xám để phân biệt (Thể hiện trạng thái tĩnh)
-            holder.btnAction.setBackgroundColor(Color.parseColor("#757575"))
-
-            // Nếu bấm vào nút "Bạn bè", ta cũng có thể cho mở chat hoặc mở profile
-            holder.btnAction.setOnClickListener { onChatClick(user.id) }
-        } else {
-            // Trạng thái: Chưa kết bạn / Đã hủy kết bạn
-            holder.btnAction.text = "Kết bạn"
-            // Màu Xanh lá (Hành động mời)
-            holder.btnAction.setBackgroundColor(Color.parseColor("#4CAF50"))
-
-            // Bấm nút này thì gửi lời mời
-            holder.btnAction.setOnClickListener { onAddFriendClick(user.id) }
+        // --- LOGIC HIỂN THỊ NÚT DỰA TRÊN STATUS TỪ SERVER ---
+        when (user.status) {
+            UserSearchUiModel.STATUS_FRIEND -> {
+                // Đã là bạn
+                setupButton(holder.btnAction, "Bạn bè", "#757575", true) // Xám, Bấm để chat
+                holder.btnAction.setOnClickListener { onChatClick(user.id) }
+            }
+            UserSearchUiModel.STATUS_SENT -> {
+                // Đã gửi lời mời
+                setupButton(holder.btnAction, "Đã gửi", "#E0E0E0", false) // Xám nhạt, Disable
+                holder.btnAction.setTextColor(Color.GRAY)
+                holder.btnAction.setOnClickListener { null } // Không làm gì
+            }
+            UserSearchUiModel.STATUS_RECEIVED -> {
+                // Người ta gửi cho mình (Hiếm gặp khi search nhưng cứ handle)
+                setupButton(holder.btnAction, "Phản hồi", "#2196F3", true) // Xanh dương
+                // Bấm vào thì nên mở trang Lời mời (hoặc chấp nhận luôn tùy logic)
+                holder.btnAction.setOnClickListener { /* TODO: Mở dialog chấp nhận */ }
+            }
+            else -> { // STATUS_NONE (Người lạ)
+                setupButton(holder.btnAction, "Kết bạn", "#4CAF50", true) // Xanh lá
+                holder.btnAction.setOnClickListener { onAddFriendClick(user.id) }
+            }
         }
     }
 
+    // Helper để set giao diện nút nhanh gọn
+    private fun setupButton(btn: Button, text: String, colorHex: String, isEnabled: Boolean) {
+        btn.text = text
+        btn.isEnabled = isEnabled
+        btn.setBackgroundColor(Color.parseColor(colorHex))
+        if (isEnabled) btn.setTextColor(Color.WHITE)
+    }
     companion object DiffCallback : DiffUtil.ItemCallback<UserSearchUiModel>() {
         override fun areItemsTheSame(oldItem: UserSearchUiModel, newItem: UserSearchUiModel) = oldItem.id == newItem.id
         override fun areContentsTheSame(oldItem: UserSearchUiModel, newItem: UserSearchUiModel) = oldItem == newItem

@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.konnichat.data.local.AppDatabase
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.remote.dto.MessageDto
+import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
 import kotlinx.coroutines.CoroutineScope
@@ -68,6 +69,12 @@ class DataSyncManager(private val db: AppDatabase) : NativeEventListener {
         TODO("Not yet implemented")
     }
 
+    override fun onPendingRequestsReceived(requests: Array<PendingRequestDto>) {
+        // Hiện tại DataSyncManager chưa cần xử lý cái này (UI xử lý bên NativeEventListenerImpl)
+        // Bạn có thể log ra hoặc để TODO
+        Log.d("DataSync", "Ignored pending requests list (handled by UI)")
+    }
+
     override fun onFriendRequestAccepted(user: UserDto) {
         TODO("Not yet implemented")
     }
@@ -100,4 +107,6 @@ class DataSyncManager(private val db: AppDatabase) : NativeEventListener {
     override fun onConnectionClosed(reason: String) {
         Log.e("DataSync", "Mất kết nối: $reason")
     }
+
+
 }
