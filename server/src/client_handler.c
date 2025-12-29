@@ -312,43 +312,71 @@ static void handle_get_friends(int sock, PacketHeader *reqHeader, void *payload,
     LOG_INFO("Sent %d friends to User %d.", count, current_user_id);
 }
 
-static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload)
+static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
 {
-    ChatPayload *chat = (ChatPayload *)payload;
+    ChatPayload *msg = (ChatPayload *)payload;
 
-    // 1. Lấy thời gian thực của Server ngay lúc nhận tin
-    uint64_t now = get_current_timestamp_ms();
-    chat->created_at = now;
-
-    LOG_INFO("Msg: %d -> %d: %s", chat->sender_id, chat->receiver_id, chat->content);
-
-    // 2. Lưu vào DB
-    int new_msg_id = db_save_message(chat->sender_id, chat->receiver_id, chat->content, now);
-
-    if (new_msg_id > 0)
+    // 1. Validate: Sender ID trong gói tin phải khớp với người đang login
+    if (msg->sender_id != current_user_id)
     {
-        // 3. Forward to receiver if online
-        int receiver_sock = get_socket_by_user_id(chat->receiver_id);
-        if (receiver_sock != -1)
-        {
-            chat->message_id = new_msg_id; // Cập nhật ID thật
-            send_response(receiver_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS, chat, sizeof(ChatPayload));
+        LOG_WARN("User %d tried to spoof sender_id as %d", current_user_id, msg->sender_id);
+        msg->sender_id = current_user_id; 
+    }
 
-            db_mark_message_delivered(new_msg_id);
-            LOG_INFO("Forwarded msg %d to User %d.", new_msg_id, chat->receiver_id);
-        }
-        else
-        {
-            LOG_INFO("User %d offline. Msg saved.", chat->receiver_id);
-        }
+    // 2. Lấy thời gian thực của Server (Server Time)
+    uint64_t server_time = get_current_timestamp_ms();
 
-        // 4. Phản hồi cho người gửi để họ cập nhật UI (VD: hiện dấu tích "Đã gửi")
-        chat->message_id = new_msg_id;
-        send_response(sock, CMD_SEND_MESSAGE_RESP, reqHeader->request_id, STATUS_SUCCESS, chat, sizeof(ChatPayload));
+    // 3. Lưu vào DB (Trạng thái mặc định là 'sent')
+    int new_msg_id = db_save_message(current_user_id, msg->receiver_id, msg->content, server_time);
+
+    if (new_msg_id <= 0)
+    {
+        LOG_ERROR("Failed to save message from User %d", current_user_id);
+        send_response(sock, CMD_SEND_MESSAGE_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
+        return;
+    }
+
+    LOG_INFO("Msg Saved ID: %d. Sender: %d -> Receiver: %d", new_msg_id, current_user_id, msg->receiver_id);
+
+    // 4. Gửi ACK về cho người gửi (A)
+    // Mục đích: Để A cập nhật trạng thái "Sending" -> "Sent" và cập nhật lại Timestamp chuẩn Server
+    ChatPayload respPayload = *msg;
+    respPayload.message_id = new_msg_id;  // ID thật trong DB
+    respPayload.created_at = server_time; // Thời gian thật
+
+    send_response(sock, CMD_SEND_MESSAGE_RESP, reqHeader->request_id, STATUS_SUCCESS,
+                  &respPayload, sizeof(ChatPayload));
+
+    // 5. Kiểm tra người nhận (B) có Online không?
+    int receiver_sock = get_socket_by_user_id(msg->receiver_id);
+
+    if (receiver_sock != -1)
+    {
+        // --- TRƯỜNG HỢP ONLINE ---
+
+        // 5.1 Gửi tin nhắn cho B (Real-time)
+        // Request ID gửi cho B là 0 hoặc số mới, không liên quan đến Request ID của A
+        send_response(receiver_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS,
+                      &respPayload, sizeof(ChatPayload));
+
+        LOG_INFO("Forwarded Msg %d to User %d (Online)", new_msg_id, msg->receiver_id);
+
+        // 5.2 Cập nhật trạng thái 'delivered' trong DB Server
+        db_mark_message_delivered(new_msg_id);
+
+        // 5.3 [Optional] Báo ngược lại cho A biết là B đã nhận 
+        MsgDeliveredPayload delivPayload;
+        delivPayload.message_id = new_msg_id;
+        delivPayload.receiver_id = msg->receiver_id;
+
+        send_response(sock, CMD_NOTIFY_MSG_DELIVERED, 0, STATUS_SUCCESS,
+                      &delivPayload, sizeof(MsgDeliveredPayload));
     }
     else
     {
-        send_response(sock, CMD_SEND_MESSAGE_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
+        // --- TRƯỜNG HỢP OFFLINE ---
+        LOG_INFO("User %d is Offline. Msg %d saved as 'sent'.", msg->receiver_id, new_msg_id);
+        // Tin nhắn vẫn nằm trong DB với status 'sent', chờ user B login gọi API fetch_offline
     }
 }
 
@@ -624,7 +652,7 @@ void *handle_client(void *socket_desc)
             handle_get_friends(sock, &header, payload, current_user_id);
             break;
         case CMD_SEND_MESSAGE:
-            handle_send_message(sock, &header, payload);
+            handle_send_message(sock, &header, payload, current_user_id);
             break;
         case CMD_FETCH_OFFLINE_MSGS:
             handle_fetch_offline(sock, &header, current_user_id);

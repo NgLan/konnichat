@@ -5,6 +5,7 @@ import com.example.konnichat.core.exception.AuthenticationException
 import com.example.konnichat.core.exception.UserAlreadyExistsException
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListener
+import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
 import org.junit.After
@@ -39,6 +40,10 @@ class NativeClientTest {
         const val CMD_REGISTER = 10
         const val CMD_LOGIN = 12
 
+        const val CMD_SEND_MESSAGE = 20
+        const val CMD_SEND_MESSAGE_RESP = 21
+        const val CMD_RECEIVE_MESSAGE = 22
+
         const val CMD_SEND_FRIEND_REQ = 42
         const val CMD_SEND_FRIEND_REQ_RESP = 43
 
@@ -48,6 +53,7 @@ class NativeClientTest {
 
         const val CMD_NOTIFY_FRIEND_REQ = 80
         const val CMD_NOTIFY_REQ_ACCEPTED = 81
+        const val CMD_NOTIFY_MSG_DELIVERED = 85
 
         // --- Status Codes ---
         const val STATUS_SUCCESS = 0
@@ -647,6 +653,150 @@ class NativeClientTest {
         Assert.assertTrue("Phải tìm thấy kết quả dù keyword có space (Client phải trim)", countTrim > 0)
     }
 
+    // ==========================================
+    // MODULE 6: CHAT 1-1
+    // ==========================================
+
+    @Test
+    fun test09_SendMessage_Online_Flow() {
+        // Kịch bản: User A gửi tin cho User B (đang Online bằng FakeClient).
+        // Mong đợi:
+        // 1. A nhận onMessageSent (ACK từ Server -> Đã lưu DB)
+        // 2. A nhận onMessageDelivered (Server đã đẩy tin sang B thành công)
+
+        val time = System.currentTimeMillis()
+        val emailA = "chatA_$time@konni.com"
+        val emailB = "chatB_$time@konni.com"
+        val pass = "123"
+
+        // 1. Register & Get ID
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        // Login B (Native) để lấy ID rồi thoát
+        NativeClient.disconnect()
+        Thread.sleep(200)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val tempB = NativeClient.loginUser(emailB, pass)!!
+        val idB = tempB.id
+        NativeClient.disconnect()
+        Thread.sleep(500) // Chờ B thoát hẳn
+
+        // 2. FakeClient B đăng nhập và giữ kết nối (Simulate Online)
+        val latchFakeBReady = CountDownLatch(1)
+        val threadFakeB = Thread {
+            try {
+                val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fb.login(emailB, pass)
+                latchFakeBReady.countDown()
+
+                // Giữ kết nối trong 3 giây để nhận tin
+                Thread.sleep(3000)
+                fb.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadFakeB.start()
+        latchFakeBReady.await(2, TimeUnit.SECONDS)
+
+        // 3. Login A (Native)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        // 4. Setup Listener A
+        val latchSent = CountDownLatch(1)      // Chờ ACK
+        val latchDelivered = CountDownLatch(1) // Chờ Delivered Notif
+
+        var serverMsgId = 0
+        val tempMsgId = 9999 // ID trong Room DB giả lập
+
+        val listenerA = object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+                println("TEST: Message Sent ACK. TempID=$tempId, ServerID=$serverId, Time=$serverTime")
+                if (tempId == tempMsgId && serverId > 0) {
+                    serverMsgId = serverId
+                    latchSent.countDown()
+                }
+            }
+
+            override fun onMessageDelivered(serverId: Int) {
+                println("TEST: Message Delivered. ServerID=$serverId")
+                // Chỉ tính là Delivered nếu ID khớp với ID đã Sent
+                if (serverId == serverMsgId) {
+                    latchDelivered.countDown()
+                }
+            }
+        }
+        NativeClient.startListening(listenerA)
+
+        // 5. A Gửi tin nhắn
+        val content = "Hello B, I am A"
+        NativeClient.sendMessage(idB, content, tempMsgId)
+
+        // 6. Verify
+        Assert.assertTrue("Không nhận được ACK (Sent)", latchSent.await(5, TimeUnit.SECONDS))
+        Assert.assertTrue("Server ID phải lớn hơn 0", serverMsgId > 0)
+
+        // Vì B đang Online (FakeClient thread đang sleep), Server sẽ push tin qua B và trả về Delivered cho A
+        Assert.assertTrue("Không nhận được thông báo Delivered", latchDelivered.await(5, TimeUnit.SECONDS))
+    }
+
+    @Test
+    fun test10_ReceiveMessage_Flow() {
+        // Kịch bản: B (FakeClient) gửi tin cho A (Native - Online).
+        // Mong đợi: A nhận onMessageReceived với nội dung đúng.
+
+        val time = System.currentTimeMillis()
+        val emailA = "recvA_$time@konni.com"
+        val emailB = "sendB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        // 1. Login A (Native) -> Lấy ID A -> Start Listen
+        NativeClient.disconnect()
+        Thread.sleep(200)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val userA = NativeClient.loginUser(emailA, pass)!!
+
+        val latchReceived = CountDownLatch(1)
+        var receivedContent = ""
+        var receivedSenderId = 0
+
+        val listenerA = object : StubNativeEventListener() {
+            override fun onMessageReceived(msg: MessageDto) {
+                println("TEST: Received Msg from ${msg.senderId}: ${msg.content}")
+                receivedContent = msg.content
+                receivedSenderId = msg.senderId
+                latchReceived.countDown()
+            }
+        }
+        NativeClient.startListening(listenerA)
+
+        // 2. FakeClient B login và gửi tin cho A
+        val msgContent = "Greetings from FakeClient"
+
+        val threadFakeB = Thread {
+            try {
+                val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fb.login(emailB, pass)
+                Thread.sleep(500)
+
+                // Gửi tin cho A
+                fb.sendMessage(userA.id, msgContent)
+
+                Thread.sleep(500)
+                fb.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadFakeB.start()
+
+        // 3. Verify
+        Assert.assertTrue("A không nhận được tin nhắn", latchReceived.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Nội dung tin nhắn không khớp", msgContent, receivedContent)
+        // Note: ID của B ta chưa lấy, nhưng chắc chắn > 0. Có thể verify nếu muốn chặt chẽ hơn.
+        Assert.assertTrue(receivedSenderId > 0)
+    }
 }
 
 // =========================================================
@@ -661,6 +811,9 @@ open class StubNativeEventListener : NativeEventListener {
     override fun onFriendRequestAccepted(user: UserDto) {}
     override fun onFriendRemoved(exFriendId: Int) {}
     override fun onSearchResult(results: Array<UserSearchDto>) {}
+    override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {}
+    override fun onMessageReceived(msg: MessageDto) {}
+    override fun onMessageDelivered(serverId: Int) {}
     override fun onConnectionClosed(reason: String) {}
 }
 
@@ -677,12 +830,15 @@ class FakeTcpClient(ip: String, port: Int) {
     private val PACKET_HEADER_SIZE = 28 // 4*5 + 8
 
     private val CMD_LOGIN = 12
+
+    private val CMD_SEND_MESSAGE = 20
     private val CMD_SEND_FRIEND_REQ = 42
 
     private val CMD_RESPOND_FRIEND_REQ = 44
     private val CMD_UNFRIEND = 46
     private val MAX_EMAIL_LEN = 256
     private val MAX_PASS_LEN = 128
+    private val MAX_CONTENT_LEN = 1024
 
     // Payload Size Calculation
     // LoginPayload: email[256] + pass[128] = 384 bytes
@@ -691,6 +847,9 @@ class FakeTcpClient(ip: String, port: Int) {
     private val FRIEND_REQ_PAYLOAD_SIZE = 4
     // Payload FriendRespondPayload: request_id(4) + is_accepted(1) = 5 bytes
     private val RESPOND_PAYLOAD_SIZE = 5
+    // ChatPayload: msg_id(4) + sender(4) + receiver(4) + type(4) + content(1024) + time(8)
+    // Total = 1048 bytes
+    private val CHAT_PAYLOAD_SIZE = 4 + 4 + 4 + 4 + MAX_CONTENT_LEN + 8
 
     fun login(email: String, pass: String) {
         val totalSize = PACKET_HEADER_SIZE + LOGIN_PAYLOAD_SIZE
@@ -753,6 +912,28 @@ class FakeTcpClient(ip: String, port: Int) {
         output.write(buffer.array())
         output.flush()
     }
+
+    fun sendMessage(receiverId: Int, content: String) {
+        val totalSize = PACKET_HEADER_SIZE + CHAT_PAYLOAD_SIZE
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        // 1. Header
+        writeHeader(buffer, CMD_SEND_MESSAGE, CHAT_PAYLOAD_SIZE)
+
+        // 2. Body (ChatPayload struct)
+        buffer.putInt(0)            // message_id (Server sinh)
+        buffer.putInt(0)            // sender_id (Server tự điền)
+        buffer.putInt(receiverId)   // receiver_id
+        buffer.putInt(1)            // msg_type (1=Text)
+
+        writeFixedString(buffer, content, MAX_CONTENT_LEN) // content
+
+        buffer.putLong(System.currentTimeMillis()) // created_at
+
+        output.write(buffer.array())
+        output.flush()
+    }
     private fun writeHeader(buffer: ByteBuffer, cmd: Int, payloadSize: Int) {
         // Struct PacketHeader: version, cmd, size, reqId, status, timestamp
         buffer.putInt(PROTOCOL_VERSION)
@@ -779,9 +960,3 @@ class FakeTcpClient(ip: String, port: Int) {
         socket.close()
     }
 }
-
-data class UserSearchDto(
-    val id: Int,
-    val name: String,
-    val email: String
-)
