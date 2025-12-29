@@ -10,5 +10,6 @@ data class MessageDto(
     val receiverId: Int,
     val content: String,
     val timestamp: Long,    // Thời gian server
-    val type: Int = 1       // 1: Text, 2: Image...
+    val type: Int = 1,      // 1: Text, 2: Image...
+    val chatType: String = "private"   // 1: Private, 2: Group
 )

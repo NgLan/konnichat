@@ -18,7 +18,7 @@ static uint64_t parse_mysql_time(const char *str);
  * @brief Saves a new message to DB.
  * @return New Message ID or 0 if failed.
  */
-int db_save_message(int sender_id, int receiver_id, const char *content, uint64_t created_at)
+int db_save_message(int sender_id, int receiver_id, const char *content, uint64_t created_at, int msg_type, const char *chat_type)
 {
     char query[2048];
     char time_str[20];
@@ -30,13 +30,14 @@ int db_save_message(int sender_id, int receiver_id, const char *content, uint64_
 
     // 2. Insert vào DB
     snprintf(query, sizeof(query),
-             "INSERT INTO messages (sender_id, receiver_id, content, status, created_at, chat_type) "
-             "VALUES (%d, %d, '%s', 'sent', '%s', 'private')",
-             sender_id, receiver_id, content, time_str);
+             "INSERT INTO messages (sender_id, receiver_id, content, status, created_at, chat_type, msg_type) "
+             "VALUES (%d, %d, '%s', 'sent', '%s', '%s', %d)",
+             sender_id, receiver_id, content, time_str, chat_type, msg_type);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
-    
+    if (!conn)
+        return 0;
+
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Save Msg Error: %s", mysql_error(conn));
@@ -59,7 +60,8 @@ void db_mark_message_delivered(int message_id)
              "UPDATE messages SET status = 'delivered' WHERE id = %d", message_id);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return;
+    if (!conn)
+        return;
 
     if (mysql_query(conn, query))
     {
@@ -74,14 +76,17 @@ void db_mark_message_delivered(int message_id)
 int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
 {
     char query[1024];
+    // Sắp xếp: ASC (Cũ nhất gửi trước -> Mới nhất gửi sau)
     snprintf(query, sizeof(query),
-             "SELECT id, sender_id, receiver_id, content, created_at "
+             "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type "
              "FROM messages WHERE receiver_id = %d AND status = 'sent' "
              "ORDER BY created_at ASC LIMIT %d",
              user_id, limit);
 
     MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
+    if (!conn)
+        return 0;
+
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Get Offline Msgs Error: %s", mysql_error(conn));
@@ -100,17 +105,14 @@ int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
             messages_out[count].message_id = atoi(row[0]);
             messages_out[count].sender_id = atoi(row[1]);
             messages_out[count].receiver_id = atoi(row[2]);
-            messages_out[count].msg_type = 1; // Default text
             strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);
-
-            if (row[4])
-            {
-                messages_out[count].created_at = parse_mysql_time(row[4]);
+            messages_out[count].created_at = row[4] ? parse_mysql_time(row[4]) : 0;
+            if (row[5]) {
+                strncpy(messages_out[count].chat_type, row[5], 15);
+            } else {
+                strcpy(messages_out[count].chat_type, "private");
             }
-            else
-            {
-                messages_out[count].created_at = 0;
-            }
+            messages_out[count].msg_type = row[6] ? atoi(row[6]) : 1;
 
             count++;
         }
@@ -124,56 +126,57 @@ int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
 /**
  * @brief Retrieves chat history between two users.
  */
-int db_get_chat_history(int user1, int user2, ChatPayload *messages_out, int limit)
-{
-    char query[1024];
-    snprintf(query, sizeof(query),
-             "SELECT id, sender_id, receiver_id, content, created_at "
-             "FROM messages "
-             "WHERE (sender_id = %d AND receiver_id = %d) "
-             "   OR (sender_id = %d AND receiver_id = %d) "
-             "ORDER BY created_at DESC LIMIT %d", // Lấy tin mới nhất trở về trước
-             user1, user2, user2, user1, limit);
+// int db_get_chat_history(int user1, int user2, ChatPayload *messages_out, int limit)
+// {
+//     char query[1024];
+//     snprintf(query, sizeof(query),
+//              "SELECT id, sender_id, receiver_id, content, created_at "
+//              "FROM messages "
+//              "WHERE (sender_id = %d AND receiver_id = %d) "
+//              "   OR (sender_id = %d AND receiver_id = %d) "
+//              "ORDER BY created_at DESC LIMIT %d", // Lấy tin mới nhất trở về trước
+//              user1, user2, user2, user1, limit);
 
-    MYSQL *conn = db_get_conn();
-    if (!conn) return 0;
-    if (mysql_query(conn, query))
-    {
-        LOG_ERROR("Get History Error: %s", mysql_error(conn));
-        db_release_conn(conn);
-        return 0;
-    }
+//     MYSQL *conn = db_get_conn();
+//     if (!conn)
+//         return 0;
+//     if (mysql_query(conn, query))
+//     {
+//         LOG_ERROR("Get History Error: %s", mysql_error(conn));
+//         db_release_conn(conn);
+//         return 0;
+//     }
 
-    MYSQL_RES *result = mysql_store_result(conn);
-    
-    int count = 0;
-    if (result)
-    {
-        MYSQL_ROW row;
-        while ((row = mysql_fetch_row(result)) && count < limit)
-        {
-            messages_out[count].message_id = atoi(row[0]);
-            messages_out[count].sender_id = atoi(row[1]);
-            messages_out[count].receiver_id = atoi(row[2]);
-            messages_out[count].msg_type = 1;
-            strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);
-            if (row[4])
-            {
-                messages_out[count].created_at = parse_mysql_time(row[4]);
-            }
-            else
-            {
-                messages_out[count].created_at = 0;
-            }
+//     MYSQL_RES *result = mysql_store_result(conn);
 
-            count++;
-        }
-        mysql_free_result(result);
-    }
+//     int count = 0;
+//     if (result)
+//     {
+//         MYSQL_ROW row;
+//         while ((row = mysql_fetch_row(result)) && count < limit)
+//         {
+//             messages_out[count].message_id = atoi(row[0]);
+//             messages_out[count].sender_id = atoi(row[1]);
+//             messages_out[count].receiver_id = atoi(row[2]);
+//             messages_out[count].msg_type = 1;
+//             strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);
+//             if (row[4])
+//             {
+//                 messages_out[count].created_at = parse_mysql_time(row[4]);
+//             }
+//             else
+//             {
+//                 messages_out[count].created_at = 0;
+//             }
 
-    db_release_conn(conn);
-    return count;
-}
+//             count++;
+//         }
+//         mysql_free_result(result);
+//     }
+
+//     db_release_conn(conn);
+//     return count;
+// }
 
 static uint64_t parse_mysql_time(const char *str)
 {

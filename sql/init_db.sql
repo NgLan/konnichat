@@ -58,6 +58,7 @@ CREATE TABLE messages (
     
     FOREIGN KEY (sender_id) REFERENCES Users(id) ON DELETE CASCADE
 );
+ALTER TABLE messages ADD COLUMN msg_type INT DEFAULT 1 AFTER chat_type; -- 1: Text, 2: Image, 3: File,...
 
 -- 5. Bảng GROUPS (Nhóm)
 CREATE TABLE `groups` (

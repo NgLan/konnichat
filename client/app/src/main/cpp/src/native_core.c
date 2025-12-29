@@ -376,15 +376,19 @@ int client_search_users(const char *keyword, int offset, int limit) {
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
-int client_send_message(int receiver_id, const char *content, int request_id) {
+int client_send_message(int receiver_id, const char *content, int request_id, const char *chat_type) {
     ChatPayload payload;
     memset(&payload, 0, sizeof(payload));
 
     payload.receiver_id = receiver_id;
     // payload.sender_id sẽ được server tự điền dựa trên session -> không cần gửi
     payload.msg_type = 1;
+    if (chat_type) {
+        strncpy(payload.chat_type, chat_type, sizeof(payload.chat_type) - 1);
+    } else {
+        strcpy(payload.chat_type, "private");
+    }
     strncpy(payload.content, content, MAX_CONTENT_LEN - 1);
-
     // created_at gửi lên là client time (chỉ để tham khảo, server sẽ ghi đè)
     payload.created_at = get_timestamp();
 
@@ -410,6 +414,15 @@ int client_send_message(int receiver_id, const char *content, int request_id) {
 
     pthread_mutex_unlock(&g_send_mutex);
     return CLIENT_OK;
+}
+
+int client_fetch_offline_msgs() {
+    pthread_mutex_lock(&g_send_mutex);
+    // Gửi lệnh rỗng (không cần payload)
+    int req_id = send_request(CMD_FETCH_OFFLINE_MSGS, NULL, 0);
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
@@ -600,6 +613,11 @@ static void handle_incoming_packet(PacketHeader *header) {
                 g_callbacks.on_msg_delivered(payload.message_id);
             }
         }
+    }
+
+    else if (header->command_type == CMD_FETCH_OFFLINE_MSGS_RESP) {
+        if (header->payload_size > 0) discard_payload(g_socket, header->payload_size);
+        LOGI("Offline messages fetch started.");
     }
 
     else {
