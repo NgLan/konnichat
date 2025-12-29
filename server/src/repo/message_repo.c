@@ -30,12 +30,13 @@ int db_save_message(int sender_id, int receiver_id, const char *content, uint64_
 
     // 2. Insert vào DB
     snprintf(query, sizeof(query),
-             "INSERT INTO messages (sender_id, receiver_id, content, status, created_at) "
-             "VALUES (%d, %d, '%s', 'sent', '%s')",
+             "INSERT INTO messages (sender_id, receiver_id, content, status, created_at, chat_type) "
+             "VALUES (%d, %d, '%s', 'sent', '%s', 'private')",
              sender_id, receiver_id, content, time_str);
 
     MYSQL *conn = db_get_conn();
     if (!conn) return 0;
+    
     if (mysql_query(conn, query))
     {
         LOG_ERROR("Save Msg Error: %s", mysql_error(conn));

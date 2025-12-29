@@ -18,64 +18,63 @@ typedef enum {
     // 0. System
     CMD_HEARTBEAT = 0,         // Ping/Pong giữ kết nối
 
-    // 1. Auth  
-    CMD_REGISTER = 10,
-    CMD_REGISTER_RESP = 11, // Phản hồi đăng ký
+    // 1. Auth
+    CMD_REGISTER            = 10,
+    CMD_REGISTER_RESP       = 11, // Phản hồi đăng ký
 
-    CMD_LOGIN = 12,
-    CMD_LOGIN_RESP = 13, // Phản hồi đăng nhập
+    CMD_LOGIN               = 12,
+    CMD_LOGIN_RESP          = 13, // Phản hồi đăng nhập
 
-    CMD_LOGOUT = 14,
+    CMD_LOGOUT              = 14,
 
-    // 2. Chat 1-1 
-    CMD_SEND_MESSAGE = 20, // Client gửi tin
-    CMD_SEND_MESSAGE_RESP = 21, // Server xác nhận đã nhận (ACK)
+    // 2. Chat 1-1
+    CMD_SEND_MESSAGE        = 20, // Client gửi tin
+    CMD_SEND_MESSAGE_RESP   = 21, // Server xác nhận đã nhận (ACK)
+    CMD_RECEIVE_MESSAGE     = 22, // Server đẩy tin nhắn tới người nhận
 
-    CMD_RECEIVE_MESSAGE = 22, // Server đẩy tin nhắn tới người nhận
+    // 3. Chat Group
+    CMD_CREATE_GROUP        = 30,
+    CMD_CREATE_GROUP_RESP   = 31,
 
-    // 3. Chat Group 
-    CMD_CREATE_GROUP = 30,
-    CMD_CREATE_GROUP_RESP = 31,
+    CMD_ADD_MEMBER          = 32,
+    CMD_ADD_MEMBER_RESP     = 33,
 
-    CMD_ADD_MEMBER = 32,
-    CMD_ADD_MEMBER_RESP = 33,
+    CMD_REMOVE_MEMBER       = 34,
+    CMD_REMOVE_MEMBER_RESP  = 35,
 
-    CMD_REMOVE_MEMBER = 34,
-    CMD_REMOVE_MEMBER_RESP = 35,
+    CMD_LEAVE_GROUP         = 36,
+    CMD_LEAVE_GROUP_RESP    = 37,
 
-    CMD_LEAVE_GROUP = 36,
-    CMD_LEAVE_GROUP_RESP = 37,
-
-    CMD_SEND_GROUP_MSG = 38,
+    CMD_SEND_GROUP_MSG      = 38,
     CMD_SEND_GROUP_MSG_RESP = 39,
 
-    CMD_RECEIVE_GROUP_MSG = 300, // Event push
+    CMD_RECEIVE_GROUP_MSG   = 300, // Event push
 
-    // 4. Friend Management 
-    CMD_GET_FRIEND_LIST = 40,
-    CMD_GET_FRIEND_LIST_RESP = 41,
+    // 4. Friend Management
+    CMD_GET_FRIEND_LIST     = 40,
+    CMD_GET_FRIEND_LIST_RESP= 41,
 
-    CMD_SEND_FRIEND_REQ = 42,
-    CMD_SEND_FRIEND_REQ_RESP = 43,
+    CMD_SEND_FRIEND_REQ     = 42,
+    CMD_SEND_FRIEND_REQ_RESP= 43,
 
-    CMD_RESPOND_FRIEND_REQ = 44, // Chấp nhận/Từ chối yêu cầu kết bạn
+    CMD_RESPOND_FRIEND_REQ  = 44, // Chấp nhận/Từ chối yêu cầu kết bạn
     CMD_RESPOND_FRIEND_REQ_RESP = 45,
 
-    CMD_UNFRIEND = 46,
-    CMD_UNFRIEND_RESP = 47,
+    CMD_UNFRIEND            = 46,
+    CMD_UNFRIEND_RESP       = 47,
 
-    CMD_GET_PENDING_REQS = 48,
+    CMD_GET_PENDING_REQS    = 48,
     CMD_GET_PENDING_REQS_RESP = 49,
 
     // 5. Search
-    CMD_SEARCH_USERS = 60,
-    CMD_SEARCH_USERS_RESP = 61,
+    CMD_SEARCH_USERS        = 60,
+    CMD_SEARCH_USERS_RESP   = 61,
 
-    // 6. Advanced Features 
-    CMD_GET_HISTORY = 70,
-    CMD_GET_HISTORY_RESP = 71,
+    // 6. Advanced Features
+    CMD_GET_HISTORY         = 70,
+    CMD_GET_HISTORY_RESP    = 71,
 
-    CMD_FETCH_OFFLINE_MSGS = 72,
+    CMD_FETCH_OFFLINE_MSGS  = 72,
     CMD_FETCH_OFFLINE_MSGS_RESP = 73,
 
     CMD_RECALL_MESSAGE = 52,     // Thu hồi
@@ -87,9 +86,10 @@ typedef enum {
     CMD_NOTIFY_STATUS       = 82,   // Bạn bè on/off
     CMD_NOTIFY_UPDATE_MSG   = 83,   // Tin nhắn bị thu hồi/react
     CMD_NOTIFY_UNFRIENDED   = 84,   // Thông báo bị unfriend
+    CMD_NOTIFY_MSG_DELIVERED = 85,  // Server báo cho người gửi (A) biết tin đã đến máy người nhận (B)
 
-    // 99. Error 
-    CMD_ERROR_UNKNOWN = 999
+    // 99. Error
+    CMD_ERROR_UNKNOWN       = 999
 } CommandType;
 
 // --- MÃ TRẠNG THÁI ---
@@ -108,7 +108,7 @@ typedef enum {
 // --- HEADER ---
 // Tổng kích thước: 4*5 + 8 = 28 bytes
 typedef struct __attribute__((packed)) {
-    int32_t version;        // Phiên bản protocol 
+    int32_t version;        // Phiên bản protocol
     int32_t command_type;   // Loại lệnh (CommandType)
     int32_t payload_size;   // Kích thước phần dữ liệu đi kèm
     int32_t request_id;     // ID định danh request (Do Client sinh ra, Server trả lại y nguyên)
@@ -138,15 +138,20 @@ typedef struct __attribute__((packed)) {
     int8_t is_online;       // 1: Online, 0: Offline
 } UserInfoPayload;
 
-// 3. Chat 1-1 
+// 3. Chat 1-1
 typedef struct __attribute__((packed)) {
     int32_t message_id;     // Server sinh ra (Gửi đi để 0, Nhận về sẽ có giá trị)
     int32_t sender_id;
     int32_t receiver_id;
     int32_t msg_type;       // 1: Text, 2: Image, 3: File...
     char content[MAX_CONTENT_LEN];
-    uint64_t created_at;
+    uint64_t created_at;    // Server Time
 } ChatPayload;
+
+typedef struct __attribute__((packed)) {
+    int32_t message_id;
+    int32_t receiver_id;    // Người đã nhận được tin
+} MsgDeliveredPayload;
 
 // 4. Chat Group
 typedef struct __attribute__((packed)) {

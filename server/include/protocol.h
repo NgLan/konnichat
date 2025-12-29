@@ -30,7 +30,6 @@ typedef enum {
     // 2. Chat 1-1 
     CMD_SEND_MESSAGE        = 20, // Client gửi tin
     CMD_SEND_MESSAGE_RESP   = 21, // Server xác nhận đã nhận (ACK)
-    
     CMD_RECEIVE_MESSAGE     = 22, // Server đẩy tin nhắn tới người nhận 
 
     // 3. Chat Group 
@@ -87,6 +86,7 @@ typedef enum {
     CMD_NOTIFY_STATUS       = 82,   // Bạn bè on/off
     CMD_NOTIFY_UPDATE_MSG   = 83,   // Tin nhắn bị thu hồi/react
     CMD_NOTIFY_UNFRIENDED   = 84,   // Thông báo bị unfriend
+    CMD_NOTIFY_MSG_DELIVERED = 85,  // Server báo cho người gửi (A) biết tin đã đến máy người nhận (B)
 
     // 99. Error 
     CMD_ERROR_UNKNOWN       = 999            
@@ -145,8 +145,13 @@ typedef struct __attribute__((packed)) {
     int32_t receiver_id;
     int32_t msg_type;       // 1: Text, 2: Image, 3: File...
     char content[MAX_CONTENT_LEN];
-    uint64_t created_at;
+    uint64_t created_at;    // Server Time
 } ChatPayload;
+
+typedef struct __attribute__((packed)) {
+    int32_t message_id;
+    int32_t receiver_id;    // Người đã nhận được tin
+} MsgDeliveredPayload;
 
 // 4. Chat Group
 typedef struct __attribute__((packed)) {

@@ -1,5 +1,6 @@
 package com.example.konnichat.data.remote
 
+import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
 
@@ -17,6 +18,16 @@ interface NativeEventListener {
     fun onFriendRequestAccepted(user: UserDto)
     fun onFriendRemoved(exFriendId: Int)
     fun onSearchResult(results: Array<UserSearchDto>)
+    // tempId: ID trong Room (để update status)
+    // serverId: ID mới từ server
+    // serverTime: Thời gian chuẩn từ server
+    fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long)
+
+    // Nhận tin nhắn mới (để hiện UI hoặc Notification)
+    fun onMessageReceived(msg: MessageDto)
+
+    // Tin nhắn mình gửi đi đã đến nơi
+    fun onMessageDelivered(serverId: Int)
     // Khi bị ngắt kết nối
     fun onConnectionClosed(reason: String)
 }

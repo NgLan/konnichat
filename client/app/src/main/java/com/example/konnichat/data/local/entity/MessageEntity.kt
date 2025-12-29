@@ -28,8 +28,8 @@ data class MessageEntity(
     @ColumnInfo(name = "server_id") val serverId: Int,
 
     @ColumnInfo(name = "sender_id") val senderId: Int,
-    @ColumnInfo(name = "receiver_id") val receiverId: Int, // Lưu UserID (nếu p2p) hoặc GroupID (nếu group)
-    @ColumnInfo(name = "chat_type") val chatType: String, // 'p2p', 'group'
+    @ColumnInfo(name = "receiver_id") val receiverId: Int, // Lưu UserID (nếu private) hoặc GroupID (nếu group)
+    @ColumnInfo(name = "chat_type") val chatType: String, // 'private', 'group'
 
     @ColumnInfo(name = "content") val content: String,
     @ColumnInfo(name = "status") val status: String = "sending", // 'sending', 'sent', 'delivered', 'read', 'revoked', 'deleted', 'failed'

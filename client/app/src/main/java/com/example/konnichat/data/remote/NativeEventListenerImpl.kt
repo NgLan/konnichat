@@ -2,6 +2,7 @@ package com.example.konnichat.data.remote
 
 import android.util.Log
 import com.example.konnichat.data.remote.NativeEventListenerImpl.userRepository
+import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
 import com.example.konnichat.data.repository.UserRepository
@@ -56,6 +57,18 @@ object NativeEventListenerImpl : NativeEventListener {
     }
 
     override fun onSearchResult(results: Array<UserSearchDto>) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onMessageReceived(msg: MessageDto) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onMessageDelivered(serverId: Int) {
         TODO("Not yet implemented")
     }
 

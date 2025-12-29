@@ -376,11 +376,47 @@ int client_search_users(const char *keyword, int offset, int limit) {
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
+int client_send_message(int receiver_id, const char *content, int request_id) {
+    ChatPayload payload;
+    memset(&payload, 0, sizeof(payload));
+
+    payload.receiver_id = receiver_id;
+    // payload.sender_id sẽ được server tự điền dựa trên session -> không cần gửi
+    payload.msg_type = 1;
+    strncpy(payload.content, content, MAX_CONTENT_LEN - 1);
+
+    // created_at gửi lên là client time (chỉ để tham khảo, server sẽ ghi đè)
+    payload.created_at = get_timestamp();
+
+    pthread_mutex_lock(&g_send_mutex);
+
+    // Gửi request với ID do Client quản lý (request_id)
+    PacketHeader header;
+    memset(&header, 0, sizeof(header));
+    header.version = PROTOCOL_VERSION;
+    header.command_type = CMD_SEND_MESSAGE;
+    header.payload_size = sizeof(ChatPayload);
+    header.request_id = request_id;
+    header.timestamp = get_timestamp();
+
+    if (send_all(g_socket, &header, sizeof(PacketHeader)) < 0) {
+        pthread_mutex_unlock(&g_send_mutex);
+        return ERR_NETWORK_SEND_FAILED;
+    }
+    if (send_all(g_socket, &payload, sizeof(ChatPayload)) < 0) {
+        pthread_mutex_unlock(&g_send_mutex);
+        return ERR_NETWORK_SEND_FAILED;
+    }
+
+    pthread_mutex_unlock(&g_send_mutex);
+    return CLIENT_OK;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header) {
     LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
 
-    // 1. Xử lý FRIEND LIST
+    // Xử lý FRIEND LIST
     if (header->command_type == CMD_GET_FRIEND_LIST_RESP) {
         int32_t count = 0;
         if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
@@ -400,18 +436,7 @@ static void handle_incoming_packet(PacketHeader *header) {
         }
     }
 
-    // 2. Xử lý TIN NHẮN ĐẾN
-    else if (header->command_type == CMD_RECEIVE_MESSAGE) {
-        ChatPayload msg;
-        // Đọc payload tin nhắn
-        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
-            if (g_callbacks.on_message) {
-                g_callbacks.on_message(&msg);
-            }
-        }
-    }
-
-    // 3. Xử lý STATUS (Online/Offline)
+    // Xử lý STATUS (Online/Offline)
     else if (header->command_type == CMD_NOTIFY_STATUS) {
         StatusNotifyPayload notify;
         if (recv_all(g_socket, &notify, sizeof(StatusNotifyPayload)) > 0) {
@@ -421,7 +446,7 @@ static void handle_incoming_packet(PacketHeader *header) {
         }
     }
 
-    // 4. Xử lý THÔNG BÁO phản hồi của lệnh gửi kết bạn
+    // Xử lý THÔNG BÁO phản hồi của lệnh gửi kết bạn
     else if (header->command_type == CMD_SEND_FRIEND_REQ_RESP) {
         LOGI("Received CMD_SEND_FRIEND_REQ_RESP with status=%d", header->status_code);
 
@@ -522,6 +547,49 @@ static void handle_incoming_packet(PacketHeader *header) {
         }
 
         if (results) free(results);
+    }
+
+    // Case 1: Server phản hồi gửi tin thành công (Server đã nhận tin từ người gửi và lưu vào db) -> Update Room "Sent"
+    else if (header->command_type == CMD_SEND_MESSAGE_RESP) {
+        ChatPayload msg;
+        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
+            if (header->status_code == STATUS_SUCCESS) {
+                LOGI("Message Sent OK. TempID=%d -> ServerID=%d", header->request_id, msg.message_id);
+
+                if (g_callbacks.on_msg_sent) {
+                    // request_id: ID của message trong room (để tìm record update)
+                    // msg.message_id: ID thật ở Server (để lưu lại)
+                    // msg.created_at: Thời gian chuẩn Server
+                    g_callbacks.on_msg_sent(header->request_id, msg.message_id, msg.created_at);
+                }
+            } else {
+                LOGE("Send Message Failed. Status: %d", header->status_code);
+            }
+        }
+    }
+
+    // Case 2: Server truyền tin đến cho người nhận
+    else if (header->command_type == CMD_RECEIVE_MESSAGE) {
+        ChatPayload msg;
+        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
+            LOGI("Incoming Msg from User %d: %s", msg.sender_id, msg.content);
+
+            if (g_callbacks.on_message) {
+                g_callbacks.on_message(&msg);
+            }
+        }
+    }
+
+    // Case 3: Gửi notify về cho người gửi là tin nhắn của bạn đã được gửi thành công
+    else if (header->command_type == CMD_NOTIFY_MSG_DELIVERED) {
+        MsgDeliveredPayload payload;
+        if (recv_all(g_socket, &payload, sizeof(MsgDeliveredPayload)) > 0) {
+            LOGI("Message %d Delivered to User %d", payload.message_id, payload.receiver_id);
+
+            if (g_callbacks.on_msg_delivered) {
+                g_callbacks.on_msg_delivered(payload.message_id);
+            }
+        }
     }
 
     else {
