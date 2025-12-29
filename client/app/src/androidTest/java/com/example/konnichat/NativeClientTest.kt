@@ -51,6 +51,9 @@ class NativeClientTest {
         const val CMD_RESPOND_FRIEND_REQ_RESP = 45
         const val CMD_UNFRIEND_RESP = 47
 
+        const val CMD_GET_HISTORY = 70
+        const val CMD_GET_HISTORY_RESP = 71
+
         const val CMD_NOTIFY_FRIEND_REQ = 80
         const val CMD_NOTIFY_REQ_ACCEPTED = 81
         const val CMD_NOTIFY_MSG_DELIVERED = 85
@@ -613,7 +616,7 @@ class NativeClientTest {
 
         // Kiểm tra Page 2 không trùng Page 1 (So sánh ID phần tử đầu tiên)
         Assert.assertNotEquals("Page 2 phải khác Page 1",
-            resultsPage1!![0].id, resultsPage2!![0].id)
+            resultsPage1!![0].userId, resultsPage2!![0].userId)
 
         // --- TEST CASE 3: PAGINATION PAGE 3 (Offset 20, Limit 10) ---
         // Chỉ còn 5 người (Tổng 25, đã lấy 20) -> Phải trả về 5
@@ -846,6 +849,204 @@ class NativeClientTest {
         Assert.assertTrue("Timeout receiving offline msg", latchRecv.await(5, TimeUnit.SECONDS))
         Assert.assertEquals(offlineContent, msgContent)
     }
+
+    // ==========================================
+    // MODULE 7: CHAT HISTORY (PAGINATION & INTEGRITY)
+    // ==========================================
+
+    @Test
+    fun test12_GetChatHistory_FullFlow() {
+        val time = System.currentTimeMillis()
+        val emailA = "histA_$time@konni.com"
+        val emailB = "histB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        // --- BƯỚC 1: TẠO DỮ LIỆU MẪU (SEEDING) ---
+        // Kịch bản:
+        // - A gửi 6 tin cho B (Msg 1 -> 6)
+        // - B gửi 4 tin cho A (Msg 7 -> 10)
+        // Tổng cộng 10 tin. Server xếp theo thời gian (Tin 10 mới nhất, Tin 1 cũ nhất).
+
+        // 1.1 Lấy ID
+        NativeClient.disconnect()
+        Thread.sleep(200)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val userB = NativeClient.loginUser(emailB, pass)!!
+        val idB = userB.id
+        NativeClient.disconnect()
+        Thread.sleep(500)
+
+        // 1.2 Login A -> Gửi 6 tin
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val userA = NativeClient.loginUser(emailA, pass)!!
+        val idA = userA.id
+
+        val latchSeedA = CountDownLatch(6)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+                latchSeedA.countDown()
+            }
+        })
+
+        for (i in 1..6) {
+            NativeClient.sendMessage(idB, "Msg A->$i", i, "private")
+            Thread.sleep(50) // Delay nhỏ để timestamp khác nhau
+        }
+        Assert.assertTrue("Seeding A failed", latchSeedA.await(5, TimeUnit.SECONDS))
+        NativeClient.disconnect()
+        Thread.sleep(500)
+
+        // 1.3 Login B -> Gửi 4 tin lại cho A
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchSeedB = CountDownLatch(4)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+                latchSeedB.countDown()
+            }
+        })
+
+        for (i in 7..10) {
+            NativeClient.sendMessage(idA, "Msg B->$i", i, "private")
+            Thread.sleep(50)
+        }
+        Assert.assertTrue("Seeding B failed", latchSeedB.await(5, TimeUnit.SECONDS))
+        NativeClient.disconnect()
+        Thread.sleep(500)
+
+        // --- BƯỚC 2: TEST LẤY LỊCH SỬ (LOGIN A) ---
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        // --- TEST CASE 2.1: PAGE 1 (Lấy 5 tin mới nhất) ---
+        // Mong đợi: Lấy được các tin từ 10 xuống 6 (Trộn lẫn của B gửi và A gửi)
+
+        val latchPage1 = CountDownLatch(1)
+        var historyPage1: Array<MessageDto>? = null
+
+        val listenerHistory = object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                // Callback này sẽ được gọi cho cả Page 1 và Page 2
+                // Ta dùng biến flag hoặc check logic để xử lý
+                if (historyPage1 == null) {
+                    historyPage1 = messages
+                    latchPage1.countDown()
+                } else {
+                    // Logic cho Page 2 (xử lý ở bước dưới)
+                }
+            }
+        }
+        NativeClient.startListening(listenerHistory)
+
+        // Gọi API: Offset 0, Limit 5
+        NativeClient.getChatHistory(idB, 0, 5)
+
+        Assert.assertTrue("Timeout Page 1", latchPage1.await(5, TimeUnit.SECONDS))
+        Assert.assertNotNull(historyPage1)
+        Assert.assertEquals("Page 1 phải có 5 tin", 5, historyPage1!!.size)
+
+        // Kiểm tra sắp xếp: Tin đầu tiên của mảng phải là tin mới nhất (Msg B->10)
+        // (Server trả về DESC, Client nhận nguyên xi)
+        Assert.assertEquals("Tin mới nhất phải là Msg B->10", "Msg B->10", historyPage1!![0].content)
+        Assert.assertTrue("Tin số 1 phải mới hơn tin số 2", historyPage1!![0].timestamp >= historyPage1!![1].timestamp)
+
+        // Kiểm tra Chat Type
+        Assert.assertEquals("Chat type phải là private", "private", historyPage1!![0].chatType)
+
+        // --- TEST CASE 2.2: PAGE 2 (Lấy 5 tin tiếp theo - Offset 5) ---
+        // Mong đợi: Lấy được các tin cũ hơn (từ 5 xuống 1)
+
+        val latchPage2 = CountDownLatch(1)
+        var historyPage2: Array<MessageDto>? = null
+
+        // Update listener hoặc gán đè listener mới
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                historyPage2 = messages
+                latchPage2.countDown()
+            }
+        })
+
+        // Gọi API: Offset 5, Limit 5
+        NativeClient.getChatHistory(idB, 5, 5)
+
+        Assert.assertTrue("Timeout Page 2", latchPage2.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Page 2 phải có 5 tin", 5, historyPage2!!.size)
+
+        // Kiểm tra tin đầu tiên của Page 2 phải cũ hơn tin cuối cùng của Page 1
+        // (Đây là logic paging chuẩn)
+        val lastMsgPage1 = historyPage1!!.last()
+        val firstMsgPage2 = historyPage2!!.first()
+        Assert.assertTrue("Page 2 phải cũ hơn Page 1", firstMsgPage2.timestamp <= lastMsgPage1.timestamp)
+
+        // Kiểm tra nội dung tin cũ nhất (Msg A->1)
+        Assert.assertEquals("Tin cũ nhất phải là Msg A->1", "Msg A->1", historyPage2!!.last().content)
+
+        // --- TEST CASE 2.3: END OF LIST (Offset 10) ---
+        // Tổng 10 tin, đã lấy 10. Gọi tiếp offset 10 phải trả về 0 tin.
+
+        val latchEmpty = CountDownLatch(1)
+        var countEmpty = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                countEmpty = messages.size
+                latchEmpty.countDown()
+            }
+        })
+
+        NativeClient.getChatHistory(idB, 10, 5)
+
+        Assert.assertTrue("Timeout Empty Page", latchEmpty.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Hết dữ liệu phải trả về 0", 0, countEmpty)
+    }
+
+    @Test
+    fun test13_GetChatHistory_NoHistory() {
+        // Kịch bản: A lấy lịch sử với người lạ C (chưa từng chat).
+        // Mong đợi: Trả về mảng rỗng ngay lập tức.
+
+        val time = System.currentTimeMillis()
+        val emailA = "noHistA_$time@konni.com"
+        val emailC = "stranger_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("Stranger", emailC, pass)
+
+        // 1. Lấy ID Stranger
+        NativeClient.disconnect()
+        Thread.sleep(200)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val userC = NativeClient.loginUser(emailC, pass)!!
+        val idC = userC.id
+        NativeClient.disconnect()
+        Thread.sleep(500)
+
+        // 2. Login A
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        // 3. Request History
+        val latch = CountDownLatch(1)
+        var receivedCount = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                receivedCount = messages.size
+                latch.countDown()
+            }
+        })
+
+        NativeClient.getChatHistory(idC, 0, 20)
+
+        Assert.assertTrue("Timeout waiting for response", latch.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Lịch sử với người lạ phải rỗng", 0, receivedCount)
+    }
 }
 
 // =========================================================
@@ -863,6 +1064,8 @@ open class StubNativeEventListener : NativeEventListener {
     override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {}
     override fun onMessageReceived(msg: MessageDto) {}
     override fun onMessageDelivered(serverId: Int) {}
+    override fun onHistoryReceived(messages: Array<MessageDto>) {}
+
     override fun onConnectionClosed(reason: String) {}
 }
 
@@ -875,7 +1078,7 @@ class FakeTcpClient(ip: String, port: Int) {
     private val output = DataOutputStream(socket.getOutputStream())
 
     // Protocol Constants
-    private val PROTOCOL_VERSION = 1
+    private val SERVER_PROTOCOL_VERSION = 1
     private val PACKET_HEADER_SIZE = 28 // 4*5 + 8
 
     private val CMD_LOGIN = 12
@@ -996,7 +1199,7 @@ class FakeTcpClient(ip: String, port: Int) {
     }
     private fun writeHeader(buffer: ByteBuffer, cmd: Int, payloadSize: Int) {
         // Struct PacketHeader: version, cmd, size, reqId, status, timestamp
-        buffer.putInt(PROTOCOL_VERSION)
+        buffer.putInt(SERVER_PROTOCOL_VERSION)
         buffer.putInt(cmd)
         buffer.putInt(payloadSize)
         buffer.putInt(0) // Request ID (Fake = 0)

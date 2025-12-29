@@ -285,7 +285,7 @@ void db_reset_all_users_offline()
     } else {
         // Lấy số lượng hàng bị ảnh hưởng (số user vừa được reset)
         my_ulonglong affected_rows = mysql_affected_rows(conn);
-        LOG_INFO("Server Start: Reset %llu users to OFFLINE status.", affected_rows);
+        LOG_INFO("Server Start: Reset %lu users to OFFLINE status.", affected_rows);
     }
 
     db_release_conn(conn);
