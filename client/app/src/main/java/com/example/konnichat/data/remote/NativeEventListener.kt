@@ -33,5 +33,5 @@ interface NativeEventListener {
     fun onHistoryReceived(messages: Array<MessageDto>)
     // Khi bị ngắt kết nối
     fun onConnectionClosed(reason: String)
-
+    fun onGroupCreated(groupId: Int, groupName: String)
 }

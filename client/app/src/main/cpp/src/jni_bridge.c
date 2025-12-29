@@ -26,6 +26,7 @@ static jclass c_PendingRequestDto;
 static jmethodID m_PendingRequestDtoInit;
 
 static jmethodID m_onHistoryReceived;
+static jmethodID m_onGroupCreated;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -262,6 +263,15 @@ void jni_on_history_received(int count, ChatPayload *messages) {
     (*env)->DeleteLocalRef(env, jArray);
 }
 
+void jni_on_group_created(int group_id, const char* name) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    jstring jName = (*env)->NewStringUTF(env, name);
+    (*env)->CallVoidMethod(env, g_listener, m_onGroupCreated, (jint)group_id, jName);
+    (*env)->DeleteLocalRef(env, jName);
+}
+
 void jni_on_disconnect(const char *reason) {
     JNIEnv *env = get_jni_env();
     if (!env || !g_listener)
@@ -383,6 +393,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onMsgReceived = (*env)->GetMethodID(env, lClass, "onMessageReceived", "(Lcom/example/konnichat/data/remote/dto/MessageDto;)V");
     m_onMsgDelivered = (*env)->GetMethodID(env, lClass, "onMessageDelivered", "(I)V");
     m_onHistoryReceived = (*env)->GetMethodID(env, lClass, "onHistoryReceived", "([Lcom/example/konnichat/data/remote/dto/MessageDto;)V");
+    m_onGroupCreated = (*env)->GetMethodID(env, lClass, "onGroupCreated", "(ILjava/lang/String;)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
     // Cache UserDto
@@ -458,6 +469,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_message = jni_on_message;
     cbs.on_msg_delivered = jni_on_msg_delivered;
     cbs.on_history_received = jni_on_history_received;
+    cbs.on_group_created = jni_on_group_created;
     cbs.on_disconnect = jni_on_disconnect;
     cbs.on_pending_list = jni_on_pending_list;
     // 3. Start C Thread
@@ -616,4 +628,24 @@ JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_getPendingRequests(JNIEnv *env, jobject thiz) {
     // Gọi hàm Core C
     client_get_pending_requests();
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_createGroup(JNIEnv *env, jobject thiz,
+                                                                jstring name, jintArray members) {
+    const char *n_name = (*env)->GetStringUTFChars(env, name, 0);
+
+    // Chuyển jintArray -> C array
+    jsize len = (*env)->GetArrayLength(env, members);
+    jint *body = (*env)->GetIntArrayElements(env, members, 0);
+
+    int status = client_create_group(n_name, (int32_t*)body, (int)len);
+
+    // Giải phóng
+    (*env)->ReleaseIntArrayElements(env, members, body, 0);
+    (*env)->ReleaseStringUTFChars(env, name, n_name);
+
+    if (status != CLIENT_OK) {
+        throw_unified_error(env, status);
+    }
 }
