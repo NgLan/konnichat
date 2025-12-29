@@ -650,6 +650,7 @@ static void handle_incoming_packet(PacketHeader *header)
         if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0)
             return;
 
+        LOGI("Processing History: %d messages", count);
         ChatPayload *msgs = NULL;
         if (count > 0)
         {
@@ -678,6 +679,7 @@ static void handle_incoming_packet(PacketHeader *header)
         }
         if (msgs)
             free(msgs);
+        return;
     }
 
     else if (header->command_type == CMD_CREATE_GROUP_RESP || header->command_type == CMD_NOTIFY_GROUP_CREATED)
@@ -758,12 +760,17 @@ static void *read_thread_func(void *arg)
 
 void start_reader_thread(NativeCallbacks callbacks)
 {
-    if (g_read_thread != 0)
-        return;
     g_callbacks = callbacks;
+
+    if (g_read_thread != 0) {
+        LOGW("Reader thread already running. Callbacks updated.");
+        return;
+    }
+
     g_is_running = 1;
     if (pthread_create(&g_read_thread, NULL, read_thread_func, NULL) != 0)
     {
+        LOGE("Failed to create reader thread");
         g_read_thread = 0;
     }
 }

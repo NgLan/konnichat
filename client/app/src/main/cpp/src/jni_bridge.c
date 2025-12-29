@@ -630,6 +630,7 @@ Java_com_example_konnichat_data_remote_NativeClient_getPendingRequests(JNIEnv *e
     client_get_pending_requests();
 }
 
+JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_createGroup(JNIEnv *env, jobject thiz,
                                                                 jstring name, jintArray members) {
     const char *n_name = (*env)->GetStringUTFChars(env, name, 0);

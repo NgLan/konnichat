@@ -48,7 +48,7 @@ typedef enum {
     CMD_SEND_GROUP_MSG      = 38,
     CMD_SEND_GROUP_MSG_RESP = 39,
 
-    CMD_RECEIVE_GROUP_MSG   = 300, // Event push
+    CMD_RECEIVE_GROUP_MSG   = 300,
 
     // 4. Friend Management
     CMD_GET_FRIEND_LIST     = 40,

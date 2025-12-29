@@ -1,6 +1,7 @@
 // File: client/app/src/main/java/com/example/konnichat/data/remote/NativeEventListenerImpl.kt
 package com.example.konnichat.data.remote
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
 import com.example.konnichat.data.remote.dto.MessageDto
@@ -13,11 +14,16 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+@SuppressLint("StaticFieldLeak")
 object NativeEventListenerImpl : NativeEventListener {
-
     var userRepository: UserRepository? = null
     var context: Context? = null
     private const val TAG = "KONNI_EVENT"
+
+    fun init(context: Context, userRepository: UserRepository) {
+        this.context = context.applicationContext // Luôn lấy Application Context
+        this.userRepository = userRepository
+    }
 
     // --- 1. XỬ LÝ KẾT BẠN (TRỌNG TÂM) ---
 
@@ -132,7 +138,10 @@ object NativeEventListenerImpl : NativeEventListener {
         }
     }
 
-    override fun onRequestResponse(cmd: Int, status: Int) { Log.d(TAG, "Response CMD: $cmd, Status: $status") }
+    override fun onRequestResponse(cmd: Int, status: Int) {
+        Log.d(TAG, "Response CMD: $cmd, Status: $status")
+    }
+
     // C. Khi bị hủy kết bạn HOẶC Bị từ chối lời mời (Server cần gửi CMD_NOTIFY_UNFRIENDED)
     override fun onFriendRemoved(exFriendId: Int) {
         Log.d(TAG, "💔 Quan hệ với User $exFriendId đã bị xóa (Unfriend/Reject).")
@@ -147,8 +156,8 @@ object NativeEventListenerImpl : NativeEventListener {
                 repo.updateSearchStatusToNone(exFriendId)
             }
         }
+    }
 
-        // (Tùy chọn) Hiện thông báo nếu cần, nhưng thường từ chối thì không cần báo ầm ĩ.
     override fun onHistoryReceived(messages: Array<MessageDto>) {
         TODO("Not yet implemented")
     }

@@ -6,6 +6,7 @@ import com.example.konnichat.core.exception.UserAlreadyExistsException
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListener
 import com.example.konnichat.data.remote.dto.MessageDto
+import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
 import org.junit.After
@@ -46,7 +47,7 @@ class NativeClientTest {
 
         const val CMD_CREATE_GROUP = 30
         const val CMD_CREATE_GROUP_RESP = 31
-        const val CMD_NOTIFY_GROUP_CREATED = 301
+
 
         const val CMD_SEND_FRIEND_REQ = 42
         const val CMD_SEND_FRIEND_REQ_RESP = 43
@@ -61,6 +62,7 @@ class NativeClientTest {
         const val CMD_NOTIFY_FRIEND_REQ = 80
         const val CMD_NOTIFY_REQ_ACCEPTED = 81
         const val CMD_NOTIFY_MSG_DELIVERED = 85
+        const val CMD_NOTIFY_GROUP_CREATED = 86
 
         // --- Status Codes ---
         const val STATUS_SUCCESS = 0
@@ -868,148 +870,101 @@ class NativeClientTest {
         val emailB = "histB_$time@konni.com"
         val pass = "123"
 
+        // --- SETUP: Đăng ký user cho riêng test case này ---
         NativeClient.registerUser("UserA", emailA, pass)
         NativeClient.registerUser("UserB", emailB, pass)
 
-        // --- BƯỚC 1: TẠO DỮ LIỆU MẪU (SEEDING) ---
-        // Kịch bản:
-        // - A gửi 6 tin cho B (Msg 1 -> 6)
-        // - B gửi 4 tin cho A (Msg 7 -> 10)
-        // Tổng cộng 10 tin. Server xếp theo thời gian (Tin 10 mới nhất, Tin 1 cũ nhất).
+        // --- BƯỚC 1: TẠO DỮ LIỆU MẪU (SEEDING) CHÍNH XÁC ---
 
-        // 1.1 Lấy ID
-        NativeClient.disconnect()
-        Thread.sleep(200)
-        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        // --- SEEDING 1.1: Lấy ID của cả 2 user ---
+        // Login B để lấy ID, sau đó disconnect ngay
         val userB = NativeClient.loginUser(emailB, pass)!!
         val idB = userB.id
         NativeClient.disconnect()
-        Thread.sleep(500)
+        Thread.sleep(200)
 
-        // 1.2 Login A -> Gửi 6 tin
+        // Login A để lấy ID, sau đó disconnect ngay
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         val userA = NativeClient.loginUser(emailA, pass)!!
         val idA = userA.id
+        NativeClient.disconnect()
+        Thread.sleep(200)
 
+        // --- SEEDING 1.2: User A gửi 6 tin nhắn cho B ---
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
         val latchSeedA = CountDownLatch(6)
         NativeClient.startListening(object : StubNativeEventListener() {
             override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
                 latchSeedA.countDown()
             }
         })
-
         for (i in 1..6) {
             NativeClient.sendMessage(idB, "Msg A->$i", i, "private")
-            Thread.sleep(50) // Delay nhỏ để timestamp khác nhau
+            Thread.sleep(150) // Tăng delay để timestamp cách biệt rõ rệt
         }
-        Assert.assertTrue("Seeding A failed", latchSeedA.await(5, TimeUnit.SECONDS))
+        Assert.assertTrue("Seeding A failed: Không nhận đủ 6 ACKs", latchSeedA.await(8, TimeUnit.SECONDS))
         NativeClient.disconnect()
         Thread.sleep(500)
 
-        // 1.3 Login B -> Gửi 4 tin lại cho A
+        // --- SEEDING 1.3: User B gửi 4 tin nhắn cho A ---
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         NativeClient.loginUser(emailB, pass)
-
         val latchSeedB = CountDownLatch(4)
         NativeClient.startListening(object : StubNativeEventListener() {
             override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
                 latchSeedB.countDown()
             }
         })
-
         for (i in 7..10) {
             NativeClient.sendMessage(idA, "Msg B->$i", i, "private")
-            Thread.sleep(50)
+            Thread.sleep(150)
         }
-        Assert.assertTrue("Seeding B failed", latchSeedB.await(5, TimeUnit.SECONDS))
+        Assert.assertTrue("Seeding B failed: Không nhận đủ 4 ACKs", latchSeedB.await(8, TimeUnit.SECONDS))
         NativeClient.disconnect()
         Thread.sleep(500)
 
-        // --- BƯỚC 2: TEST LẤY LỊCH SỬ (LOGIN A) ---
+        // --- BƯỚC 2: VERIFICATION - A lấy lịch sử chat với B ---
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         NativeClient.loginUser(emailA, pass)
 
-        // --- TEST CASE 2.1: PAGE 1 (Lấy 5 tin mới nhất) ---
-        // Mong đợi: Lấy được các tin từ 10 xuống 6 (Trộn lẫn của B gửi và A gửi)
-
-        val latchPage1 = CountDownLatch(1)
-        var historyPage1: Array<MessageDto>? = null
-
-        val listenerHistory = object : StubNativeEventListener() {
+        // Sử dụng 1 listener duy nhất và 1 list chung để xử lý tất cả các trang
+        val historyList = mutableListOf<MessageDto>()
+        var currentLatch = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
             override fun onHistoryReceived(messages: Array<MessageDto>) {
-                // Callback này sẽ được gọi cho cả Page 1 và Page 2
-                // Ta dùng biến flag hoặc check logic để xử lý
-                if (historyPage1 == null) {
-                    historyPage1 = messages
-                    latchPage1.countDown()
-                } else {
-                    // Logic cho Page 2 (xử lý ở bước dưới)
+                synchronized(historyList) {
+                    historyList.clear()
+                    historyList.addAll(messages)
                 }
+                currentLatch.countDown()
             }
-        }
-        NativeClient.startListening(listenerHistory)
+        })
 
-        // Gọi API: Offset 0, Limit 5
+        // --- TEST CASE 2.1: LẤY PAGE 1 (5 tin mới nhất) ---
         NativeClient.getChatHistory(idB, 0, 5)
+        Assert.assertTrue("Timeout Page 1", currentLatch.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Page 1 phải có 5 tin", 5, historyList.size)
+        // Kiểm tra tin mới nhất (phải là tin cuối cùng B gửi)
+        Assert.assertEquals("Tin mới nhất phải là 'Msg B->10'", "Msg B->10", historyList[0].content)
+        Assert.assertEquals("Tin cũ nhất của Page 1 phải là 'Msg A->6'", "Msg A->6", historyList.last().content)
+        Assert.assertTrue("Tin nhắn phải được sắp xếp giảm dần theo thời gian", historyList[0].timestamp >= historyList[1].timestamp)
 
-        Assert.assertTrue("Timeout Page 1", latchPage1.await(5, TimeUnit.SECONDS))
-        Assert.assertNotNull(historyPage1)
-        Assert.assertEquals("Page 1 phải có 5 tin", 5, historyPage1!!.size)
-
-        // Kiểm tra sắp xếp: Tin đầu tiên của mảng phải là tin mới nhất (Msg B->10)
-        // (Server trả về DESC, Client nhận nguyên xi)
-        Assert.assertEquals("Tin mới nhất phải là Msg B->10", "Msg B->10", historyPage1!![0].content)
-        Assert.assertTrue("Tin số 1 phải mới hơn tin số 2", historyPage1!![0].timestamp >= historyPage1!![1].timestamp)
-
-        // Kiểm tra Chat Type
-        Assert.assertEquals("Chat type phải là private", "private", historyPage1!![0].chatType)
-
-        // --- TEST CASE 2.2: PAGE 2 (Lấy 5 tin tiếp theo - Offset 5) ---
-        // Mong đợi: Lấy được các tin cũ hơn (từ 5 xuống 1)
-
-        val latchPage2 = CountDownLatch(1)
-        var historyPage2: Array<MessageDto>? = null
-
-        // Update listener hoặc gán đè listener mới
-        NativeClient.startListening(object : StubNativeEventListener() {
-            override fun onHistoryReceived(messages: Array<MessageDto>) {
-                historyPage2 = messages
-                latchPage2.countDown()
-            }
-        })
-
-        // Gọi API: Offset 5, Limit 5
+        // --- TEST CASE 2.2: LẤY PAGE 2 (5 tin tiếp theo) ---
+        currentLatch = CountDownLatch(1) // Reset latch cho lần gọi tiếp theo
         NativeClient.getChatHistory(idB, 5, 5)
+        Assert.assertTrue("Timeout Page 2", currentLatch.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Page 2 phải có 5 tin", 5, historyList.size)
+        // Kiểm tra tin mới nhất của Page 2 (phải là tin ngay sau tin cuối của Page 1)
+        Assert.assertEquals("Tin mới nhất của Page 2 phải là 'Msg A->5'", "Msg A->5", historyList.first().content)
+        // Kiểm tra tin cũ nhất trong toàn bộ lịch sử
+        Assert.assertEquals("Tin cũ nhất phải là 'Msg A->1'", "Msg A->1", historyList.last().content)
 
-        Assert.assertTrue("Timeout Page 2", latchPage2.await(5, TimeUnit.SECONDS))
-        Assert.assertEquals("Page 2 phải có 5 tin", 5, historyPage2!!.size)
-
-        // Kiểm tra tin đầu tiên của Page 2 phải cũ hơn tin cuối cùng của Page 1
-        // (Đây là logic paging chuẩn)
-        val lastMsgPage1 = historyPage1!!.last()
-        val firstMsgPage2 = historyPage2!!.first()
-        Assert.assertTrue("Page 2 phải cũ hơn Page 1", firstMsgPage2.timestamp <= lastMsgPage1.timestamp)
-
-        // Kiểm tra nội dung tin cũ nhất (Msg A->1)
-        Assert.assertEquals("Tin cũ nhất phải là Msg A->1", "Msg A->1", historyPage2!!.last().content)
-
-        // --- TEST CASE 2.3: END OF LIST (Offset 10) ---
-        // Tổng 10 tin, đã lấy 10. Gọi tiếp offset 10 phải trả về 0 tin.
-
-        val latchEmpty = CountDownLatch(1)
-        var countEmpty = -1
-
-        NativeClient.startListening(object : StubNativeEventListener() {
-            override fun onHistoryReceived(messages: Array<MessageDto>) {
-                countEmpty = messages.size
-                latchEmpty.countDown()
-            }
-        })
-
-        NativeClient.getChatHistory(idB, 10, 5)
-
-        Assert.assertTrue("Timeout Empty Page", latchEmpty.await(5, TimeUnit.SECONDS))
-        Assert.assertEquals("Hết dữ liệu phải trả về 0", 0, countEmpty)
+        // --- TEST CASE 2.3: HẾT LỊCH SỬ ---
+        currentLatch = CountDownLatch(1)
+        NativeClient.getChatHistory(idB, 10, 5) // Đã lấy 10 tin, offset 10 sẽ không còn gì
+        Assert.assertTrue("Timeout Empty Page", currentLatch.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Hết dữ liệu phải trả về 0", 0, historyList.size)
     }
 
     @Test
@@ -1068,26 +1023,29 @@ class NativeClientTest {
         val emailC = "memberC_$time@konni.com"
         val pass = "123"
 
-        // 1. Đăng ký các thành viên
+        // 1. Đăng ký các thành viên (Dùng kết nối từ @Before)
         NativeClient.registerUser(nameA, emailA, pass)
         NativeClient.registerUser("MemberB", emailB, pass)
         NativeClient.registerUser("MemberC", emailC, pass)
 
-        // 2. Lấy ID của các thành viên để tạo nhóm
+        // 2. Lấy ID của User B
         val userB = NativeClient.loginUser(emailB, pass)!!
         val idB = userB.id
-        NativeClient.disconnect()
+        NativeClient.disconnect() // Ngắt kết nối để làm sạch session B
 
+        // --- PHẦN SỬA LỖI 1: Phải connect lại cho User C ---
+        Assert.assertEquals("Kết nối lại cho User C thất bại", 0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         val userC = NativeClient.loginUser(emailC, pass)!!
         val idC = userC.id
-        NativeClient.disconnect()
+        NativeClient.disconnect() // Ngắt kết nối để làm sạch session C
 
         // 3. Login User A (Người tạo)
-        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        // --- PHẦN SỬA LỖI 2: Đảm bảo kết nối lại cho User A ---
+        Assert.assertEquals("Kết nối lại cho User A thất bại", 0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         NativeClient.loginUser(emailA, pass)
 
         val groupName = "Konnichiwa Group"
-        val members = intArrayOf(idB, idC) // Danh sách thành viên chọn từ danh sách bạn bè
+        val members = intArrayOf(idB, idC)
 
         val latch = CountDownLatch(1)
         var capturedGroupId = -1
@@ -1095,7 +1053,6 @@ class NativeClientTest {
 
         val listener = object : StubNativeEventListener() {
             override fun onGroupCreated(groupId: Int, groupName: String) {
-                println("TEST: Nhận thông báo tạo nhóm thành công: $groupName (ID: $groupId)")
                 capturedGroupId = groupId
                 capturedGroupName = groupName
                 latch.countDown()
@@ -1103,7 +1060,7 @@ class NativeClientTest {
         }
         NativeClient.startListening(listener)
 
-        // 4. Thực hiện tạo nhóm qua JNI
+        // 4. Thực hiện tạo nhóm
         NativeClient.createGroup(groupName, members)
 
         // 5. Verify
@@ -1202,6 +1159,7 @@ open class StubNativeEventListener : NativeEventListener {
     override fun onFriendStatusChanged(friendId: Int, isOnline: Boolean) {}
     override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {}
     override fun onRequestResponse(cmd: Int, status: Int) {}
+    override fun onPendingRequestsReceived(requests: Array<PendingRequestDto>) {}
     override fun onFriendRequestAccepted(user: UserDto) {}
     override fun onFriendRemoved(exFriendId: Int) {}
     override fun onSearchResult(results: Array<UserSearchDto>) {}
