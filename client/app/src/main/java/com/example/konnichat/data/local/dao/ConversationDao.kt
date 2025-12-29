@@ -27,5 +27,6 @@ interface ConversationDao {
         )
         WHERE u.server_id != :myUserId
     """)
+
     fun getConversationList(myUserId: Int): Flow<List<ConversationItem>>
 }

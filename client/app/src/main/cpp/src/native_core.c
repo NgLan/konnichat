@@ -412,7 +412,7 @@ static void handle_incoming_packet(PacketHeader *header) {
     }
 
     // 3. Xử lý STATUS (Online/Offline)
-    else if (header->command_type == CMD_NOTIFY_STATUS) {
+    else if (header->command_type ==  CMD_NOTIFY_STATUS) {
         StatusNotifyPayload notify;
         if (recv_all(g_socket, &notify, sizeof(StatusNotifyPayload)) > 0) {
             if (g_callbacks.on_status_change) {
@@ -558,6 +558,7 @@ static void* read_thread_func(void* arg) {
         handle_incoming_packet(&header);
     }
 
+    g_read_thread = 0;
     LOGI("=== READ THREAD EXITED ===");
     return NULL;
 }

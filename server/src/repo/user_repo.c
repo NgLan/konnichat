@@ -269,3 +269,24 @@ int db_get_user_info_by_id(int user_id, UserInfoPayload *out_info)
     db_release_conn(conn);
     return found;
 }
+
+void db_reset_all_users_offline()
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn) {
+        LOG_ERROR("Cannot connect to DB to reset user status.");
+        return;
+    }
+
+    const char *query = "UPDATE users SET is_online = 0";
+
+    if (mysql_query(conn, query)) {
+        LOG_ERROR("Failed to reset users offline: %s", mysql_error(conn));
+    } else {
+        // Lấy số lượng hàng bị ảnh hưởng (số user vừa được reset)
+        my_ulonglong affected_rows = mysql_affected_rows(conn);
+        LOG_INFO("Server Start: Reset %llu users to OFFLINE status.", affected_rows);
+    }
+
+    db_release_conn(conn);
+}
