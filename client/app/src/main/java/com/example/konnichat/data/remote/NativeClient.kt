@@ -35,4 +35,5 @@ object NativeClient {
 
     external fun unfriendUser(targetId: Int)
     external fun searchUsers(keyword: String, offset: Int, limit: Int)
+    external fun sendMessage(receiverId: Int, content: String, tempId: Int)
 }

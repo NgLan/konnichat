@@ -49,8 +49,8 @@ CREATE TABLE friends (
 CREATE TABLE messages (
     id INT AUTO_INCREMENT PRIMARY KEY,
     sender_id INT NOT NULL,
-    receiver_id INT NOT NULL, -- Lưu UserID (nếu p2p) hoặc GroupID (nếu group)
-    chat_type VARCHAR(10) NOT NULL, -- Phân loại: 'p2p' (Chat đơn), 'group' (Chat nhóm)
+    receiver_id INT NOT NULL, -- Lưu UserID (nếu private) hoặc GroupID (nếu group)
+    chat_type VARCHAR(10) NOT NULL, -- Phân loại: 'private' (Chat đơn), 'group' (Chat nhóm)
     content TEXT CHARACTER SET utf8mb4 NOT NULL,
     status VARCHAR(20) DEFAULT 'sent', -- Status: 'sent', 'delivered', 'read', 'revoked', 'deleted'
     created_at TIMESTAMP NOT NULL,
