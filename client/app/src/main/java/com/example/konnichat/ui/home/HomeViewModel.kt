@@ -19,8 +19,19 @@ class HomeViewModel(private val userRepository: UserRepository) : ViewModel() {
     val friends: StateFlow<List<UserEntity>> = _friends
 
     init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // 1. Reset tất cả về Offline trước (để xóa trạng thái ảo)
+            userRepository.resetLocalStatuses()
+
+            // 2. Sau đó mới gọi Server lấy danh sách mới nhất
+            try {
+                NativeClient.getFriends(0, 100)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
         loadFriends()
-        fetchFriendsFromServer()
+//        fetchFriendsFromServer()
     }
 
     private fun fetchFriendsFromServer() {

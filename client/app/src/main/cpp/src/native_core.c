@@ -436,6 +436,16 @@ static void handle_incoming_packet(PacketHeader *header) {
         }
     }
 
+    // 2. Xử lý TIN NHẮN ĐẾN
+    else if (header->command_type == CMD_RECEIVE_MESSAGE) {
+        ChatPayload msg;
+        // Đọc payload tin nhắn
+        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
+            if (g_callbacks.on_message) {
+                g_callbacks.on_message(&msg);
+            }
+        }
+    }
     // Xử lý STATUS (Online/Offline)
     else if (header->command_type == CMD_NOTIFY_STATUS) {
         StatusNotifyPayload notify;
@@ -626,6 +636,7 @@ static void* read_thread_func(void* arg) {
         handle_incoming_packet(&header);
     }
 
+    g_read_thread = 0;
     LOGI("=== READ THREAD EXITED ===");
     return NULL;
 }

@@ -1,3 +1,4 @@
+// File: client/app/src/main/java/com/example/konnichat/data/remote/NativeEventListenerImpl.kt
 package com.example.konnichat.data.remote
 
 import android.util.Log
@@ -12,52 +13,58 @@ import kotlinx.coroutines.launch
 
 object NativeEventListenerImpl : NativeEventListener {
 
-    // Biến này sẽ được HomeActivity gán vào
+    // Biến này được gán từ App.kt (thông qua HomeActivity hoặc khởi tạo ban đầu)
     var userRepository: UserRepository? = null
 
     override fun onFriendListReceived(friends: Array<UserDto>) {
         Log.d("KONNI_CLIENT", "Listener: Nhận ${friends.size} bạn.")
-
-        if (userRepository != null) {
+        userRepository?.let { repo ->
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    // Gọi sang UserRepository để lưu
-                    userRepository?.saveFriendsFromNetwork(friends)
-                    Log.d("KONNI_CLIENT", "Đã lưu user thành công!")
+                    repo.saveFriendsFromNetwork(friends)
+                    Log.d("KONNI_CLIENT", "Đã lưu danh sách bạn bè.")
                 } catch (e: Exception) {
                     e.printStackTrace()
                 }
             }
-        } else {
-            Log.e("KONNI_ERROR", "UserRepository chưa được khởi tạo!")
         }
     }
-    override fun onFriendStatusChanged(userId: Int, isOnline: Boolean) {
-        // TODO: Update status user
+
+    // --- ĐÃ SỬA: Xử lý sự kiện Online/Offline ---
+    override fun onFriendStatusChanged(friendId: Int, isOnline: Boolean) {
+        Log.d("KONNI_CLIENT", "Status Update: User $friendId is now ${if (isOnline) "Online" else "Offline"}")
+
+        userRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    // Cập nhật Database -> UI sẽ tự nhảy nhờ Flow/LiveData
+                    repo.updateFriendStatus(friendId, isOnline)
+                } catch (e: Exception) {
+                    Log.e("KONNI_ERROR", "Lỗi cập nhật status: ${e.message}")
+                }
+            }
+        }
     }
 
-    override fun onFriendRequestReceived(
-        requestId: Int,
-        senderId: Int,
-        senderName: String
-    ) {
-        TODO("Not yet implemented")
+    // Các hàm khác giữ nguyên TODO hoặc implement sau
+    override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {
+        // TODO implementation
     }
 
     override fun onRequestResponse(cmd: Int, status: Int) {
-        TODO("Not yet implemented")
+        // TODO implementation
     }
 
     override fun onFriendRequestAccepted(user: UserDto) {
-        TODO("Not yet implemented")
+        // TODO implementation
     }
 
     override fun onFriendRemoved(exFriendId: Int) {
-        TODO("Not yet implemented")
+        // TODO implementation
     }
 
     override fun onSearchResult(results: Array<UserSearchDto>) {
-        TODO("Not yet implemented")
+        // TODO implementation
     }
 
     override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {

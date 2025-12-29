@@ -1,17 +1,18 @@
+// File: client/app/src/main/java/com/example/konnichat/App.kt
 package com.example.konnichat
 
 import android.app.Application
+import android.content.Context
 import androidx.room.Room
 import com.example.konnichat.data.local.AppDatabase
 import com.example.konnichat.data.remote.DataSyncManager
 import com.example.konnichat.data.remote.NativeClient
-import com.example.konnichat.data.repository.UserRepository
 import com.example.konnichat.data.repository.ChatRepository
+import com.example.konnichat.data.repository.UserRepository
 
 class App : Application() {
 
     // Database dùng chung toàn App (Singleton pattern đơn giản)
-
     val db by lazy {
         Room.databaseBuilder(
             applicationContext,
@@ -22,7 +23,13 @@ class App : Application() {
     lateinit var syncManager: DataSyncManager
         private set
 
-    val userRepository by lazy { UserRepository(db.userDao()) }
+    // SỬA Ở ĐÂY: Truyền SharedPreferences vào UserRepository
+    val userRepository by lazy {
+        // Tên file "konnichat_prefs" phải KHỚP với tên file bên LoginActivity
+        val prefs = applicationContext.getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
+        UserRepository(db.userDao(), prefs)
+    }
+
     val chatRepository by lazy { ChatRepository(db.conversationDao()) }
 
     override fun onCreate() {
@@ -30,8 +37,8 @@ class App : Application() {
 
         // 2. Tạo bộ quản lý đồng bộ
         syncManager = DataSyncManager(db)
+
         // 3. Bắt đầu lắng nghe sự kiện từ Native (C)
-        // Đây chính là hành động "Gắn hòm thư" mà chúng ta đã bàn
-        NativeClient.startListening(syncManager)
+//        NativeClient.startListening(syncManager)
     }
 }

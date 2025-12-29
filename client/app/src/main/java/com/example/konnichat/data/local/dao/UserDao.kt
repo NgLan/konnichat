@@ -22,4 +22,11 @@ interface UserDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUsers(users: List<UserEntity>)
+
+    @Query("UPDATE users SET is_online = :isOnline WHERE server_id = :friendId")
+    suspend fun updateFriendStatus(friendId: Int, isOnline: Boolean)
+
+    // Thêm vào interface UserDao
+    @Query("UPDATE users SET is_online = 0")
+    suspend fun resetAllStatusOffline()
 }

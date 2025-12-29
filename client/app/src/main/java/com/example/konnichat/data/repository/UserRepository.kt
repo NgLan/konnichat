@@ -1,21 +1,30 @@
 // File: client/app/src/main/java/com/example/konnichat/data/repository/UserRepository.kt
 package com.example.konnichat.data.repository
 
+import android.content.SharedPreferences
 import com.example.konnichat.data.local.dao.UserDao
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.remote.dto.UserDto
 import kotlinx.coroutines.flow.Flow
 import java.util.Date
 
-class UserRepository(private val userDao: UserDao) {
+class UserRepository(
+    private val userDao: UserDao,
+    private val prefs: SharedPreferences
+) {
 
-    // 1. Hàm mới: Lấy danh sách bạn bè để hiển thị UI
-    fun getFriendList(): Flow<List<UserEntity>> {
-        // Tạm thời truyền ID = 0 (hoặc lấy từ SharePref) để tránh hiện chính mình
-        return userDao.getAllFriends(0)
+    // Helper: Lấy ID user hiện tại
+    private fun getCurrentUserId(): Int {
+        return prefs.getInt("USER_ID", -1)
     }
 
-    // 2. Hàm cũ: Lưu user từ server về
+    // 1. Hàm hiển thị danh sách bạn bè
+    fun getFriendList(): Flow<List<UserEntity>> {
+        val myId = getCurrentUserId()
+        return userDao.getAllFriends(myId)
+    }
+
+    // 2. Hàm lưu bạn bè từ Server
     suspend fun saveFriendsFromNetwork(userDtos: Array<UserDto>) {
         val userEntities = userDtos.map { dto ->
             UserEntity(
@@ -31,5 +40,15 @@ class UserRepository(private val userDao: UserDao) {
             )
         }
         userDao.insertUsers(userEntities)
+    }
+
+    // --- MỚI THÊM: Cập nhật trạng thái ---
+    suspend fun updateFriendStatus(friendId: Int, isOnline: Boolean) {
+        userDao.updateFriendStatus(friendId, isOnline)
+    }
+
+    // Thêm vào class UserRepository
+    suspend fun resetLocalStatuses() {
+        userDao.resetAllStatusOffline()
     }
 }
