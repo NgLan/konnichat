@@ -19,7 +19,7 @@
 #define SERVER_PORT 8080 
 
 // --- PROTOCOL CONSTANTS ---
-#define PROTOCOL_VERSION 1
+#define SERVER_PROTOCOL_VERSION 1
 
 // Command IDs (Khớp với Server)
 #define CMD_REGISTER 10
@@ -113,7 +113,7 @@ void send_packet(int cmd_type, void *payload, int payload_size) {
     PacketHeader header;
     memset(&header, 0, sizeof(PacketHeader));
     
-    header.version = PROTOCOL_VERSION;
+    header.version = SERVER_PROTOCOL_VERSION;
     header.command_type = cmd_type;
     header.payload_size = payload_size;
     header.request_id = current_request_id++;

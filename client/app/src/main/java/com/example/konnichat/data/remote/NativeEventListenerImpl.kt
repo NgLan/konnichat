@@ -84,6 +84,10 @@ object NativeEventListenerImpl : NativeEventListener {
         TODO("Not yet implemented")
     }
 
+    override fun onHistoryReceived(messages: Array<MessageDto>) {
+        TODO("Not yet implemented")
+    }
+
     override fun onConnectionClosed(reason: String) {
         Log.e("KONNI_CLIENT", "Socket đóng: $reason")
     }

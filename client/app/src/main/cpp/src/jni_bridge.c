@@ -21,6 +21,7 @@ static jmethodID m_onSearchResult;
 static jmethodID m_onMsgSent;
 static jmethodID m_onMsgReceived;
 static jmethodID m_onMsgDelivered;
+static jmethodID m_onHistoryReceived;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -218,6 +219,45 @@ void jni_on_msg_delivered(int server_msg_id) {
     (*env)->CallVoidMethod(env, g_listener, m_onMsgDelivered, (jint)server_msg_id);
 }
 
+void jni_on_history_received(int count, ChatPayload *messages) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    // Tạo mảng MessageDto[]
+    jobjectArray jArray = (*env)->NewObjectArray(env, count, c_MessageDto, NULL);
+
+    for (int i = 0; i < count; i++) {
+        messages[i].content[MAX_CONTENT_LEN - 1] = '\0';
+        messages[i].chat_type[15] = '\0';
+
+        jstring jContent = (*env)->NewStringUTF(env, messages[i].content);
+        jstring jChatType;
+        if (strlen(messages[i].chat_type) > 0) {
+            jChatType = (*env)->NewStringUTF(env, messages[i].chat_type);
+        } else {
+            jChatType = (*env)->NewStringUTF(env, "private"); // Fallback
+        }
+
+        jobject jMsg = (*env)->NewObject(env, c_MessageDto, m_MessageDtoInit,
+                                         messages[i].message_id,
+                                         messages[i].sender_id,
+                                         messages[i].receiver_id,
+                                         jContent,
+                                         (jlong)messages[i].created_at,
+                                         messages[i].msg_type,
+                                         jChatType);
+
+        (*env)->SetObjectArrayElement(env, jArray, i, jMsg);
+
+        (*env)->DeleteLocalRef(env, jContent);
+        (*env)->DeleteLocalRef(env, jChatType);
+        (*env)->DeleteLocalRef(env, jMsg);
+    }
+
+    (*env)->CallVoidMethod(env, g_listener, m_onHistoryReceived, jArray);
+    (*env)->DeleteLocalRef(env, jArray);
+}
+
 void jni_on_disconnect(const char *reason) {
     JNIEnv *env = get_jni_env();
     if (!env || !g_listener)
@@ -310,12 +350,12 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
                                           "(Lcom/example/konnichat/data/remote/dto/UserDto;)V");
     m_onUnfriended = (*env)->GetMethodID(env, lClass, "onFriendRemoved", "(I)V");
     m_onSearchResult = (*env)->GetMethodID(env, lClass, "onSearchResult", "([Lcom/example/konnichat/data/remote/dto/UserSearchDto;)V");
-    m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
-                                         "(Ljava/lang/String;)V");
     m_onMsgSent = (*env)->GetMethodID(env, lClass, "onMessageSent", "(IIJ)V");
     m_onMsgReceived = (*env)->GetMethodID(env, lClass, "onMessageReceived", "(Lcom/example/konnichat/data/remote/dto/MessageDto;)V");
     m_onMsgDelivered = (*env)->GetMethodID(env, lClass, "onMessageDelivered", "(I)V");
-
+    m_onHistoryReceived = (*env)->GetMethodID(env, lClass, "onHistoryReceived", "([Lcom/example/konnichat/data/remote/dto/MessageDto;)V");
+    m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
+                                         "(Ljava/lang/String;)V");
     // Cache UserDto
     jclass uClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/UserDto");
     c_UserDto = (jclass) (*env)->NewGlobalRef(env, uClass);
@@ -378,6 +418,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_msg_sent = jni_on_msg_sent;
     cbs.on_message = jni_on_message;
     cbs.on_msg_delivered = jni_on_msg_delivered;
+    cbs.on_history_received = jni_on_history_received;
     cbs.on_disconnect = jni_on_disconnect;
 
     // 3. Start C Thread
@@ -524,4 +565,10 @@ Java_com_example_konnichat_data_remote_NativeClient_sendMessage(JNIEnv *env, job
 JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_fetchOfflineMessages(JNIEnv *env, jobject thiz) {
     client_fetch_offline_msgs();
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_getChatHistory(JNIEnv *env, jobject thiz,
+                                                                   jint targetId, jint offset, jint limit) {
+    client_get_history(targetId, offset, limit);
 }

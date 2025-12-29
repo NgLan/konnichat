@@ -5,7 +5,7 @@
 
 // --- CẤU HÌNH CHUNG ---
 #define SERVER_PORT 8080
-#define PROTOCOL_VERSION 1
+#define SERVER_PROTOCOL_VERSION 1
 
 #define MAX_EMAIL_LEN 256
 #define MAX_PASS_LEN 128

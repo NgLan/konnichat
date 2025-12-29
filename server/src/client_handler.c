@@ -47,7 +47,7 @@ static void send_response(int sock, int32_t cmd_type, int32_t req_id, int32_t st
     PacketHeader header;
     memset(&header, 0, sizeof(PacketHeader));
 
-    header.version = PROTOCOL_VERSION;
+    header.version = SERVER_PROTOCOL_VERSION;
     header.command_type = cmd_type;
     header.request_id = req_id;
     header.status_code = status;
@@ -66,7 +66,7 @@ static void send_list_response(int sock, int32_t cmd, int32_t req_id, int32_t st
     PacketHeader header;
     memset(&header, 0, sizeof(PacketHeader));
 
-    header.version = PROTOCOL_VERSION;
+    header.version = SERVER_PROTOCOL_VERSION;
     header.command_type = cmd;
     header.request_id = req_id;
     header.status_code = status;
@@ -579,6 +579,37 @@ static void handle_fetch_offline(int sock, PacketHeader *reqHeader, int current_
     send_response(sock, CMD_FETCH_OFFLINE_MSGS_RESP, reqHeader->request_id, STATUS_SUCCESS, NULL, 0);
 }
 
+static void handle_get_history(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    GetHistoryPayload *req = (GetHistoryPayload *)payload;
+    
+    int target_id = req->target_id;
+    int limit = req->limit;
+    int offset = req->offset;
+
+    if (limit <= 0 || limit > 50) limit = 20; // Default logic
+    if (offset < 0) offset = 0;
+
+    LOG_INFO("User %d fetch history with %d (Off: %d, Lim: %d)", current_user_id, target_id, offset, limit);
+
+    // Cấp phát bộ nhớ
+    ChatPayload *history = (ChatPayload *)malloc(limit * sizeof(ChatPayload));
+    if (!history) {
+        send_response(sock, CMD_GET_HISTORY_RESP, reqHeader->request_id, STATUS_ERROR_UNKNOWN, NULL, 0);
+        return;
+    }
+
+    // Query DB
+    int count = db_get_chat_history(current_user_id, target_id, history, limit, offset);
+
+    // Gửi phản hồi dạng List
+    send_list_response(sock, CMD_GET_HISTORY_RESP, reqHeader->request_id, STATUS_SUCCESS,
+                       count, history, sizeof(ChatPayload));
+
+    free(history);
+    LOG_INFO("Sent %d history messages to User %d", count, current_user_id);
+}
+
 // --- MAIN THREAD LOOP ---
 void *handle_client(void *socket_desc)
 {
@@ -676,6 +707,9 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_UNFRIEND:
             handle_unfriend(sock, &header, payload, current_user_id);
+            break;
+        case CMD_GET_HISTORY:
+            handle_get_history(sock, &header, payload, current_user_id);
             break;
 
         default:
