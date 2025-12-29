@@ -1,0 +1,206 @@
+#include "../../include/repo/group_repo.h"
+#include "../../include/database.h"
+#include "../../include/utils/logger.h"
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+
+/**
+ * @brief Tạo nhóm mới kèm Transaction
+ */
+int db_create_group(const char *name, int32_t creator_id, const int32_t *member_ids, int member_count)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return -1;
+
+    // 1. Bắt đầu Transaction
+    if (mysql_query(conn, "START TRANSACTION"))
+    {
+        LOG_ERROR("Failed to start transaction: %s", mysql_error(conn));
+        db_release_conn(conn);
+        return -1;
+    }
+
+    // 2. Insert vào bảng groups
+    char query[1024];
+    snprintf(query, sizeof(query), "INSERT INTO `groups` (name) VALUES ('%s')", name);
+
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("DB Group Create Fail: %s", mysql_error(conn));
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return -1;
+    }
+
+    int32_t group_id = (int32_t)mysql_insert_id(conn);
+
+    // 3. Insert Members (Creator + List)
+    char insert_members[4096]; 
+    int offset = snprintf(insert_members, sizeof(insert_members),
+                          "INSERT INTO group_members (group_id, member_id, role, status) VALUES ");
+
+    // Thêm creator là admin
+    offset += snprintf(insert_members + offset, sizeof(insert_members) - offset,
+                       "(%d, %d, 'admin', 'active')", group_id, creator_id);
+
+    // Thêm các thành viên khác
+    for (int i = 0; i < member_count; i++)
+    {
+        if (member_ids[i] == creator_id)
+            continue;
+        offset += snprintf(insert_members + offset, sizeof(insert_members) - offset,
+                           ", (%d, %d, 'member', 'active')", group_id, member_ids[i]);
+    }
+
+    if (mysql_query(conn, insert_members))
+    {
+        LOG_ERROR("DB Add Group Members Fail: %s", mysql_error(conn));
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return -1;
+    }
+
+    // 4. Hoàn tất
+    if (mysql_query(conn, "COMMIT"))
+    {
+        LOG_ERROR("Transaction Commit Fail: %s", mysql_error(conn));
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return -1;
+    }
+
+    db_release_conn(conn);
+    LOG_INFO("Group '%s' (ID: %d) created by User %d with %d others.", name, group_id, creator_id, member_count);
+    return group_id;
+}
+
+/**
+ * @brief Lấy danh sách ID thành viên để broadcast
+ */
+int db_get_group_member_ids(int32_t group_id, int32_t *out_member_ids, int max_count)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return -1;
+
+    char query[256];
+    snprintf(query, sizeof(query),
+             "SELECT member_id FROM group_members WHERE group_id = %d AND status = 'active'",
+             group_id);
+
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Get Group Members Error: %s", mysql_error(conn));
+        db_release_conn(conn);
+        return -1;
+    }
+
+    MYSQL_RES *res = mysql_store_result(conn);
+    int count = 0;
+    if (res)
+    {
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(res)) && count < max_count)
+        {
+            out_member_ids[count++] = (int32_t)atoi(row[0]);
+        }
+        mysql_free_result(res);
+    }
+
+    db_release_conn(conn);
+    return count;
+}
+
+/**
+ * @brief Kiểm tra quyền hạn trong nhóm
+ */
+int db_is_group_member(int32_t group_id, int32_t user_id)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return -1;
+
+    char query[256];
+    snprintf(query, sizeof(query),
+             "SELECT 1 FROM group_members WHERE group_id = %d AND member_id = %d AND status = 'active' LIMIT 1",
+             group_id, user_id);
+
+    int is_member = 0;
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Check Group Member Error: %s", mysql_error(conn));
+    }
+    else
+    {
+        MYSQL_RES *res = mysql_store_result(conn);
+        if (res)
+        {
+            if (mysql_num_rows(res) > 0)
+                is_member = 1;
+            mysql_free_result(res);
+        }
+    }
+
+    db_release_conn(conn);
+    return is_member;
+}
+
+/**
+ * @brief Thêm thành viên đơn lẻ
+ */
+int db_add_group_member(int32_t group_id, int32_t target_user_id)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    char query[256];
+    snprintf(query, sizeof(query),
+             "INSERT INTO group_members (group_id, member_id, role, status) VALUES (%d, %d, 'member', 'active') "
+             "ON DUPLICATE KEY UPDATE status = 'active'",
+             group_id, target_user_id);
+
+    int success = 0;
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Add Group Member Error: %s", mysql_error(conn));
+    }
+    else
+    {
+        success = 1;
+    }
+
+    db_release_conn(conn);
+    return success;
+}
+
+/**
+ * @brief Rời nhóm (Chuyển status sang 'left')
+ */
+int db_leave_group(int32_t group_id, int32_t user_id)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    char query[256];
+    // Không DELETE vật lý để giữ history tin nhắn, chỉ chuyển trạng thái
+    snprintf(query, sizeof(query),
+             "UPDATE group_members SET status = 'left' WHERE group_id = %d AND member_id = %d",
+             group_id, user_id);
+
+    int success = 0;
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Leave Group Error: %s", mysql_error(conn));
+    }
+    else
+    {
+        success = (mysql_affected_rows(conn) > 0);
+    }
+
+    db_release_conn(conn);
+    return success;
+}

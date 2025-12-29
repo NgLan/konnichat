@@ -108,5 +108,7 @@ class DataSyncManager(private val db: AppDatabase) : NativeEventListener {
         Log.e("DataSync", "Mất kết nối: $reason")
     }
 
-
+    override fun onGroupCreated(groupId: Int, groupName: String) {
+        TODO("Not yet implemented")
+    }
 }

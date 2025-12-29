@@ -20,7 +20,8 @@ SRCS = $(SRC_DIR)/main.c \
        $(SRC_DIR)/tcp_server.c \
        $(REPO_DIR)/user_repo.c \
        $(REPO_DIR)/friend_repo.c \
-       $(REPO_DIR)/message_repo.c
+       $(REPO_DIR)/message_repo.c \
+       $(REPO_DIR)/group_repo.c
 
 # Tạo danh sách file object (.o) tương ứng
 OBJS = $(SRCS:.c=.o)

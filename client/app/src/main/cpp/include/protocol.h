@@ -88,6 +88,8 @@ typedef enum {
     CMD_NOTIFY_UNFRIENDED   = 84,   // Thông báo bị unfriend
     CMD_NOTIFY_MSG_DELIVERED = 85,  // Server báo cho người gửi (A) biết tin đã đến máy người nhận (B)
 
+    CMD_NOTIFY_GROUP_CREATED = 86,
+
     // 99. Error
     CMD_ERROR_UNKNOWN       = 999
 } CommandType;
@@ -170,9 +172,13 @@ typedef struct __attribute__((packed)) {
 // 5. Group Management
 typedef struct __attribute__((packed)) {
     char group_name[MAX_GROUP_NAME];
-    // Danh sách ID thành viên ban đầu (dạng chuỗi "1,5,9" hoặc gửi gói riêng)
-    // Để đơn giản giai đoạn đầu, tạo nhóm xong mới add member sau.
-} CreateGroupPayload;
+    int32_t member_count;
+} CreateGroupReqPayload;
+
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+    char group_name[MAX_GROUP_NAME];
+} CreateGroupRespPayload;
 
 // Search (Tìm kiếm)
 typedef struct __attribute__((packed)) {

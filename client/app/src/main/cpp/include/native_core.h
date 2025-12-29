@@ -41,6 +41,7 @@ typedef struct {
 
     void (*on_pending_list)(int count, PendingReqInfo* list);
     void (*on_history_received)(int count, ChatPayload *messages);
+    void (*on_group_created)(int group_id, const char* name);
 } NativeCallbacks;
 
 // --- 2. CÁC HÀM QUẢN LÝ ---
@@ -80,5 +81,7 @@ int client_fetch_offline_msgs();
 int client_get_history(int target_id, int offset, int limit);
 
 int client_get_pending_requests();
+
+int client_create_group(const char* name, int32_t* members, int member_count);
 
 #endif // NATIVE_CORE_H

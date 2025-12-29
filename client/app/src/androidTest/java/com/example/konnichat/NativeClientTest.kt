@@ -44,6 +44,10 @@ class NativeClientTest {
         const val CMD_SEND_MESSAGE_RESP = 21
         const val CMD_RECEIVE_MESSAGE = 22
 
+        const val CMD_CREATE_GROUP = 30
+        const val CMD_CREATE_GROUP_RESP = 31
+        const val CMD_NOTIFY_GROUP_CREATED = 301
+
         const val CMD_SEND_FRIEND_REQ = 42
         const val CMD_SEND_FRIEND_REQ_RESP = 43
 
@@ -66,6 +70,9 @@ class NativeClientTest {
         const val STATUS_ERR_ALREADY_EXIST = 6
         const val STATUS_ERR_ALREADY_FRIEND = 7
         const val STATUS_ERR_REQ_PENDING = 8
+
+        // sizes
+        const val MAX_GROUP_NAME = 100
     }
 
     @Before
@@ -1047,6 +1054,143 @@ class NativeClientTest {
         Assert.assertTrue("Timeout waiting for response", latch.await(5, TimeUnit.SECONDS))
         Assert.assertEquals("Lịch sử với người lạ phải rỗng", 0, receivedCount)
     }
+
+    // ==========================================
+    // MODULE 8: GROUP MANAGEMENT
+    // ==========================================
+
+    @Test
+    fun test14_CreateGroup_Success_Flow() {
+        val time = System.currentTimeMillis()
+        val nameA = "Owner_$time"
+        val emailA = "owner_$time@konni.com"
+        val emailB = "memberB_$time@konni.com"
+        val emailC = "memberC_$time@konni.com"
+        val pass = "123"
+
+        // 1. Đăng ký các thành viên
+        NativeClient.registerUser(nameA, emailA, pass)
+        NativeClient.registerUser("MemberB", emailB, pass)
+        NativeClient.registerUser("MemberC", emailC, pass)
+
+        // 2. Lấy ID của các thành viên để tạo nhóm
+        val userB = NativeClient.loginUser(emailB, pass)!!
+        val idB = userB.id
+        NativeClient.disconnect()
+
+        val userC = NativeClient.loginUser(emailC, pass)!!
+        val idC = userC.id
+        NativeClient.disconnect()
+
+        // 3. Login User A (Người tạo)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val groupName = "Konnichiwa Group"
+        val members = intArrayOf(idB, idC) // Danh sách thành viên chọn từ danh sách bạn bè
+
+        val latch = CountDownLatch(1)
+        var capturedGroupId = -1
+        var capturedGroupName = ""
+
+        val listener = object : StubNativeEventListener() {
+            override fun onGroupCreated(groupId: Int, groupName: String) {
+                println("TEST: Nhận thông báo tạo nhóm thành công: $groupName (ID: $groupId)")
+                capturedGroupId = groupId
+                capturedGroupName = groupName
+                latch.countDown()
+            }
+        }
+        NativeClient.startListening(listener)
+
+        // 4. Thực hiện tạo nhóm qua JNI
+        NativeClient.createGroup(groupName, members)
+
+        // 5. Verify
+        val success = latch.await(5, TimeUnit.SECONDS)
+        Assert.assertTrue("Timeout: Không nhận được CMD_CREATE_GROUP_RESP", success)
+        Assert.assertTrue("Group ID phải > 0", capturedGroupId > 0)
+        Assert.assertEquals("Tên nhóm trả về không khớp", groupName, capturedGroupName)
+    }
+
+    @Test
+    fun test15_CreateGroup_Broadcast_Realtime() {
+        // Kịch bản: B tạo nhóm có A. A đang Online phải nhận được thông báo ngay lập tức.
+        val time = System.currentTimeMillis()
+        val emailA = "onlineA_$time@konni.com"
+        val emailB = "creatorB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        // 1. Login A (Native) và chờ đợi
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val userA = NativeClient.loginUser(emailA, pass)!!
+        val idA = userA.id
+
+        val latchNotify = CountDownLatch(1)
+        var notifyGroupName = ""
+
+        val listener = object : StubNativeEventListener() {
+            override fun onGroupCreated(groupId: Int, groupName: String) {
+                println("TEST: A nhận được broadcast nhóm mới: $groupName")
+                notifyGroupName = groupName
+                latchNotify.countDown()
+            }
+        }
+        NativeClient.startListening(listener)
+
+        // 2. FakeClient B tạo nhóm có chứa A
+        val groupName = "Realtime Broadcast Group"
+        val threadB = Thread {
+            try {
+                val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fb.login(emailB, pass)
+                Thread.sleep(500)
+                // Tạo nhóm chứa ID của A
+                fb.createGroup(groupName, intArrayOf(idA))
+                Thread.sleep(500)
+                fb.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadB.start()
+
+        // 3. Kiểm tra A nhận được gói CMD_NOTIFY_GROUP_CREATED
+        val success = latchNotify.await(7, TimeUnit.SECONDS)
+        Assert.assertTrue("User A không nhận được Broadcast tạo nhóm khi đang Online", success)
+        Assert.assertEquals(groupName, notifyGroupName)
+    }
+
+    @Test
+    fun test16_CreateGroup_EmptyName_Error() {
+        // Kịch bản: Tên nhóm rỗng. Server phải trả về STATUS_ERROR_INVALID_PARAM
+        val time = System.currentTimeMillis()
+        val email = "fail_$time@konni.com"
+        NativeClient.registerUser("FailUser", email, "123")
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, "123")
+
+        val latch = CountDownLatch(1)
+        var errorStatus = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_CREATE_GROUP_RESP) {
+                    errorStatus = status
+                    latch.countDown()
+                }
+            }
+        })
+
+        // Gửi tên nhóm rỗng
+        NativeClient.createGroup("", intArrayOf(1, 2, 3))
+
+        latch.await(5, TimeUnit.SECONDS)
+        // Dựa trên logic Server, nếu name empty -> trả về INVALID_PARAM
+        Assert.assertEquals("Phải trả về lỗi INVALID_PARAM", STATUS_ERR_INVALID_PARAM, errorStatus)
+    }
 }
 
 // =========================================================
@@ -1067,6 +1211,7 @@ open class StubNativeEventListener : NativeEventListener {
     override fun onHistoryReceived(messages: Array<MessageDto>) {}
 
     override fun onConnectionClosed(reason: String) {}
+    override fun onGroupCreated(groupId: Int, groupName: String) {}
 }
 
 /**
@@ -1197,6 +1342,34 @@ class FakeTcpClient(ip: String, port: Int) {
         output.write(buffer.array())
         output.flush()
     }
+
+    fun createGroup(name: String, memberIds: IntArray) {
+        // Payload size = name[100] + count[4] + members[N*4]
+        val payloadSize = 100 + 4 + (memberIds.size * 4)
+        val totalSize = 28 + payloadSize
+
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        // 1. Header
+        writeHeader(buffer, 30, payloadSize) // CMD_CREATE_GROUP = 30
+
+        // 2. Body
+        // Group Name (100 bytes)
+        writeFixedString(buffer, name, 100)
+
+        // Member Count (4 bytes)
+        buffer.putInt(memberIds.size)
+
+        // Member IDs (N * 4 bytes)
+        for (id in memberIds) {
+            buffer.putInt(id)
+        }
+
+        output.write(buffer.array())
+        output.flush()
+    }
+
     private fun writeHeader(buffer: ByteBuffer, cmd: Int, payloadSize: Int) {
         // Struct PacketHeader: version, cmd, size, reqId, status, timestamp
         buffer.putInt(SERVER_PROTOCOL_VERSION)

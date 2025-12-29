@@ -11,6 +11,7 @@
 #include "../include/repo/user_repo.h"
 #include "../include/repo/friend_repo.h"
 #include "../include/repo/message_repo.h"
+#include "../include/repo/group_repo.h"
 
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -216,22 +217,26 @@ static void notify_req_accepted_realtime(int acceptor_id, int receiver_id)
  * @brief Xử lý đẩy tin nhắn offline (Batch processing)
  * Logic: Lấy 50 tin -> Gửi -> Notify Sender -> Lặp lại đến khi hết tin 'sent'
  */
-static void push_offline_messages(int sock, int user_id) {
+static void push_offline_messages(int sock, int user_id)
+{
     int batch_size = 50;
     ChatPayload msgs[50];
     int count;
 
-    do {
+    do
+    {
         // 1. Lấy batch tin nhắn (Luôn lấy limit 50 tin sent cũ nhất)
         // Vì sau khi xử lý xong ta update status='delivered', nên lần query sau sẽ ra 50 tin tiếp theo.
         count = db_get_offline_messages(user_id, msgs, batch_size);
 
-        if (count > 0) {
+        if (count > 0)
+        {
             LOG_INFO("Pushing batch of %d offline messages to User %d", count, user_id);
 
-            for (int i = 0; i < count; i++) {
+            for (int i = 0; i < count; i++)
+            {
                 // 2. Gửi cho User vừa Login (Offline -> Online)
-                send_response(sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS, 
+                send_response(sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS,
                               &msgs[i], sizeof(ChatPayload));
 
                 // 3. Update DB thành Delivered
@@ -239,12 +244,13 @@ static void push_offline_messages(int sock, int user_id) {
 
                 // 4. Báo ngược lại cho người gửi (A) biết tin đã đến (Nếu A đang online)
                 int sender_sock = get_socket_by_user_id(msgs[i].sender_id);
-                if (sender_sock != -1) {
+                if (sender_sock != -1)
+                {
                     MsgDeliveredPayload notify;
                     notify.message_id = msgs[i].message_id;
                     notify.receiver_id = user_id;
-                    
-                    send_response(sender_sock, CMD_NOTIFY_MSG_DELIVERED, 0, STATUS_SUCCESS, 
+
+                    send_response(sender_sock, CMD_NOTIFY_MSG_DELIVERED, 0, STATUS_SUCCESS,
                                   &notify, sizeof(MsgDeliveredPayload));
                 }
             }
@@ -582,19 +588,22 @@ static void handle_fetch_offline(int sock, PacketHeader *reqHeader, int current_
 static void handle_get_history(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
 {
     GetHistoryPayload *req = (GetHistoryPayload *)payload;
-    
+
     int target_id = req->target_id;
     int limit = req->limit;
     int offset = req->offset;
 
-    if (limit <= 0 || limit > 50) limit = 20; // Default logic
-    if (offset < 0) offset = 0;
+    if (limit <= 0 || limit > 50)
+        limit = 20; // Default logic
+    if (offset < 0)
+        offset = 0;
 
     LOG_INFO("User %d fetch history with %d (Off: %d, Lim: %d)", current_user_id, target_id, offset, limit);
 
     // Cấp phát bộ nhớ
     ChatPayload *history = (ChatPayload *)malloc(limit * sizeof(ChatPayload));
-    if (!history) {
+    if (!history)
+    {
         send_response(sock, CMD_GET_HISTORY_RESP, reqHeader->request_id, STATUS_ERROR_UNKNOWN, NULL, 0);
         return;
     }
@@ -608,6 +617,79 @@ static void handle_get_history(int sock, PacketHeader *reqHeader, void *payload,
 
     free(history);
     LOG_INFO("Sent %d history messages to User %d", count, current_user_id);
+}
+
+static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    // 1. Kiểm tra kích thước tối thiểu (phải chứa được struct req)
+    if (reqHeader->payload_size < (int32_t)sizeof(CreateGroupReqPayload))
+    {
+        LOG_WARN("User %d sent invalid create group payload size", current_user_id);
+        send_response(sock, CMD_CREATE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
+    }
+
+    CreateGroupReqPayload *req = (CreateGroupReqPayload *)payload;
+
+    // 2. Validate tính toán vẹn để chống Buffer Over-read
+    int32_t expected_size = sizeof(CreateGroupReqPayload) + (req->member_count * sizeof(int32_t));
+    if (reqHeader->payload_size != expected_size)
+    {
+        LOG_WARN("User %d: Payload size mismatch. Expected %d, got %d",
+                 current_user_id, expected_size, reqHeader->payload_size);
+        send_response(sock, CMD_CREATE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
+    }
+
+    // 3. Kiểm tra tên nhóm rỗng
+    if (strlen(req->group_name) == 0)
+    {
+        send_response(sock, CMD_CREATE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
+    }
+
+    // Xác định vị trí mảng ID thành viên trong memory
+    int32_t *member_ids = (int32_t *)((char *)payload + sizeof(CreateGroupReqPayload));
+
+    // 4. Gọi DB thực hiện Transaction
+    int group_id = db_create_group(req->group_name, current_user_id, member_ids, req->member_count);
+
+    if (group_id > 0)
+    {
+        CreateGroupRespPayload resp;
+        memset(&resp, 0, sizeof(CreateGroupRespPayload)); 
+        resp.group_id = group_id;
+
+        strncpy(resp.group_name, req->group_name, MAX_GROUP_NAME - 1);
+        resp.group_name[MAX_GROUP_NAME - 1] = '\0';
+
+        // 5. Phản hồi cho người tạo (ACK)
+        send_response(sock, CMD_CREATE_GROUP_RESP, reqHeader->request_id, STATUS_SUCCESS, &resp, sizeof(resp));
+
+        // 6. BROADCAST cho các thành viên khác đang Online
+        LOG_INFO("Broadcasting new group %d to members...", group_id);
+        for (int i = 0; i < req->member_count; i++)
+        {
+            int target_id = member_ids[i];
+
+            // Không gửi thông báo cho chính mình (vì đã nhận ACK ở trên)
+            if (target_id == current_user_id)
+                continue;
+
+            int target_sock = get_socket_by_user_id(target_id);
+            if (target_sock != -1)
+            {
+                // Sử dụng cùng gói resp để tiết kiệm tài nguyên
+                send_response(target_sock, CMD_NOTIFY_GROUP_CREATED, 0, STATUS_SUCCESS, &resp, sizeof(resp));
+                LOG_INFO("Notified User %d about new group '%s' (ID: %d)", target_id, resp.group_name, group_id);
+            }
+        }
+    }
+    else
+    {
+        LOG_ERROR("User %d failed to create group in DB", current_user_id);
+        send_response(sock, CMD_CREATE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
+    }
 }
 
 // --- MAIN THREAD LOOP ---
@@ -710,6 +792,9 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_GET_HISTORY:
             handle_get_history(sock, &header, payload, current_user_id);
+            break;
+        case CMD_CREATE_GROUP:
+            handle_create_group(sock, &header, payload, current_user_id);
             break;
 
         default:

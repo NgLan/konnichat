@@ -153,9 +153,11 @@ object NativeEventListenerImpl : NativeEventListener {
         TODO("Not yet implemented")
     }
 
-    override fun onConnectionClosed(reason: String) {
-        Log.e("KONNI_CLIENT", "Socket đóng: $reason")
+    override fun onGroupCreated(groupId: Int, groupName: String) {
+        TODO("Not yet implemented")
     }
 
-    override fun onConnectionClosed(reason: String) { Log.e(TAG, "Mất kết nối: $reason") }
+    override fun onConnectionClosed(reason: String) { 
+        Log.e(TAG, "Mất kết nối: $reason") 
+    }
 }

@@ -22,20 +22,24 @@ static pthread_mutex_t g_client_mutex = PTHREAD_MUTEX_INITIALIZER;
 static NativeCallbacks g_callbacks;
 
 // Helper: Lấy timestamp hiện tại
-static uint64_t get_timestamp() {
+static uint64_t get_timestamp()
+{
     struct timespec ts;
     clock_gettime(CLOCK_REALTIME, &ts);
-    return (uint64_t) (ts.tv_sec) * 1000 + (uint64_t) (ts.tv_nsec) / 1000000;
+    return (uint64_t)(ts.tv_sec) * 1000 + (uint64_t)(ts.tv_nsec) / 1000000;
 }
 
 // Helper: Gửi full data
-static int send_all(int sock, void *data, int len) {
+static int send_all(int sock, void *data, int len)
+{
     int total = 0;
     int left = len;
-    char *ptr = (char *) data;
-    while (total < len) {
+    char *ptr = (char *)data;
+    while (total < len)
+    {
         int n = send(sock, ptr + total, left, 0);
-        if (n == -1) return -1;
+        if (n == -1)
+            return -1;
         total += n;
         left -= n;
     }
@@ -43,13 +47,16 @@ static int send_all(int sock, void *data, int len) {
 }
 
 // Helper: Nhận full data
-static int recv_all(int sock, void *buffer, int len) {
+static int recv_all(int sock, void *buffer, int len)
+{
     int total = 0;
     int left = len;
-    char *ptr = (char *) buffer;
-    while (total < len) {
+    char *ptr = (char *)buffer;
+    while (total < len)
+    {
         int n = recv(sock, ptr + total, left, 0);
-        if (n <= 0) return n; // Error or Closed
+        if (n <= 0)
+            return n; // Error or Closed
         total += n;
         left -= n;
     }
@@ -57,26 +64,33 @@ static int recv_all(int sock, void *buffer, int len) {
 }
 
 // Helper: Đọc bỏ payload rác
-static void discard_data(int sock, int size) {
-    if (size <= 0) return;
+static void discard_data(int sock, int size)
+{
+    if (size <= 0)
+        return;
     char buffer[1024];
     int remaining = size;
-    while (remaining > 0) {
+    while (remaining > 0)
+    {
         int to_read = (remaining < sizeof(buffer)) ? remaining : sizeof(buffer);
         int n = recv(sock, buffer, to_read, 0);
-        if (n <= 0) break;
+        if (n <= 0)
+            break;
         remaining -= n;
     }
 }
 
-static void discard_payload(int sock, int size) {
+static void discard_payload(int sock, int size)
+{
     discard_data(sock, size);
     LOGW("Discarded %d bytes of garbage payload.", size);
 }
 
 // Helper: Gửi Header + Payload chung
-static int send_request(int cmd, void *payload, int payload_size) {
-    if (g_socket == -1) return -1;
+static int send_request(int cmd, void *payload, int payload_size)
+{
+    if (g_socket == -1)
+        return -1;
 
     PacketHeader header;
     memset(&header, 0, sizeof(header));
@@ -86,25 +100,32 @@ static int send_request(int cmd, void *payload, int payload_size) {
     header.request_id = ++g_req_id;
     header.timestamp = get_timestamp();
 
-    if (send_all(g_socket, &header, sizeof(PacketHeader)) < 0) return -1;
+    if (send_all(g_socket, &header, sizeof(PacketHeader)) < 0)
+        return -1;
 
-    if (payload_size > 0 && payload != NULL) {
-        if (send_all(g_socket, payload, payload_size) < 0) return -1;
+    if (payload_size > 0 && payload != NULL)
+    {
+        if (send_all(g_socket, payload, payload_size) < 0)
+            return -1;
     }
     return header.request_id;
 }
 
-static int recv_and_validate_header(PacketHeader *header, int expected_cmd) {
-    if (g_socket == -1) return ERR_NETWORK_CONN_FAILED;
+static int recv_and_validate_header(PacketHeader *header, int expected_cmd)
+{
+    if (g_socket == -1)
+        return ERR_NETWORK_CONN_FAILED;
 
     LOGI("Dang cho doc Header...");
     int n = recv_all(g_socket, header, sizeof(PacketHeader));
-    if (n <= 0) {
+    if (n <= 0)
+    {
         LOGE("Socket Error or Closed while waiting for CMD %d", expected_cmd);
         return ERR_NETWORK_RECV_FAILED;
     }
 
-    if (header->command_type != expected_cmd) {
+    if (header->command_type != expected_cmd)
+    {
         LOGE("Protocol Mismatch! Expected %d but got %d", expected_cmd, header->command_type);
         discard_payload(g_socket, header->payload_size);
         return ERR_PROTOCOL_MISMATCH;
@@ -112,33 +133,46 @@ static int recv_and_validate_header(PacketHeader *header, int expected_cmd) {
     return CLIENT_OK;
 }
 
-static void trim_string(char *str) {
-    if (!str) return;
+static void trim_string(char *str)
+{
+    if (!str)
+        return;
     char *ptr = str;
     int len = strlen(ptr);
-    while (len > 0 && isspace(ptr[len - 1])) ptr[--len] = 0;
-    while (*ptr && isspace(*ptr)) ptr++, len--;
+    while (len > 0 && isspace(ptr[len - 1]))
+        ptr[--len] = 0;
+    while (*ptr && isspace(*ptr))
+        ptr++, len--;
     memmove(str, ptr, len + 1);
 }
 
 // --- INIT & CONNECT ---
-int client_init(const char *ip, int port) {
-    if (g_socket != -1) return 0;
+int client_init(const char *ip, int port)
+{
+    if (g_socket != -1)
+        return 0;
 
     g_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (g_socket < 0) return -1;
+    if (g_socket < 0)
+        return -1;
 
     struct sockaddr_in serv_addr;
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
 
-    if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0) {
-        close(g_socket); g_socket = -1; return -2;
+    if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0)
+    {
+        close(g_socket);
+        g_socket = -1;
+        return -2;
     }
 
-    if (connect(g_socket, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        close(g_socket); g_socket = -1; return -3;
+    if (connect(g_socket, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
+    {
+        close(g_socket);
+        g_socket = -1;
+        return -3;
     }
 
     g_is_running = 0;
@@ -146,21 +180,25 @@ int client_init(const char *ip, int port) {
     return 0;
 }
 
-void client_close() {
+void client_close()
+{
     g_is_running = 0;
-    if (g_socket != -1) {
+    if (g_socket != -1)
+    {
         shutdown(g_socket, SHUT_RDWR);
         close(g_socket);
         g_socket = -1;
     }
-    if (g_read_thread != 0) {
+    if (g_read_thread != 0)
+    {
         pthread_join(g_read_thread, NULL);
         g_read_thread = 0;
     }
 }
 
 // --- AUTH ---
-int client_register(const char *name, const char *email, const char *password) {
+int client_register(const char *name, const char *email, const char *password)
+{
     pthread_mutex_lock(&g_client_mutex);
     RegisterPayload payload;
     memset(&payload, 0, sizeof(payload));
@@ -168,64 +206,82 @@ int client_register(const char *name, const char *email, const char *password) {
     strncpy(payload.email, email, MAX_EMAIL_LEN - 1);
     strncpy(payload.password, password, MAX_PASS_LEN - 1);
 
-    if (send_request(CMD_REGISTER, &payload, sizeof(payload)) < 0) {
+    if (send_request(CMD_REGISTER, &payload, sizeof(payload)) < 0)
+    {
         pthread_mutex_unlock(&g_client_mutex);
         return ERR_NETWORK_SEND_FAILED;
     }
 
     PacketHeader resp;
     int status = recv_and_validate_header(&resp, CMD_REGISTER_RESP);
-    if (status < 0) {
+    if (status < 0)
+    {
         pthread_mutex_unlock(&g_client_mutex);
         return status;
     }
-    if (resp.payload_size > 0) discard_payload(g_socket, resp.payload_size);
+    if (resp.payload_size > 0)
+        discard_payload(g_socket, resp.payload_size);
     pthread_mutex_unlock(&g_client_mutex);
     return resp.status_code;
 }
 
-int client_login(const char *email, const char *password, UserInfoPayload *user_out) {
+int client_login(const char *email, const char *password, UserInfoPayload *user_out)
+{
     pthread_mutex_lock(&g_client_mutex);
     LoginPayload payload;
     memset(&payload, 0, sizeof(payload));
     strncpy(payload.email, email, MAX_EMAIL_LEN - 1);
     strncpy(payload.password, password, MAX_PASS_LEN - 1);
 
-    if (send_request(CMD_LOGIN, &payload, sizeof(payload)) < 0) {
+    if (send_request(CMD_LOGIN, &payload, sizeof(payload)) < 0)
+    {
         pthread_mutex_unlock(&g_client_mutex);
         return ERR_NETWORK_SEND_FAILED;
     }
 
     PacketHeader resp;
     int status = recv_and_validate_header(&resp, CMD_LOGIN_RESP);
-    if (status < 0) {
+    if (status < 0)
+    {
         pthread_mutex_unlock(&g_client_mutex);
         return status;
     }
 
-    if (resp.status_code == STATUS_SUCCESS) {
-        if (resp.payload_size == sizeof(UserInfoPayload)) {
-            if (recv_all(g_socket, user_out, sizeof(UserInfoPayload)) < 0) {
+    if (resp.status_code == STATUS_SUCCESS)
+    {
+        if (resp.payload_size == sizeof(UserInfoPayload))
+        {
+            if (recv_all(g_socket, user_out, sizeof(UserInfoPayload)) < 0)
+            {
                 pthread_mutex_unlock(&g_client_mutex);
                 return ERR_NETWORK_RECV_FAILED;
             }
             pthread_mutex_unlock(&g_client_mutex);
             return STATUS_SUCCESS;
-        } else {
+        }
+        else
+        {
             discard_payload(g_socket, resp.payload_size);
             pthread_mutex_unlock(&g_client_mutex);
             return ERR_PROTOCOL_SIZE_ERR;
         }
-    } else {
-        if (resp.payload_size > 0) discard_payload(g_socket, resp.payload_size);
+    }
+    else
+    {
+        if (resp.payload_size > 0)
+            discard_payload(g_socket, resp.payload_size);
         pthread_mutex_unlock(&g_client_mutex);
         return resp.status_code;
     }
 }
 
 // --- FEATURES ---
-int client_get_friends(int offset, int limit) {
-    if (limit < 1) limit = 20; if (limit > 100) limit = 100;
+int client_get_friends(int offset, int limit)
+{
+    if (limit < 1)
+        limit = 20;
+    if (limit > 100)
+        limit = 100;
     GetFriendListReq req;
     req.offset = offset;
     req.limit = limit;
@@ -235,7 +291,8 @@ int client_get_friends(int offset, int limit) {
     return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
-int client_send_friend_request(int target_id) {
+int client_send_friend_request(int target_id)
+{
     FriendReqPayload payload;
     payload.target_id = target_id;
     pthread_mutex_lock(&g_send_mutex);
@@ -244,7 +301,8 @@ int client_send_friend_request(int target_id) {
     return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
-int client_respond_friend_req(int request_id, int is_accepted) {
+int client_respond_friend_req(int request_id, int is_accepted)
+{
     FriendRespondPayload payload;
     payload.request_id = request_id;
     payload.is_accepted = (int8_t)is_accepted;
@@ -254,7 +312,8 @@ int client_respond_friend_req(int request_id, int is_accepted) {
     return (req_id < 0) ? ERR_NETWORK_SEND_FAILED : CLIENT_OK;
 }
 
-int client_unfriend(int target_id) {
+int client_unfriend(int target_id)
+{
     FriendReqPayload payload;
     payload.target_id = target_id;
     pthread_mutex_lock(&g_send_mutex);
@@ -263,13 +322,16 @@ int client_unfriend(int target_id) {
     return (req_id < 0) ? ERR_NETWORK_SEND_FAILED : CLIENT_OK;
 }
 
-int client_search_users(const char *keyword, int offset, int limit) {
-    if (!keyword || strlen(keyword) == 0) return CLIENT_OK;
+int client_search_users(const char *keyword, int offset, int limit)
+{
+    if (!keyword || strlen(keyword) == 0)
+        return CLIENT_OK;
     SearchReqPayload payload;
     memset(&payload, 0, sizeof(payload));
     strncpy(payload.keyword, keyword, 49);
     trim_string(payload.keyword);
-    if (strlen(payload.keyword) == 0) return CLIENT_OK;
+    if (strlen(payload.keyword) == 0)
+        return CLIENT_OK;
     payload.offset = offset;
     payload.limit = limit;
     pthread_mutex_lock(&g_send_mutex);
@@ -278,14 +340,18 @@ int client_search_users(const char *keyword, int offset, int limit) {
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
-int client_send_message(int receiver_id, const char *content, int request_id, const char *chat_type) {
+int client_send_message(int receiver_id, const char *content, int request_id, const char *chat_type)
+{
     ChatPayload payload;
     memset(&payload, 0, sizeof(payload));
     payload.receiver_id = receiver_id;
     payload.msg_type = 1;
-    if (chat_type) {
+    if (chat_type)
+    {
         strncpy(payload.chat_type, chat_type, sizeof(payload.chat_type) - 1);
-    } else {
+    }
+    else
+    {
         strcpy(payload.chat_type, "private");
     }
     strncpy(payload.content, content, MAX_CONTENT_LEN - 1);
@@ -302,7 +368,8 @@ int client_send_message(int receiver_id, const char *content, int request_id, co
     header.timestamp = get_timestamp();
 
     if (send_all(g_socket, &header, sizeof(PacketHeader)) < 0 ||
-        send_all(g_socket, &payload, sizeof(ChatPayload)) < 0) {
+        send_all(g_socket, &payload, sizeof(ChatPayload)) < 0)
+    {
         pthread_mutex_unlock(&g_send_mutex);
         return ERR_NETWORK_SEND_FAILED;
     }
@@ -310,7 +377,8 @@ int client_send_message(int receiver_id, const char *content, int request_id, co
     return CLIENT_OK;
 }
 
-int client_get_pending_requests() {
+int client_get_pending_requests()
+{
     pthread_mutex_lock(&g_send_mutex);
     int req_id = send_request(CMD_GET_PENDING_REQS, NULL, 0);
     pthread_mutex_unlock(&g_send_mutex);
@@ -318,7 +386,8 @@ int client_get_pending_requests() {
 }
 
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN (ĐÃ FIX BUG DESYNC) ---
-int client_fetch_offline_msgs() {
+int client_fetch_offline_msgs()
+{
     pthread_mutex_lock(&g_send_mutex);
     // Gửi lệnh rỗng (không cần payload)
     int req_id = send_request(CMD_FETCH_OFFLINE_MSGS, NULL, 0);
@@ -327,7 +396,8 @@ int client_fetch_offline_msgs() {
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
-int client_get_history(int target_id, int offset, int limit) {
+int client_get_history(int target_id, int offset, int limit)
+{
     GetHistoryPayload payload;
     payload.target_id = target_id;
     payload.offset = offset;
@@ -340,190 +410,315 @@ int client_get_history(int target_id, int offset, int limit) {
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
+int client_create_group(const char *name, int32_t *member_ids, int count)
+{
+    if (g_socket == -1)
+        return ERR_NETWORK_CONN_FAILED;
+
+    int payload_size = sizeof(CreateGroupReqPayload) + (count * sizeof(int32_t));
+    void *buffer = malloc(payload_size);
+    if (!buffer)
+        return ERR_INTERNAL_MEM;
+
+    CreateGroupReqPayload *req = (CreateGroupReqPayload *)buffer;
+    memset(req->group_name, 0, MAX_GROUP_NAME);
+    strncpy(req->group_name, name, MAX_GROUP_NAME - 1);
+    req->member_count = count;
+
+    // Copy mảng ID vào phần sau của buffer
+    memcpy((char *)buffer + sizeof(CreateGroupReqPayload), member_ids, count * sizeof(int32_t));
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_CREATE_GROUP, buffer, payload_size);
+    pthread_mutex_unlock(&g_send_mutex);
+
+    free(buffer);
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
-static void handle_incoming_packet(PacketHeader *header) {
+static void handle_incoming_packet(PacketHeader *header)
+{
     LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
 
     int bytes_processed = 0;
 
     // 1. FRIEND LIST
-    if (header->command_type == CMD_GET_FRIEND_LIST_RESP) {
+    if (header->command_type == CMD_GET_FRIEND_LIST_RESP)
+    {
         int32_t count = 0;
-        if (recv_all(g_socket, &count, sizeof(int32_t)) > 0) {
+        if (recv_all(g_socket, &count, sizeof(int32_t)) > 0)
+        {
             bytes_processed += sizeof(int32_t); // FIX: Cập nhật byte đã đọc
-            if (count > 0) {
+            if (count > 0)
+            {
                 int data_size = count * sizeof(UserInfoPayload);
                 // Kiểm tra size an toàn
-                if (data_size <= header->payload_size - bytes_processed) {
-                    UserInfoPayload* friends = (UserInfoPayload*)malloc(data_size);
-                    if (recv_all(g_socket, friends, data_size) > 0) {
+                if (data_size <= header->payload_size - bytes_processed)
+                {
+                    UserInfoPayload *friends = (UserInfoPayload *)malloc(data_size);
+                    if (recv_all(g_socket, friends, data_size) > 0)
+                    {
                         bytes_processed += data_size; // FIX: Cập nhật byte đã đọc
-                        if (g_callbacks.on_friend_list) g_callbacks.on_friend_list(count, friends);
+                        if (g_callbacks.on_friend_list)
+                            g_callbacks.on_friend_list(count, friends);
                     }
                     free(friends);
                 }
-            } else {
-                if (g_callbacks.on_friend_list) g_callbacks.on_friend_list(0, NULL);
+            }
+            else
+            {
+                if (g_callbacks.on_friend_list)
+                    g_callbacks.on_friend_list(0, NULL);
             }
         }
     }
 
-        // 2. RECEIVE MESSAGE
-    else if (header->command_type == CMD_RECEIVE_MESSAGE) {
+    // 2. RECEIVE MESSAGE
+    else if (header->command_type == CMD_RECEIVE_MESSAGE)
+    {
         ChatPayload msg;
-        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
+        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0)
+        {
             bytes_processed += sizeof(ChatPayload); // FIX
-            if (g_callbacks.on_message) g_callbacks.on_message(&msg);
+            if (g_callbacks.on_message)
+                g_callbacks.on_message(&msg);
         }
     }
 
-        // 3. STATUS CHANGE
     // Xử lý STATUS (Online/Offline)
-    else if (header->command_type == CMD_NOTIFY_STATUS) {
+    else if (header->command_type == CMD_NOTIFY_STATUS)
+    {
         StatusNotifyPayload notify;
-        if (recv_all(g_socket, &notify, sizeof(StatusNotifyPayload)) > 0) {
+        if (recv_all(g_socket, &notify, sizeof(StatusNotifyPayload)) > 0)
+        {
             bytes_processed += sizeof(StatusNotifyPayload); // FIX
-            if (g_callbacks.on_status_change) g_callbacks.on_status_change(notify.friend_id, notify.is_online);
+            if (g_callbacks.on_status_change)
+                g_callbacks.on_status_change(notify.friend_id, notify.is_online);
         }
     }
 
-        // 4. FRIEND REQ NOTIFICATION
-    else if (header->command_type == CMD_NOTIFY_FRIEND_REQ) {
+    // 4. FRIEND REQ NOTIFICATION
+    else if (header->command_type == CMD_NOTIFY_FRIEND_REQ)
+    {
         PendingReqInfo info;
-        if (recv_all(g_socket, &info, sizeof(PendingReqInfo)) > 0) {
+        if (recv_all(g_socket, &info, sizeof(PendingReqInfo)) > 0)
+        {
             bytes_processed += sizeof(PendingReqInfo); // FIX
             LOGI("Received Friend Request from: %s (ID: %d)", info.sender_name, info.sender_id);
-            if (g_callbacks.on_friend_req) g_callbacks.on_friend_req(info.request_id, info.sender_id, info.sender_name);
+            if (g_callbacks.on_friend_req)
+                g_callbacks.on_friend_req(info.request_id, info.sender_id, info.sender_name);
         }
     }
 
-        // 5. REQ ACCEPTED NOTIFICATION
-    else if (header->command_type == CMD_NOTIFY_REQ_ACCEPTED) {
+    // 5. REQ ACCEPTED NOTIFICATION
+    else if (header->command_type == CMD_NOTIFY_REQ_ACCEPTED)
+    {
         UserInfoPayload friend_info;
-        if (recv_all(g_socket, &friend_info, sizeof(UserInfoPayload)) > 0) {
+        if (recv_all(g_socket, &friend_info, sizeof(UserInfoPayload)) > 0)
+        {
             bytes_processed += sizeof(UserInfoPayload); // FIX
             LOGI("Notification: User %s (%d) accepted your friend request.", friend_info.name, friend_info.user_id);
-            if (g_callbacks.on_request_accepted) g_callbacks.on_request_accepted(&friend_info);
+            if (g_callbacks.on_request_accepted)
+                g_callbacks.on_request_accepted(&friend_info);
         }
     }
 
-        // 6. UNFRIEND NOTIFICATION (NGUYÊN NHÂN CRASH CŨ)
-    else if (header->command_type == CMD_NOTIFY_UNFRIENDED) {
+    // 6. UNFRIEND NOTIFICATION (NGUYÊN NHÂN CRASH CŨ)
+    else if (header->command_type == CMD_NOTIFY_UNFRIENDED)
+    {
         FriendReqPayload payload;
-        if (recv_all(g_socket, &payload, sizeof(FriendReqPayload)) > 0) {
+        if (recv_all(g_socket, &payload, sizeof(FriendReqPayload)) > 0)
+        {
             bytes_processed += sizeof(FriendReqPayload); // FIX QUAN TRỌNG
             LOGI("Notification: You have been unfriended by User ID %d", payload.target_id);
-            if (g_callbacks.on_unfriended) g_callbacks.on_unfriended(payload.target_id);
+            if (g_callbacks.on_unfriended)
+                g_callbacks.on_unfriended(payload.target_id);
         }
     }
 
-        // 7. SEARCH RESULT
-    else if (header->command_type == CMD_SEARCH_USERS_RESP) {
+    // 7. SEARCH RESULT
+    else if (header->command_type == CMD_SEARCH_USERS_RESP)
+    {
         int32_t count = 0;
-        if (recv_all(g_socket, &count, sizeof(int32_t)) > 0) {
+        if (recv_all(g_socket, &count, sizeof(int32_t)) > 0)
+        {
             bytes_processed += sizeof(int32_t); // FIX
-            if (count > 0) {
+            if (count > 0)
+            {
                 int data_size = count * sizeof(UserSearchInfo);
-                if (data_size <= header->payload_size - bytes_processed) {
+                if (data_size <= header->payload_size - bytes_processed)
+                {
                     UserSearchInfo *results = (UserSearchInfo *)malloc(data_size);
-                    if (results && recv_all(g_socket, results, data_size) > 0) {
+                    if (results && recv_all(g_socket, results, data_size) > 0)
+                    {
                         bytes_processed += data_size; // FIX
-                        for (int i = 0; i < count; i++) {
+                        for (int i = 0; i < count; i++)
+                        {
                             results[i].name[MAX_NAME_LEN - 1] = '\0';
                             results[i].email[MAX_EMAIL_LEN - 1] = '\0';
                         }
-                        if (g_callbacks.on_search_result) g_callbacks.on_search_result(count, results);
+                        if (g_callbacks.on_search_result)
+                            g_callbacks.on_search_result(count, results);
                     }
-                    if (results) free(results);
+                    if (results)
+                        free(results);
                 }
-            } else {
-                if (g_callbacks.on_search_result) g_callbacks.on_search_result(0, NULL);
+            }
+            else
+            {
+                if (g_callbacks.on_search_result)
+                    g_callbacks.on_search_result(0, NULL);
             }
         }
     }
 
-        // 8. MSG SENT ACK
-    else if (header->command_type == CMD_SEND_MESSAGE_RESP) {
+    // 8. MSG SENT ACK
+    else if (header->command_type == CMD_SEND_MESSAGE_RESP)
+    {
         ChatPayload msg;
-        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
+        if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0)
+        {
             bytes_processed += sizeof(ChatPayload); // FIX
-            if (header->status_code == STATUS_SUCCESS) {
-                if (g_callbacks.on_msg_sent) g_callbacks.on_msg_sent(header->request_id, msg.message_id, msg.created_at);
+            if (header->status_code == STATUS_SUCCESS)
+            {
+                if (g_callbacks.on_msg_sent)
+                    g_callbacks.on_msg_sent(header->request_id, msg.message_id, msg.created_at);
             }
         }
     }
 
-        // 9. MSG DELIVERED
-    else if (header->command_type == CMD_NOTIFY_MSG_DELIVERED) {
+    // 9. MSG DELIVERED
+    else if (header->command_type == CMD_NOTIFY_MSG_DELIVERED)
+    {
         MsgDeliveredPayload payload;
-        if (recv_all(g_socket, &payload, sizeof(MsgDeliveredPayload)) > 0) {
+        if (recv_all(g_socket, &payload, sizeof(MsgDeliveredPayload)) > 0)
+        {
             bytes_processed += sizeof(MsgDeliveredPayload); // FIX
-            if (g_callbacks.on_msg_delivered) g_callbacks.on_msg_delivered(payload.message_id);
+            if (g_callbacks.on_msg_delivered)
+                g_callbacks.on_msg_delivered(payload.message_id);
         }
     }
 
-        // 10. PENDING REQUESTS RESP
-    else if (header->command_type == CMD_GET_PENDING_REQS_RESP) {
+    // 10. PENDING REQUESTS RESP
+    else if (header->command_type == CMD_GET_PENDING_REQS_RESP)
+    {
         int32_t count = 0;
-        if (recv_all(g_socket, &count, sizeof(int32_t)) > 0) {
+        if (recv_all(g_socket, &count, sizeof(int32_t)) > 0)
+        {
             bytes_processed += sizeof(int32_t); // FIX
-            if (count > 0) {
+            if (count > 0)
+            {
                 int data_size = count * sizeof(PendingReqInfo);
                 PendingReqInfo *list = (PendingReqInfo *)malloc(data_size);
-                if (list && recv_all(g_socket, list, data_size) > 0) {
+                if (list && recv_all(g_socket, list, data_size) > 0)
+                {
                     bytes_processed += data_size; // FIX
-                    if (g_callbacks.on_pending_list) g_callbacks.on_pending_list(count, list);
+                    if (g_callbacks.on_pending_list)
+                        g_callbacks.on_pending_list(count, list);
                 }
-                if (list) free(list);
-            } else {
-                if (g_callbacks.on_pending_list) g_callbacks.on_pending_list(0, NULL);
+                if (list)
+                    free(list);
+            }
+            else
+            {
+                if (g_callbacks.on_pending_list)
+                    g_callbacks.on_pending_list(0, NULL);
             }
         }
     }
 
-        // 11. Các lệnh chỉ có Header hoặc status (không payload hoặc payload rỗng)
+    // 11. Các lệnh chỉ có Header hoặc status (không payload hoặc payload rỗng)
     else if (header->command_type == CMD_SEND_FRIEND_REQ_RESP ||
              header->command_type == CMD_RESPOND_FRIEND_REQ_RESP ||
-             header->command_type == CMD_UNFRIEND_RESP) {
-        if (g_callbacks.on_req_response) g_callbacks.on_req_response(header->command_type, header->status_code);
-    else if (header->command_type == CMD_FETCH_OFFLINE_MSGS_RESP) {
-        if (header->payload_size > 0) discard_payload(g_socket, header->payload_size);
+             header->command_type == CMD_UNFRIEND_RESP)
+    {
+        if (g_callbacks.on_req_response)
+            g_callbacks.on_req_response(header->command_type, header->status_code);
+    }
+
+    else if (header->command_type == CMD_FETCH_OFFLINE_MSGS_RESP)
+    {
+        if (header->payload_size > 0)
+            discard_payload(g_socket, header->payload_size);
         LOGI("Offline messages fetch started.");
     }
 
-    else if (header->command_type == CMD_GET_HISTORY_RESP) {
+    else if (header->command_type == CMD_GET_HISTORY_RESP)
+    {
         int32_t count = 0;
-        if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
+        if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0)
+            return;
 
         ChatPayload *msgs = NULL;
-        if (count > 0) {
+        if (count > 0)
+        {
             int data_size = count * sizeof(ChatPayload);
             msgs = (ChatPayload *)malloc(data_size);
 
-            if (msgs) {
+            if (msgs)
+            {
                 memset(msgs, 0, data_size);
 
-                if (recv_all(g_socket, msgs, data_size) > 0) {
-                    if (g_callbacks.on_history_received) {
+                if (recv_all(g_socket, msgs, data_size) > 0)
+                {
+                    if (g_callbacks.on_history_received)
+                    {
                         g_callbacks.on_history_received(count, msgs);
                     }
                 }
             }
-        } else {
-            if (g_callbacks.on_history_received) {
+        }
+        else
+        {
+            if (g_callbacks.on_history_received)
+            {
                 g_callbacks.on_history_received(0, NULL);
             }
         }
-        if (msgs) free(msgs);
+        if (msgs)
+            free(msgs);
     }
 
-    else {
+    else if (header->command_type == CMD_CREATE_GROUP_RESP || header->command_type == CMD_NOTIFY_GROUP_CREATED)
+    {
+        if (header->status_code == STATUS_SUCCESS)
+        {
+            CreateGroupRespPayload resp;
+            if (recv_all(g_socket, &resp, sizeof(resp)) > 0)
+            {
+                LOGI("Group Event: %s (ID: %d)", resp.group_name, resp.group_id);
+                if (g_callbacks.on_group_created)
+                {
+                    g_callbacks.on_group_created(resp.group_id, resp.group_name);
+                }
+            }
+        }
+        else
+        {
+            LOGE("Group Action Failed with status: %d", header->status_code);
+
+            // 1. Dọn dẹp payload nếu có
+            if (header->payload_size > 0)
+                discard_payload(g_socket, header->payload_size);
+
+            // 2. GỌI CALLBACK báo lỗi về cho Kotlin
+            if (g_callbacks.on_req_response)
+            {
+                g_callbacks.on_req_response(header->command_type, header->status_code);
+            }
+        }
+    }
+
+    else
+    {
         LOGW("Unhandled Packet Type: %d", header->command_type);
     }
 
-    // DỌN DẸP PAYLOAD THỪA (QUAN TRỌNG)
+    // DỌN DẸP PAYLOAD THỪA 
     int remaining = header->payload_size - bytes_processed;
-    if (remaining > 0) {
+    if (remaining > 0)
+    {
         // Chỉ khi bytes_processed đã được cập nhật đúng thì remaining mới đúng
         // Nếu không cập nhật bytes_processed, remaining = full size -> đọc lẹm vào gói sau -> DESYNC
         LOGW("Packet %d: Discarding %d bytes (Size: %d, Processed: %d)",
@@ -533,20 +728,25 @@ static void handle_incoming_packet(PacketHeader *header) {
 }
 
 // --- THREAD LOOP ---
-static void* read_thread_func(void* arg) {
+static void *read_thread_func(void *arg)
+{
     PacketHeader header;
     LOGI("=== READ THREAD STARTED ===");
 
-    while (g_is_running) {
-        if (g_socket == -1) {
+    while (g_is_running)
+    {
+        if (g_socket == -1)
+        {
             g_is_running = 0;
             break;
         }
         int n = recv_all(g_socket, &header, sizeof(PacketHeader));
-        if (n <= 0) {
+        if (n <= 0)
+        {
             LOGE("Server disconnected (recv=%d)", n);
             g_is_running = 0;
-            if (g_callbacks.on_disconnect) g_callbacks.on_disconnect("Connection Lost");
+            if (g_callbacks.on_disconnect)
+                g_callbacks.on_disconnect("Connection Lost");
             break;
         }
         handle_incoming_packet(&header);
@@ -556,11 +756,14 @@ static void* read_thread_func(void* arg) {
     return NULL;
 }
 
-void start_reader_thread(NativeCallbacks callbacks) {
-    if (g_read_thread != 0) return;
+void start_reader_thread(NativeCallbacks callbacks)
+{
+    if (g_read_thread != 0)
+        return;
     g_callbacks = callbacks;
     g_is_running = 1;
-    if (pthread_create(&g_read_thread, NULL, read_thread_func, NULL) != 0) {
+    if (pthread_create(&g_read_thread, NULL, read_thread_func, NULL) != 0)
+    {
         g_read_thread = 0;
     }
 }
