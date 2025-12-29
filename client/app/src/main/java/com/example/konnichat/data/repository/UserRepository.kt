@@ -97,4 +97,76 @@ class UserRepository(
     suspend fun processPendingRequests(requests: Array<PendingRequestDto>) {
         _pendingRequests.emit(requests.toList())
     }
+
+    suspend fun addSingleRequest(request: PendingRequestDto) {
+        // Lấy danh sách hiện tại (nếu null thì tạo list rỗng)
+        val currentList = _pendingRequests.replayCache.firstOrNull() ?: emptyList()
+
+        // Kiểm tra trùng lặp (nếu đã có reqId này rồi thì thôi)
+        if (currentList.none { it.requestId == request.requestId }) {
+            val newList = currentList + request
+            _pendingRequests.emit(newList)
+        }
+    }
+
+    suspend fun removePendingRequest(requestId: Int) {
+        val currentList = _pendingRequests.replayCache.firstOrNull() ?: emptyList()
+        // Tạo list mới loại bỏ item có requestId tương ứng
+        val newList = currentList.filter { it.requestId != requestId }
+        // Emit list mới để UI cập nhật ngay
+        _pendingRequests.emit(newList)
+    }
+
+    suspend fun saveSingleFriend(userDto: UserDto) {
+        val userEntity = UserEntity(
+            serverId = userDto.id,
+            email = userDto.email,
+            name = userDto.name,
+            isOnline = userDto.isOnline,
+            age = null,
+            status = "active",
+            avatarUrl = null,
+            createdAt = Date(),
+            updatedAt = Date()
+        )
+        // Insert vào Room -> Flow sẽ tự báo cho UI vẽ lại
+        userDao.insertUsers(listOf(userEntity))
+    }
+
+    fun updateSearchStatusToFriend(userId: Int) {
+        // Lấy list hiện tại đang hiển thị trên màn hình Search
+        val currentList = _searchResults.value.toMutableList()
+
+        // Tìm xem user vừa đồng ý có nằm trong danh sách tìm kiếm không
+        val index = currentList.indexOfFirst { it.id == userId }
+
+        if (index != -1) {
+            // Nếu tìm thấy, copy object cũ và đổi status thành STATUS_FRIEND
+            val updatedItem = currentList[index].copy(status = UserSearchUiModel.STATUS_FRIEND)
+            currentList[index] = updatedItem
+
+            // Emit list mới -> SearchFragment sẽ tự vẽ lại nút thành "Bạn bè"
+            _searchResults.value = currentList
+        }
+    }
+
+    // 1. Xóa bạn khỏi Database (khi bị Unfriend)
+    suspend fun deleteFriend(friendId: Int) {
+        // Giả sử UserDao có hàm deleteFriendById, nếu chưa có bạn cần thêm vào UserDao
+        // Hoặc dùng query: @Query("DELETE FROM users WHERE server_id = :id")
+        userDao.deleteUserByServerId(friendId)
+    }
+
+    // 2. Reset trạng thái tìm kiếm về STATUS_NONE (khi bị Từ chối hoặc Unfriend)
+    fun updateSearchStatusToNone(userId: Int) {
+        val currentList = _searchResults.value.toMutableList()
+        val index = currentList.indexOfFirst { it.id == userId }
+
+        if (index != -1) {
+            // Đổi status về 0 (None) -> Hiện nút "Kết bạn"
+            val updatedItem = currentList[index].copy(status = UserSearchUiModel.STATUS_NONE)
+            currentList[index] = updatedItem
+            _searchResults.value = currentList
+        }
+    }
 }

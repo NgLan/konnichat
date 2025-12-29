@@ -1,9 +1,9 @@
 // File: client/app/src/main/java/com/example/konnichat/ui/home/HomeActivity.kt
 package com.example.konnichat.ui.home
 
+import android.content.Intent
 import android.os.Bundle
-import android.widget.TextView
-import android.widget.Toast
+// Đã xóa import TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
@@ -13,57 +13,75 @@ import com.example.konnichat.App
 import com.example.konnichat.R
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListenerImpl
-import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
 import com.google.android.material.bottomnavigation.BottomNavigationView
 
 class HomeActivity : AppCompatActivity() {
 
-    // Sử dụng Factory để lấy ViewModel (Lấy ChatRepository từ App)
     private val viewModel: HomeViewModel by viewModels {
         HomeViewModelFactory((application as App).userRepository)
     }
+
+    private lateinit var bottomNav: BottomNavigationView
+    // Đã xóa biến tvTitle
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_home)
 
-        // 1. Lấy instance Application
+        // 1. Setup Native Listener
         val app = application as App
-
-        // 2. Cấu hình Listener (Để Native C biết đường lưu dữ liệu vào đâu)
         NativeEventListenerImpl.userRepository = app.userRepository
         NativeEventListenerImpl.context = applicationContext
 
-        // 3. Bắt đầu lắng nghe Socket
+        // Uncomment dòng này để bắt đầu nhận sự kiện
         NativeClient.startListening(NativeEventListenerImpl)
 
-        // 4. Setup UI
-        val bottomNav = findViewById<BottomNavigationView>(R.id.bottom_navigation)
-        val tvTitle = findViewById<TextView>(R.id.tvTitle)
+        // 2. Ánh xạ View
+        bottomNav = findViewById(R.id.bottom_navigation)
+        // Đã xóa dòng findViewById(tvTitle)
 
-        // Mặc định load Tab Message
-        loadFragment(MessageListFragment())
-
+        // 3. Setup Bottom Navigation
         bottomNav.setOnItemSelectedListener { item ->
             when (item.itemId) {
                 R.id.nav_message -> {
-                    tvTitle.text = "Đoạn chat"
+                    // Đã xóa dòng tvTitle.text = ...
                     loadFragment(MessageListFragment())
                     true
                 }
                 R.id.nav_search -> {
-                    tvTitle.text = "Tìm bạn bè"
-                    loadFragment(com.example.konnichat.ui.search.SearchFragment()) // <-- SỬA DÒNG NÀY
+                    // Đã xóa dòng tvTitle.text = ...
+                    loadFragment(com.example.konnichat.ui.search.SearchFragment())
                     true
                 }
                 R.id.nav_notification -> {
-                    tvTitle.text = "Lời mời kết bạn"
+                    // Đã xóa dòng tvTitle.text = ...
                     loadFragment(com.example.konnichat.ui.notification.FriendRequestFragment())
                     true
                 }
                 else -> false
             }
+        }
+
+        // 4. Mặc định load tab Message
+        if (savedInstanceState == null) {
+            loadFragment(MessageListFragment())
+            handleNavigationIntent(intent)
+        }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleNavigationIntent(intent)
+    }
+
+    private fun handleNavigationIntent(intent: Intent) {
+        val type = intent.getStringExtra("NAVIGATE_TO")
+        if (type == "FRIEND_REQ") {
+            bottomNav.selectedItemId = R.id.nav_notification
+        } else if (type == "MESSAGE") {
+            bottomNav.selectedItemId = R.id.nav_message
         }
     }
 
@@ -74,7 +92,6 @@ class HomeActivity : AppCompatActivity() {
     }
 }
 
-// Factory để tạo HomeViewModel
 class HomeViewModelFactory(private val userRepository: UserRepository) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {

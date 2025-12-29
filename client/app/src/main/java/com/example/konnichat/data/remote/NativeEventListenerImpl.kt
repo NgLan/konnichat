@@ -3,7 +3,6 @@ package com.example.konnichat.data.remote
 
 import android.content.Context
 import android.util.Log
-import com.example.konnichat.data.remote.NativeEventListenerImpl.userRepository
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
@@ -16,102 +15,141 @@ import kotlinx.coroutines.launch
 
 object NativeEventListenerImpl : NativeEventListener {
 
-    // Biến này được gán từ App.kt (thông qua HomeActivity hoặc khởi tạo ban đầu)
     var userRepository: UserRepository? = null
     var context: Context? = null
+    private const val TAG = "KONNI_EVENT"
 
-    override fun onFriendListReceived(friends: Array<UserDto>) {
-        Log.d("KONNI_CLIENT", "Listener: Nhận ${friends.size} bạn.")
-        userRepository?.let { repo ->
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    repo.saveFriendsFromNetwork(friends)
-                    Log.d("KONNI_CLIENT", "Đã lưu danh sách bạn bè.")
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-    }
+    // --- 1. XỬ LÝ KẾT BẠN (TRỌNG TÂM) ---
 
-    // --- ĐÃ SỬA: Xử lý sự kiện Online/Offline ---
-    override fun onFriendStatusChanged(friendId: Int, isOnline: Boolean) {
-        Log.d("KONNI_CLIENT", "Status Update: User $friendId is now ${if (isOnline) "Online" else "Offline"}")
-
-        userRepository?.let { repo ->
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    // Cập nhật Database -> UI sẽ tự nhảy nhờ Flow/LiveData
-                    repo.updateFriendStatus(friendId, isOnline)
-                } catch (e: Exception) {
-                    Log.e("KONNI_ERROR", "Lỗi cập nhật status: ${e.message}")
-                }
-            }
-        }
-    }
-
-    // Các hàm khác giữ nguyên TODO hoặc implement sau
+    // A. Khi có người gửi lời mời kết bạn (Real-time)
     override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {
-        Log.d("KONNI_CLIENT", "Nhận lời mời từ: $senderName (ID: $senderId)")
+        Log.d(TAG, "🔔 Nhận lời mời từ: $senderName (ID: $senderId) - ReqID: $requestId")
 
-        // 1. Hiển thị thông báo trên thanh trạng thái
+        // 1. Hiện thông báo
         context?.let { ctx ->
             NotificationHelper.showNotification(
                 ctx,
-                "Lời mời kết bạn mới",
-                "$senderName muốn kết bạn với bạn",
-                "FRIEND_REQ" // Type để mở đúng Tab
+                title = "Lời mời kết bạn mới",
+                content = "$senderName muốn kết bạn với bạn",
+                type = "FRIEND_REQ"
             )
         }
 
-        // 2. (Optional) Nếu đang mở màn hình Lời mời, có thể reload lại list tại đây
-    }
-
-    override fun onRequestResponse(cmd: Int, status: Int) {
-        // TODO implementation
-    }
-
-    override fun onFriendRequestAccepted(user: UserDto) {
-        // TODO implementation
-    }
-
-    override fun onFriendRemoved(exFriendId: Int) {
-        // TODO implementation
-    }
-
-    override fun onSearchResult(results: Array<UserSearchDto>) {
-        Log.d("KONNI_CLIENT", "Listener: Nhận ${results.size} kết quả tìm kiếm.")
+        // 2. [QUAN TRỌNG] Tự động thêm trực tiếp vào danh sách chờ của Repo (Optimistic Update)
+        // Thay vì chờ Server phản hồi (có thể bị lỗi mạng/socket như trong log),
+        // ta tự tạo một DTO giả lập và đẩy vào Repo luôn để UI hiện ngay.
+        val fakeRequest = PendingRequestDto(requestId, senderId, senderName)
         userRepository?.let { repo ->
             CoroutineScope(Dispatchers.IO).launch {
-                // Gọi hàm xử lý logic bên Repo
-                repo.processSearchResults(results)
+                Log.d(TAG, "⚡ Tự động thêm lời mời vào danh sách (Optimistic)")
+                repo.addSingleRequest(fakeRequest)
+            }
+        }
+
+        // 3. Vẫn gửi lệnh lấy mới nhất từ Server để đồng bộ sau (nếu socket còn sống)
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                NativeClient.getPendingRequests()
+            } catch (e: Exception) {
+                Log.e(TAG, "Lỗi khi gọi getPendingRequests: ${e.message}")
             }
         }
     }
-    override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
-        TODO("Not yet implemented")
-    }
 
-    override fun onMessageReceived(msg: MessageDto) {
-        TODO("Not yet implemented")
-    }
+    // B. Khi người khác chấp nhận lời mời của mình
+    override fun onFriendRequestAccepted(user: UserDto) {
+        Log.d(TAG, "✅ ${user.name} đã chấp nhận lời mời.")
 
-    override fun onMessageDelivered(serverId: Int) {
-        TODO("Not yet implemented")
-    }
-
-    override fun onConnectionClosed(reason: String) {
-        Log.e("KONNI_CLIENT", "Socket đóng: $reason")
-    }
-
-    override fun onPendingRequestsReceived(requests: Array<PendingRequestDto>) {
-        Log.d("KONNI_CLIENT", "Nhận ${requests.size} lời mời kết bạn.")
+        context?.let { ctx ->
+            NotificationHelper.showNotification(
+                ctx,
+                title = "Đã kết bạn!",
+                content = "${user.name} đã chấp nhận lời mời kết bạn.",
+                type = "FRIEND_LIST"
+            )
+        }
 
         userRepository?.let { repo ->
-            // Bọc trong CoroutineScope để chạy hàm suspend
+            CoroutineScope(Dispatchers.IO).launch {
+                // 2. QUAN TRỌNG: Lưu ngay user này vào Database
+                // Việc này sẽ kích hoạt Flow ở MessageListFragment -> List tự reload
+                repo.saveSingleFriend(user)
+
+                repo.updateSearchStatusToFriend(user.id)
+
+                // 3. (Optional) Gọi thêm API lấy full list để backup
+                NativeClient.getFriends(0, 100)
+            }
+        }
+    }
+
+    // C. Nhận danh sách lời mời (Phản hồi từ Server)
+    override fun onPendingRequestsReceived(requests: Array<PendingRequestDto>) {
+        Log.d(TAG, "📥 Server trả về ${requests.size} lời mời chờ duyệt.")
+        userRepository?.let { repo ->
             CoroutineScope(Dispatchers.IO).launch {
                 repo.processPendingRequests(requests)
             }
         }
     }
+
+    // --- 2. CÁC HÀM KHÁC ---
+
+    override fun onMessageReceived(msg: MessageDto) {
+        Log.d(TAG, "📩 Có tin nhắn mới từ ${msg.senderId}: ${msg.content}")
+    }
+
+    override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+        Log.d(TAG, "ack: Tin nhắn đã gửi thành công (ServerID: $serverId)")
+    }
+
+    override fun onMessageDelivered(serverId: Int) {
+        Log.d(TAG, "seen: Tin nhắn $serverId đã được chuyển tới người nhận")
+    }
+
+    override fun onFriendListReceived(friends: Array<UserDto>) {
+        Log.d(TAG, "Nhận danh sách bạn bè: ${friends.size} người")
+        userRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.saveFriendsFromNetwork(friends)
+            }
+        }
+    }
+
+    override fun onFriendStatusChanged(friendId: Int, isOnline: Boolean) {
+        userRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.updateFriendStatus(friendId, isOnline)
+            }
+        }
+    }
+
+    override fun onSearchResult(results: Array<UserSearchDto>) {
+        userRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.processSearchResults(results)
+            }
+        }
+    }
+
+    override fun onRequestResponse(cmd: Int, status: Int) { Log.d(TAG, "Response CMD: $cmd, Status: $status") }
+    // C. Khi bị hủy kết bạn HOẶC Bị từ chối lời mời (Server cần gửi CMD_NOTIFY_UNFRIENDED)
+    override fun onFriendRemoved(exFriendId: Int) {
+        Log.d(TAG, "💔 Quan hệ với User $exFriendId đã bị xóa (Unfriend/Reject).")
+
+        userRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                // 1. Xóa khỏi DB (Nếu đang là bạn bè thì sẽ mất khỏi danh sách chat)
+                repo.deleteFriend(exFriendId)
+
+                // 2. Cập nhật màn hình Search (Nếu đang tìm kiếm người này)
+                // Nút sẽ đổi từ "Bạn bè" hoặc "Đã gửi" -> "Kết bạn"
+                repo.updateSearchStatusToNone(exFriendId)
+            }
+        }
+
+        // (Tùy chọn) Hiện thông báo nếu cần, nhưng thường từ chối thì không cần báo ầm ĩ.
+    }
+
+    override fun onConnectionClosed(reason: String) { Log.e(TAG, "Mất kết nối: $reason") }
 }
