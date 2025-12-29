@@ -33,6 +33,7 @@ class HomeActivity : AppCompatActivity() {
 
         // 2. Cấu hình Listener (Để Native C biết đường lưu dữ liệu vào đâu)
         NativeEventListenerImpl.userRepository = app.userRepository
+        NativeEventListenerImpl.context = applicationContext
 
         // 3. Bắt đầu lắng nghe Socket
         NativeClient.startListening(NativeEventListenerImpl)
@@ -57,8 +58,8 @@ class HomeActivity : AppCompatActivity() {
                     true
                 }
                 R.id.nav_notification -> {
-                    tvTitle.text = "Thông báo"
-                    Toast.makeText(this, "Chức năng Thông báo đang phát triển", Toast.LENGTH_SHORT).show()
+                    tvTitle.text = "Lời mời kết bạn"
+                    loadFragment(com.example.konnichat.ui.notification.FriendRequestFragment())
                     true
                 }
                 else -> false

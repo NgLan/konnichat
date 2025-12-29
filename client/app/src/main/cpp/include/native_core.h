@@ -38,6 +38,8 @@ typedef struct {
     void (*on_request_accepted)(UserInfoPayload* user);
     void (*on_unfriended)(int ex_friend_id);
     void (*on_search_result)(int count, UserSearchInfo *results);
+
+    void (*on_pending_list)(int count, PendingReqInfo* list);
 } NativeCallbacks;
 
 // --- 2. CÁC HÀM QUẢN LÝ ---
@@ -71,5 +73,7 @@ int client_unfriend(int target_id);
 int client_search_users(const char *keyword, int offset, int limit);
 
 int client_send_message(int receiver_id, const char *content, int temp_req_id);
+
+int client_get_pending_requests();
 
 #endif // NATIVE_CORE_H

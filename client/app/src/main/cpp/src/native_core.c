@@ -412,20 +412,43 @@ int client_send_message(int receiver_id, const char *content, int request_id) {
     return CLIENT_OK;
 }
 
+int client_get_pending_requests() {
+    // Gửi lệnh lấy danh sách, không cần payload
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_GET_PENDING_REQS, NULL, 0);
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
+static void discard_data(int sock, int size) {
+    char buffer[1024];
+    int remaining = size;
+    while (remaining > 0) {
+        int to_read = (remaining > sizeof(buffer)) ? sizeof(buffer) : remaining;
+        int n = recv(sock, buffer, to_read, 0);
+        if (n <= 0) break;
+        remaining -= n;
+    }
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header) {
     LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
+
+    int bytes_processed = 0;
 
     // Xử lý FRIEND LIST
     if (header->command_type == CMD_GET_FRIEND_LIST_RESP) {
         int32_t count = 0;
         if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
-
+            bytes_processed += sizeof(int32_t);
         if (count > 0) {
             int data_size = count * sizeof(UserInfoPayload);
             UserInfoPayload* friends = (UserInfoPayload*)malloc(data_size);
             if (recv_all(g_socket, friends, data_size) > 0) {
                 // GỌI CALLBACK
+                bytes_processed += data_size;
                 if (g_callbacks.on_friend_list) {
                     g_callbacks.on_friend_list(count, friends);
                 }
@@ -441,6 +464,7 @@ static void handle_incoming_packet(PacketHeader *header) {
         ChatPayload msg;
         // Đọc payload tin nhắn
         if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
+            bytes_processed += sizeof(ChatPayload);
             if (g_callbacks.on_message) {
                 g_callbacks.on_message(&msg);
             }
@@ -531,32 +555,45 @@ static void handle_incoming_packet(PacketHeader *header) {
 
     else if (header->command_type == CMD_SEARCH_USERS_RESP) {
         int32_t count = 0;
+        if (recv_all(g_socket, &count, sizeof(int32_t)) > 0) {
+            bytes_processed += sizeof(int32_t);
 
-        // 1. Đọc số lượng kết quả
-        if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
+            if (count > 0) {
+                int data_size = count * sizeof(UserSearchInfo);
 
-        UserSearchInfo *results = NULL;
-        if (count > 0) {
-            int data_size = count * sizeof(UserSearchInfo);
-            results = (UserSearchInfo *)malloc(data_size);
+                // Kiểm tra size an toàn
+                if (data_size <= header->payload_size - bytes_processed) {
+                    UserSearchInfo *results = (UserSearchInfo *)malloc(data_size);
+                    if (results && recv_all(g_socket, results, data_size) > 0) {
+                        bytes_processed += data_size;
 
-            // 2. Đọc mảng dữ liệu
-            if (results && recv_all(g_socket, results, data_size) > 0) {
-                // Thành công -> Gọi callback
-                if (g_callbacks.on_search_result) {
-                    g_callbacks.on_search_result(count, results);
+                        // --- [FIX CRASH] VỆ SINH DỮ LIỆU ---
+                        // Duyệt qua từng kết quả và ép ký tự kết thúc chuỗi (\0)
+                        // để cắt bỏ phần dữ liệu rác phía sau tên.
+                        for (int i = 0; i < count; i++) {
+                            // Đảm bảo không đọc quá giới hạn mảng
+                            results[i].name[MAX_NAME_LEN - 1] = '\0';
+                            results[i].email[MAX_EMAIL_LEN - 1] = '\0';
+
+                            // (Optional) Quét thêm một lần nữa để đảm bảo không có rác ở giữa
+                            // Nhưng thường chỉ cần dòng trên là đủ.
+                        }
+                        // ------------------------------------
+
+                        if (g_callbacks.on_search_result) {
+                            g_callbacks.on_search_result(count, results);
+                        }
+                    } else {
+                        LOGE("Search: Read body failed");
+                    }
+                    if (results) free(results);
+                } else {
+                    LOGE("Search: Data size mismatch");
                 }
             } else {
-                LOGE("Failed to read search results body");
-            }
-        } else {
-            // Không có kết quả
-            if (g_callbacks.on_search_result) {
-                g_callbacks.on_search_result(0, NULL);
+                if (g_callbacks.on_search_result) g_callbacks.on_search_result(0, NULL);
             }
         }
-
-        if (results) free(results);
     }
 
     // Case 1: Server phản hồi gửi tin thành công (Server đã nhận tin từ người gửi và lưu vào db) -> Update Room "Sent"
@@ -602,9 +639,43 @@ static void handle_incoming_packet(PacketHeader *header) {
         }
     }
 
+    else if (header->command_type == CMD_GET_PENDING_REQS_RESP) {
+        int32_t count = 0;
+        // 1. Đọc số lượng
+        if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
+
+        PendingReqInfo *list = NULL;
+        if (count > 0) {
+            int data_size = count * sizeof(PendingReqInfo);
+            list = (PendingReqInfo *)malloc(data_size);
+
+            // 2. Đọc mảng dữ liệu
+            if (list && recv_all(g_socket, list, data_size) > 0) {
+                // Thành công -> Gọi callback
+                if (g_callbacks.on_pending_list) {
+                    g_callbacks.on_pending_list(count, list);
+                }
+            } else {
+                LOGE("Failed to read pending reqs body");
+            }
+        } else {
+            // Danh sách rỗng
+            if (g_callbacks.on_pending_list) {
+                g_callbacks.on_pending_list(0, NULL);
+            }
+        }
+        if (list) free(list);
+    }
+
     else {
         LOGW("Unhandled Packet Type: %d. Size: %d", header->command_type, header->payload_size);
         discard_payload(g_socket, header->payload_size);
+    }
+
+    int remaining = header->payload_size - bytes_processed;
+    if (remaining > 0) {
+        LOGW("Discarding %d bytes of remaining payload", remaining);
+        discard_data(g_socket, remaining);
     }
 }
 

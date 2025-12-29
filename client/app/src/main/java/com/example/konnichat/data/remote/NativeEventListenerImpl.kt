@@ -1,12 +1,15 @@
 // File: client/app/src/main/java/com/example/konnichat/data/remote/NativeEventListenerImpl.kt
 package com.example.konnichat.data.remote
 
+import android.content.Context
 import android.util.Log
 import com.example.konnichat.data.remote.NativeEventListenerImpl.userRepository
 import com.example.konnichat.data.remote.dto.MessageDto
+import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.utils.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -15,6 +18,7 @@ object NativeEventListenerImpl : NativeEventListener {
 
     // Biến này được gán từ App.kt (thông qua HomeActivity hoặc khởi tạo ban đầu)
     var userRepository: UserRepository? = null
+    var context: Context? = null
 
     override fun onFriendListReceived(friends: Array<UserDto>) {
         Log.d("KONNI_CLIENT", "Listener: Nhận ${friends.size} bạn.")
@@ -48,7 +52,19 @@ object NativeEventListenerImpl : NativeEventListener {
 
     // Các hàm khác giữ nguyên TODO hoặc implement sau
     override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {
-        // TODO implementation
+        Log.d("KONNI_CLIENT", "Nhận lời mời từ: $senderName (ID: $senderId)")
+
+        // 1. Hiển thị thông báo trên thanh trạng thái
+        context?.let { ctx ->
+            NotificationHelper.showNotification(
+                ctx,
+                "Lời mời kết bạn mới",
+                "$senderName muốn kết bạn với bạn",
+                "FRIEND_REQ" // Type để mở đúng Tab
+            )
+        }
+
+        // 2. (Optional) Nếu đang mở màn hình Lời mời, có thể reload lại list tại đây
     }
 
     override fun onRequestResponse(cmd: Int, status: Int) {
@@ -86,5 +102,16 @@ object NativeEventListenerImpl : NativeEventListener {
 
     override fun onConnectionClosed(reason: String) {
         Log.e("KONNI_CLIENT", "Socket đóng: $reason")
+    }
+
+    override fun onPendingRequestsReceived(requests: Array<PendingRequestDto>) {
+        Log.d("KONNI_CLIENT", "Nhận ${requests.size} lời mời kết bạn.")
+
+        userRepository?.let { repo ->
+            // Bọc trong CoroutineScope để chạy hàm suspend
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.processPendingRequests(requests)
+            }
+        }
     }
 }

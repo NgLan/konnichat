@@ -21,6 +21,10 @@ static jmethodID m_onSearchResult;
 static jmethodID m_onMsgSent;
 static jmethodID m_onMsgReceived;
 static jmethodID m_onMsgDelivered;
+static jmethodID m_onPendingList;
+static jclass c_PendingRequestDto;
+static jmethodID m_PendingRequestDtoInit;
+
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -151,16 +155,18 @@ void jni_on_search_result(int count, UserSearchInfo *results) {
     JNIEnv *env = get_jni_env();
     if (!env || !g_listener) return;
 
-    // 1. Tạo mảng Java UserDto[]
     jobjectArray jArray = (*env)->NewObjectArray(env, count, c_UserSearchDto, NULL);
 
-    // 2. Convert từng phần tử
     for (int i = 0; i < count; i++) {
         jstring jName = (*env)->NewStringUTF(env, results[i].name);
         jstring jEmail = (*env)->NewStringUTF(env, results[i].email);
 
+        // Lấy status từ struct C
+        jint jStatus = (jint)results[i].status;
+
+        // Gọi Constructor mới có thêm tham số status
         jobject jObj = (*env)->NewObject(env, c_UserSearchDto, m_UserSearchDtoInit,
-                                         results[i].user_id, jName, jEmail);
+                                         results[i].user_id, jName, jEmail, jStatus);
 
         (*env)->SetObjectArrayElement(env, jArray, i, jObj);
 
@@ -169,9 +175,7 @@ void jni_on_search_result(int count, UserSearchInfo *results) {
         (*env)->DeleteLocalRef(env, jObj);
     }
 
-    // 3. Gọi callback Kotlin
     (*env)->CallVoidMethod(env, g_listener, m_onSearchResult, jArray);
-
     (*env)->DeleteLocalRef(env, jArray);
 }
 
@@ -219,6 +223,31 @@ void jni_on_disconnect(const char *reason) {
     jstring jReason = (*env)->NewStringUTF(env, reason);
     (*env)->CallVoidMethod(env, g_listener, m_onDisconnect, jReason);
     (*env)->DeleteLocalRef(env, jReason);
+}
+
+void jni_on_pending_list(int count, PendingReqInfo *list) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    jobjectArray jArray = (*env)->NewObjectArray(env, count, c_PendingRequestDto, NULL);
+
+    for (int i = 0; i < count; i++) {
+        jstring jName = (*env)->NewStringUTF(env, list[i].sender_name);
+
+        // Tạo object PendingRequestDto(requestId, senderId, senderName)
+        jobject jObj = (*env)->NewObject(env, c_PendingRequestDto, m_PendingRequestDtoInit,
+                                         list[i].request_id, list[i].sender_id, jName);
+
+        (*env)->SetObjectArrayElement(env, jArray, i, jObj);
+
+        (*env)->DeleteLocalRef(env, jName);
+        (*env)->DeleteLocalRef(env, jObj);
+    }
+
+    // Gọi hàm Kotlin: onPendingRequestsReceived(array)
+    (*env)->CallVoidMethod(env, g_listener, m_onPendingList, jArray);
+
+    (*env)->DeleteLocalRef(env, jArray);
 }
 
 // --- Helper ném lỗi ---
@@ -318,11 +347,18 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 
     jclass sClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/UserSearchDto");
     c_UserSearchDto = (jclass) (*env)->NewGlobalRef(env, sClass);
-    m_UserSearchDtoInit = (*env)->GetMethodID(env, c_UserSearchDto, "<init>", "(ILjava/lang/String;Ljava/lang/String;)V");
+    m_UserSearchDtoInit = (*env)->GetMethodID(env, c_UserSearchDto, "<init>", "(ILjava/lang/String;Ljava/lang/String;I)V");
 
     jclass mClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/MessageDto");
     c_MessageDto = (jclass) (*env)->NewGlobalRef(env, mClass);
     m_MessageDtoInit = (*env)->GetMethodID(env, c_MessageDto, "<init>", "(IIILjava/lang/String;JI)V");
+
+    jclass pClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/PendingRequestDto");
+    c_PendingRequestDto = (jclass) (*env)->NewGlobalRef(env, pClass);
+    m_PendingRequestDtoInit = (*env)->GetMethodID(env, c_PendingRequestDto, "<init>", "(IILjava/lang/String;)V");
+
+    // Cache Callback
+    m_onPendingList = (*env)->GetMethodID(env, lClass, "onPendingRequestsReceived", "([Lcom/example/konnichat/data/remote/dto/PendingRequestDto;)V");
 
     // Cache Exceptions
     jclass c1 = (*env)->FindClass(env,
@@ -353,6 +389,9 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     return JNI_VERSION_1_6;
 }
 
+
+
+
 void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *env, jobject thiz,
                                                                         jobject listener) {
     // 1. Giữ Global Ref cho listener để không bị GC thu hồi
@@ -373,7 +412,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_message = jni_on_message;
     cbs.on_msg_delivered = jni_on_msg_delivered;
     cbs.on_disconnect = jni_on_disconnect;
-
+    cbs.on_pending_list = jni_on_pending_list;
     // 3. Start C Thread
     start_reader_thread(cbs);
 }
@@ -511,4 +550,10 @@ Java_com_example_konnichat_data_remote_NativeClient_sendMessage(JNIEnv *env, job
     client_send_message(receiverId, n_content, tempId);
 
     (*env)->ReleaseStringUTFChars(env, content, n_content);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_getPendingRequests(JNIEnv *env, jobject thiz) {
+    // Gọi hàm Core C
+    client_get_pending_requests();
 }

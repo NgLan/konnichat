@@ -9,6 +9,7 @@ import com.example.konnichat.data.remote.DataSyncManager
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.utils.NotificationHelper
 
 class App : Application() {
 
@@ -38,6 +39,8 @@ class App : Application() {
         // 2. Tạo bộ quản lý đồng bộ
         syncManager = DataSyncManager(db)
 
+
+        NotificationHelper.createNotificationChannel(this)
         // 3. Bắt đầu lắng nghe sự kiện từ Native (C)
 //        NativeClient.startListening(syncManager)
     }

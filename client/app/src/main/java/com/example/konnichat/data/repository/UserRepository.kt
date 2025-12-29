@@ -6,9 +6,13 @@ import com.example.konnichat.data.local.dao.UserDao
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
+import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.ui.search.UserSearchUiModel
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow // Import StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import java.util.Date
 
@@ -56,22 +60,41 @@ class UserRepository(
         userDao.resetAllStatusOffline()
     }
 
-    private val _searchResults = MutableSharedFlow<List<UserSearchUiModel>>(replay = 1)
-    val searchResults = _searchResults.asSharedFlow()
+    private val _searchResults = MutableStateFlow<List<UserSearchUiModel>>(emptyList())
+    val searchResults: StateFlow<List<UserSearchUiModel>> = _searchResults.asStateFlow()
 
-    // Hàm này được gọi từ NativeEventListenerImpl khi có kết quả từ Server
+    // Hàm nhận dữ liệu từ Server (Native)
     suspend fun processSearchResults(dtos: Array<UserSearchDto>) {
         val uiModels = dtos.map { dto ->
-            // Logic Clean Code: Đối chiếu với Database Local
-            val isFriend = userDao.isFriend(dto.userId)
             UserSearchUiModel(
                 id = dto.userId,
                 name = dto.name,
                 email = dto.email,
-                isFriend = isFriend
+                status = dto.status
             )
         }
-        // Phát tín hiệu cho ViewModel
-        _searchResults.emit(uiModels)
+        _searchResults.value = uiModels // Cập nhật StateFlow
+    }
+
+    // 2. Hàm mới: Cập nhật trạng thái cục bộ (Optimistic Update)
+    fun updateUserStatusLocal(userId: Int, newStatus: Int) {
+        val currentList = _searchResults.value.toMutableList()
+        val index = currentList.indexOfFirst { it.id == userId }
+
+        if (index != -1) {
+            // Tạo bản sao của item với status mới
+            val updatedUser = currentList[index].copy(status = newStatus)
+            currentList[index] = updatedUser
+
+            // Emit list mới để UI tự cập nhật
+            _searchResults.value = currentList
+        }
+    }
+
+    private val _pendingRequests = MutableSharedFlow<List<PendingRequestDto>>(replay = 1)
+    val pendingRequests = _pendingRequests.asSharedFlow()
+
+    suspend fun processPendingRequests(requests: Array<PendingRequestDto>) {
+        _pendingRequests.emit(requests.toList())
     }
 }

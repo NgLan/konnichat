@@ -3,6 +3,7 @@ package com.example.konnichat.data.remote
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
+import com.example.konnichat.data.remote.dto.PendingRequestDto
 
 interface NativeEventListener {
     // Khi nhận được danh sách bạn bè (Response của getFriends)
@@ -15,6 +16,7 @@ interface NativeEventListener {
     // Khi nhận được lời mời kết bạn real-time
     fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String)
     fun onRequestResponse(cmd: Int, status: Int)
+    fun onPendingRequestsReceived(requests: Array<PendingRequestDto>)
     fun onFriendRequestAccepted(user: UserDto)
     fun onFriendRemoved(exFriendId: Int)
     fun onSearchResult(results: Array<UserSearchDto>)
@@ -30,4 +32,5 @@ interface NativeEventListener {
     fun onMessageDelivered(serverId: Int)
     // Khi bị ngắt kết nối
     fun onConnectionClosed(reason: String)
+
 }

@@ -1,6 +1,7 @@
 package com.example.konnichat.data.remote
 
 import com.example.konnichat.data.remote.dto.UserDto
+import com.example.konnichat.data.remote.dto.PendingRequestDto
 
 object NativeClient {
     init {
@@ -36,4 +37,6 @@ object NativeClient {
     external fun unfriendUser(targetId: Int)
     external fun searchUsers(keyword: String, offset: Int, limit: Int)
     external fun sendMessage(receiverId: Int, content: String, tempId: Int)
+
+    external fun getPendingRequests()
 }

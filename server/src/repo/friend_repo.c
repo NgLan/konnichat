@@ -19,7 +19,7 @@ int db_get_friends(int user_id, int offset, int limit, UserInfoPayload *friends_
     char query[1024];
 
     snprintf(query, sizeof(query),
-             "SELECT u.id, u.name, u.email, u.is_online "
+             "SELECT DISTINCT u.id, u.name, u.email, u.is_online "
              "FROM users u "
              "JOIN friends f ON ( "
              "   (f.user_id = %d AND f.friend_id = u.id) " // Trường hợp mình là cột trái -> lấy cột phải
