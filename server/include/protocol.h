@@ -144,6 +144,7 @@ typedef struct __attribute__((packed)) {
     int32_t sender_id;
     int32_t receiver_id;
     int32_t msg_type;       // 1: Text, 2: Image, 3: File...
+    char chat_type[16];     // 1: Private, 2: Group 
     char content[MAX_CONTENT_LEN];
     uint64_t created_at;    // Server Time
 } ChatPayload;

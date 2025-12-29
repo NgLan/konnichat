@@ -192,15 +192,21 @@ void jni_on_message(ChatPayload *msg) {
 
     // Convert ChatPayload -> MessageDto
     jstring jContent = (*env)->NewStringUTF(env, msg->content);
+    jstring jChatType = (*env)->NewStringUTF(env, msg->chat_type);
 
-    // Constructor MessageDto(id, senderId, receiverId, content, timestamp, type)
     jobject jMsg = (*env)->NewObject(env, c_MessageDto, m_MessageDtoInit,
-                                     msg->message_id, msg->sender_id, msg->receiver_id,
-                                     jContent, (jlong)msg->created_at, msg->msg_type);
+                                     msg->message_id,
+                                     msg->sender_id,
+                                     msg->receiver_id,
+                                     jContent,
+                                     (jlong)msg->created_at,
+                                     msg->msg_type,
+                                     jChatType);
 
     (*env)->CallVoidMethod(env, g_listener, m_onMsgReceived, jMsg);
 
     (*env)->DeleteLocalRef(env, jContent);
+    (*env)->DeleteLocalRef(env, jChatType);
     (*env)->DeleteLocalRef(env, jMsg);
 }
 
@@ -322,7 +328,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 
     jclass mClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/MessageDto");
     c_MessageDto = (jclass) (*env)->NewGlobalRef(env, mClass);
-    m_MessageDtoInit = (*env)->GetMethodID(env, c_MessageDto, "<init>", "(IIILjava/lang/String;JI)V");
+    m_MessageDtoInit = (*env)->GetMethodID(env, c_MessageDto, "<init>", "(IIILjava/lang/String;JILjava/lang/String;)V");
 
     // Cache Exceptions
     jclass c1 = (*env)->FindClass(env,
@@ -505,10 +511,17 @@ Java_com_example_konnichat_data_remote_NativeClient_searchUsers(JNIEnv *env, job
 
 JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_sendMessage(JNIEnv *env, jobject thiz,
-                                                                jint receiverId, jstring content, jint tempId) {
+                                                                jint receiverId, jstring content, jint tempId, jstring chatType) {
     const char *n_content = (*env)->GetStringUTFChars(env, content, 0);
+    const char *n_chatType = (*env)->GetStringUTFChars(env, chatType, 0);
 
-    client_send_message(receiverId, n_content, tempId);
+    client_send_message(receiverId, n_content, tempId, n_chatType);
 
     (*env)->ReleaseStringUTFChars(env, content, n_content);
+    (*env)->ReleaseStringUTFChars(env, chatType, n_chatType);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_fetchOfflineMessages(JNIEnv *env, jobject thiz) {
+    client_fetch_offline_msgs();
 }
