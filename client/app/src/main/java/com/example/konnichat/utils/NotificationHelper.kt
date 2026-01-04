@@ -34,12 +34,24 @@ object NotificationHelper {
      * Hiển thị thông báo.
      * @param type: Loại thông báo (để xác định hành động click). VD: "FRIEND_REQ", "MESSAGE"
      */
-    fun showNotification(context: Context, title: String, content: String, type: String) {
+    fun showNotification(
+        context: Context,
+        title: String,
+        content: String,
+        type: String,
+        targetId: Int = -1,         // [NEW]
+        targetName: String = ""
+    ) {
         // Intent mở App khi click vào thông báo
         val intent = Intent(context, HomeActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
             // Truyền type để HomeActivity biết nên mở Tab nào
             putExtra("NAVIGATE_TO", type)
+
+            if (targetId != -1) {
+                putExtra("TARGET_ID", targetId)
+                putExtra("TARGET_NAME", targetName)
+            }
         }
 
         val pendingIntent: PendingIntent = PendingIntent.getActivity(
@@ -47,12 +59,12 @@ object NotificationHelper {
         )
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
-            .setSmallIcon(R.mipmap.ic_launcher_round) // Icon nhỏ trên thanh status
+            .setSmallIcon(R.mipmap.ic_launcher_round)
             .setContentTitle(title)
             .setContentText(content)
             .setPriority(NotificationCompat.PRIORITY_DEFAULT)
             .setContentIntent(pendingIntent)
-            .setAutoCancel(true) // Tự đóng khi click
+            .setAutoCancel(true)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (androidx.core.app.ActivityCompat.checkSelfPermission(
@@ -65,6 +77,8 @@ object NotificationHelper {
             }
         }
 
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_FRIEND_REQ, builder.build())
+        val notificationId = if (targetId != -1) targetId else NOTIFICATION_ID_FRIEND_REQ
+
+        NotificationManagerCompat.from(context).notify(notificationId, builder.build())
     }
 }

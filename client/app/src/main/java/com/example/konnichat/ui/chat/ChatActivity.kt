@@ -75,11 +75,18 @@ class ChatActivity : AppCompatActivity() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                 super.onScrolled(rv, dx, dy)
                 // Nếu cuộn lên đỉnh (vị trí 0) -> Load thêm lịch sử
-                if (!rv.canScrollVertically(-1)) {
-                    viewModel.loadMoreHistory(targetUserId, adapter.itemCount)
+                if (dy < 0 && !rv.canScrollVertically(-1) && adapter.itemCount > 0) {
+                    val currentCount = adapter.itemCount
+                    // Log để kiểm tra (Optional)
+                    // Log.d("ChatActivity", "Scrolled to top, loading more from offset $currentCount")
+                    viewModel.loadMoreHistory(targetUserId, currentCount)
                 }
             }
         })
+
+        binding.btnMute.setOnClickListener {
+            viewModel.toggleMute(targetUserId)
+        }
 
         // Xử lý nút Gửi
         binding.btnSend.setOnClickListener {
@@ -96,6 +103,8 @@ class ChatActivity : AppCompatActivity() {
             binding.btnAddFriend.isEnabled = false
             binding.btnAddFriend.text = "Đang gửi..."
         }
+
+
 
         // Nút Back
         binding.btnBack.setOnClickListener { finish() }
@@ -138,6 +147,19 @@ class ChatActivity : AppCompatActivity() {
                 binding.btnAddFriend.isEnabled = true
                 binding.btnAddFriend.text = "Kết bạn"
                 Toast.makeText(this, "Gửi thất bại", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        viewModel.isMuted.observe(this) { isMuted ->
+            if (isMuted) {
+                // Đã tắt thông báo -> Icon im lặng
+                binding.btnMute.setImageResource(android.R.drawable.ic_lock_silent_mode)
+                // Optional: Toast thông báo
+                // Toast.makeText(this, "Đã tắt thông báo cuộc trò chuyện này", Toast.LENGTH_SHORT).show()
+            } else {
+                // Đang bật -> Icon thông báo
+                binding.btnMute.setImageResource(android.R.drawable.stat_notify_chat)
+                // Toast.makeText(this, "Đã bật thông báo", Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -20,7 +20,9 @@ import kotlinx.coroutines.withContext
 
 class LoginActivity : AppCompatActivity() {
 
-    private val viewModel: AuthViewModel by viewModels()
+    private val viewModel: AuthViewModel by viewModels {
+        AuthViewModelFactory((application as App).authRepository)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -68,25 +70,12 @@ class LoginActivity : AppCompatActivity() {
                             apply() // Lưu xuống file
                         }
 
-                        val app = application as App
-                        CoroutineScope(Dispatchers.IO).launch {
-                            // Xóa sạch bảng users, messages, friends... của người dùng trước
-                            app.db.clearAllTables()
-
-                            // Sau khi xóa xong thì mới chuyển màn hình
-                            withContext(Dispatchers.Main) {
-                                Toast.makeText(this@LoginActivity, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
-                                val intent = Intent(this@LoginActivity, HomeActivity::class.java)
-                                startActivity(intent)
-                                finish()
-                            }
-                        }
+                        // Chuyển sang màn hình chính
+                        Toast.makeText(this, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
+                        val intent = Intent(this, HomeActivity::class.java)
+                        startActivity(intent)
+                        finish()
                     }
-
-                    // Chuyển sang màn hình chính
-                     val intent = Intent(this, HomeActivity::class.java)
-                     startActivity(intent)
-                     finish()
                 }
                 is Resource.Error -> {
                     btnLogin.isEnabled = true

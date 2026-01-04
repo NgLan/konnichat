@@ -19,6 +19,8 @@
 #include <string.h>
 #include <time.h>
 
+
+#define MAX_GROUP_MEMBERS 20
 // --- HELPER FUNCTIONS ---
 
 /**

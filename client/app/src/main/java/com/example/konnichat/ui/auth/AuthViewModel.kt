@@ -4,13 +4,13 @@ import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.lifecycle.ViewModelProvider
 import com.example.konnichat.core.state.Resource
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.repository.AuthRepository
 import kotlinx.coroutines.launch
 
-class AuthViewModel : ViewModel() {
-    private val repository = AuthRepository()
+class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
 
     // LiveData cho trạng thái Kết nối (Dùng ở Splash)
     private val _connectState = MutableLiveData<Resource<Boolean>>()
@@ -60,5 +60,15 @@ class AuthViewModel : ViewModel() {
             val result = repository.register(name, email, pass)
             _registerState.value = result
         }
+    }
+}
+
+class AuthViewModelFactory(private val repository: AuthRepository) : ViewModelProvider.Factory {
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        if (modelClass.isAssignableFrom(AuthViewModel::class.java)) {
+            @Suppress("UNCHECKED_CAST")
+            return AuthViewModel(repository) as T
+        }
+        throw IllegalArgumentException("Unknown ViewModel class")
     }
 }

@@ -15,7 +15,9 @@ import com.example.konnichat.App
 class SplashActivity : AppCompatActivity() {
 
     // Khởi tạo ViewModel
-    private val viewModel: AuthViewModel by viewModels()
+    private val viewModel: AuthViewModel by viewModels {
+        AuthViewModelFactory((application as App).authRepository)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

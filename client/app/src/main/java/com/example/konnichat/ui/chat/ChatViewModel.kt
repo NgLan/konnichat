@@ -9,12 +9,14 @@ import com.example.konnichat.data.local.entity.MessageEntity
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class ChatViewModel(
     private val chatRepository: ChatRepository,
     private val userRepository: UserRepository
 ) : ViewModel() {
 
+    private var isLoadingHistory = false
     // Trạng thái quan hệ bạn bè (True: Hiện chat, False: Hiện nút kết bạn)
     private val _isFriend = MutableLiveData<Boolean>(false)
     val isFriend: LiveData<Boolean> = _isFriend
@@ -23,16 +25,38 @@ class ChatViewModel(
     private val _friendReqStatus = MutableLiveData<Boolean>()
     val friendReqStatus: LiveData<Boolean> = _friendReqStatus
 
+    private val _isMuted = MutableLiveData<Boolean>(false)
+    val isMuted: LiveData<Boolean> = _isMuted
     // Load tin nhắn (Reactive Flow -> LiveData)
     fun getMessages(myId: Int, friendId: Int): LiveData<List<MessageEntity>> {
         // 1. Kiểm tra quan hệ bạn bè ngay khi vào màn hình
         checkFriendStatus(friendId)
+
+        checkMuteStatus(friendId)
 
         // 2. Load sẵn history mới nhất từ server (Offset 0, Limit 20)
         chatRepository.loadHistory(friendId, 0, 20)
 
         // 3. Trả về LiveData từ DB Local (tự động update khi DB thay đổi)
         return chatRepository.getMessages(myId, friendId).asLiveData()
+    }
+
+    private fun checkMuteStatus(targetId: Int) {
+        // Vì SharedPreferences đọc nhanh nên có thể không cần coroutine,
+        // nhưng để an toàn cứ dùng postValue
+        val muted = userRepository.isUserMuted(targetId)
+        _isMuted.postValue(muted)
+    }
+
+    fun toggleMute(targetId: Int) {
+        val current = _isMuted.value ?: false
+        val newState = !current
+
+        // Lưu vào Prefs
+        userRepository.setUserMute(targetId, newState)
+
+        // Update UI
+        _isMuted.value = newState
     }
 
     // Gửi tin nhắn
@@ -46,8 +70,14 @@ class ChatViewModel(
 
     // Load thêm lịch sử (Pagination khi vuốt lên)
     fun loadMoreHistory(targetId: Int, currentCount: Int) {
+        if (isLoadingHistory) return
+
+        isLoadingHistory = true
+
         viewModelScope.launch {
             chatRepository.loadHistory(targetId, currentCount, 20)
+            delay(2000)
+            isLoadingHistory = false
         }
     }
 

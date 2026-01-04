@@ -15,6 +15,7 @@ import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListenerImpl
 import com.example.konnichat.data.repository.UserRepository
 import com.google.android.material.bottomnavigation.BottomNavigationView
+import com.example.konnichat.ui.chat.ChatActivity
 
 class HomeActivity : AppCompatActivity() {
 
@@ -82,6 +83,17 @@ class HomeActivity : AppCompatActivity() {
             bottomNav.selectedItemId = R.id.nav_notification
         } else if (type == "MESSAGE") {
             bottomNav.selectedItemId = R.id.nav_message
+
+            // [THÊM MỚI] Logic tự động mở màn hình Chat
+            val targetId = intent.getIntExtra("TARGET_ID", -1)
+            val targetName = intent.getStringExtra("TARGET_NAME")
+
+            if (targetId != -1) {
+                val chatIntent = Intent(this, ChatActivity::class.java)
+                chatIntent.putExtra("TARGET_ID", targetId)
+                chatIntent.putExtra("TARGET_NAME", targetName ?: "Người dùng")
+                startActivity(chatIntent)
+            }
         }
     }
 

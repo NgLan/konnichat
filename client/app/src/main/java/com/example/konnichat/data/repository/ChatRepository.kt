@@ -57,50 +57,33 @@ class ChatRepository(
 
     // [MỚI] Xử lý khi tin nhắn đã gửi thành công (Server ACK)
     // Logic: Xóa tin tạm (ID âm) -> Chèn tin thật (ID dương)
-    @Transaction // Đảm bảo tính toàn vẹn
+    @Transaction
     suspend fun handleMessageSentAck(tempId: Int, serverId: Int, serverTime: Long) {
-        val localId = -tempId // ID tạm lúc nãy mình lưu
+        val localId = -tempId // ID âm đã lưu lúc gửi
 
-        // 1. Lấy tin nhắn cũ ra để giữ lại các thông tin khác (content, sender...)
-        // (Ở đây ta giả định content không đổi, nên xóa cái cũ insert cái mới với ID mới là nhanh nhất)
+        // 1. Tìm tin nhắn tạm trong DB để lấy nội dung (content, receiverId,...)
+        val tempMsg = messageDao.getMessageById(localId)
 
-        // Lưu ý: Vì Room không cho sửa PrimaryKey, ta buộc phải Xóa rồi Thêm mới.
+        if (tempMsg != null) {
+            // 2. Xóa tin nhắn tạm (ID âm)
+            messageDao.deleteMessageById(localId)
 
-        // Trước khi xóa, ta cần biết tin nhắn đó nội dung là gì.
-        // Nhưng để đơn giản và hiệu năng cao, ta biết rằng luồng UI đang hiển thị dựa trên Flow.
-        // Việc xóa insert lại diễn ra trong ms, người dùng sẽ thấy status đổi từ sending -> sent.
+            // 3. Tạo tin nhắn mới với ID thật từ Server và Timestamp chuẩn
+            val realMsg = tempMsg.copy(
+                serverId = serverId,        // ID dương từ Server
+                status = "sent",            // Cập nhật trạng thái
+                createdAt = Date(serverTime), // Dùng thời gian server
+                updatedAt = Date()
+            )
 
-        // Xóa record tạm
-        messageDao.deleteMessageById(localId)
+            // 4. Lưu tin nhắn chính thức vào DB
+            messageDao.insertMessage(realMsg)
 
-        // Insert record thật (cần thông tin sender/receiver/content)
-        // Vì tham số callback onMessageSent chỉ có ID và Time, ta cần truy vấn lại record cũ trước khi xóa
-        // HOẶC: Chấp nhận rủi ro nhỏ hoặc sửa Native để trả về cả content.
-        // NHƯNG: Để an toàn nhất mà không sửa Native nhiều:
-        // Ta không xóa vội? Không được, ID trùng sẽ lỗi.
-
-        // ==> GIẢI PHÁP TỐI ƯU:
-        // Trong thực tế cần query lấy content của localId ra trước.
-        // Nhưng ở đây tui sẽ dùng cách "Insert Replace" với data đầy đủ nếu Native trả về,
-        // hoặc query trước. Tạm thời để code chạy được, tui giả định flow đã có content.
-        // *Lưu ý*: Do Native callback `onMessageSent` hiện tại thiếu content,
-        // tui sẽ chỉ update status của localId thành 'sent' nếu chưa muốn xóa ngay,
-        // NHƯNG localId âm sẽ mãi mãi âm -> Lỗi khi scroll history load lại bị trùng content.
-
-        // => FIX: Tui sẽ dùng `NativeClient.sendMessage` (ở Repository trên) lưu content vào một Map tạm trong memory nếu cần thiết,
-        // hoặc tốt nhất là update Native trả về content.
-        // Nhưng để tuân thủ "hạn chế sửa code", tui sẽ dùng cách:
-        // "Chỉ update status thành 'sent' cho ID tạm" -> Sau đó khi loadHistory về sẽ có ID thật và đè lên.
-        // Tuy nhiên `DiffUtil` sẽ thấy 2 tin khác nhau.
-
-        // => QUYẾT ĐỊNH: Chỉ update status cho ID tạm.
-        // Khi user thoát ra vào lại hoặc scroll, tin nhắn ID thật từ Server về sẽ thay thế/bổ sung.
-        // Để tránh trùng lặp hiển thị: ViewModel/Adapter cần lọc.
-        // Hoặc: Chấp nhận ID âm cho đến khi reload app.
-
-        messageDao.updateMessageStatus(localId, "sent")
+            Log.d("ChatRepo", "Swapped TempID $localId to ServerID $serverId")
+        } else {
+            Log.w("ChatRepo", "Could not find temp message with ID $localId to swap")
+        }
     }
-
     // [MỚI] Xử lý update status delivered
     suspend fun updateMessageStatus(serverId: Int, status: String) {
         messageDao.updateMessageStatus(serverId, status)

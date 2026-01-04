@@ -134,21 +134,37 @@ object NativeEventListenerImpl : NativeEventListener {
                 // 1. Lưu vào Database
                 repo.saveMessageFromNetwork(msg)
 
+                val isChattingWithSender = (currentChatTargetId == msg.senderId)
+
+                val isMuted = userRepository?.isUserMuted(msg.senderId) ?: false
+
+                if (isChattingWithSender) {
+                    Log.d(TAG, "Đang chat với User ${msg.senderId}. Bỏ qua thông báo.")
+                    return@launch
+                }
+
+                if (isMuted) {
+                    Log.d(TAG, "User ${msg.senderId} đang bị tắt thông báo. Bỏ qua.")
+                    return@launch
+                }
+
+
                 // 2. Logic Thông báo
                 // Kiểm tra xem có đang chat với người này không.
                 // Lưu ý: Bạn cần update biến currentChatTargetId từ ChatActivity (onResume/onPause)
-                if (currentChatTargetId != msg.senderId) {
-                    context?.let { ctx ->
-                        val senderName = "User ${msg.senderId}" // Có thể query DB lấy tên thật sau
-                        NotificationHelper.showNotification(
-                            ctx,
-                            title = senderName,
-                            content = msg.content,
-                            type = "MESSAGE"
-                        )
-                    }
-                } else {
-                    Log.d(TAG, "User đang chat với ${msg.senderId}. Không hiện Notification.")
+                context?.let { ctx ->
+                    // Lấy tên người gửi từ DB để hiển thị cho đẹp
+                    val senderEntity = userRepository?.getFriendById(msg.senderId)
+                    val senderName = senderEntity?.name ?: "Người dùng ${msg.senderId}"
+
+                    NotificationHelper.showNotification(
+                        ctx,
+                        title = senderName,
+                        content = msg.content,
+                        type = "MESSAGE",
+                        targetId = msg.senderId,    // [QUAN TRỌNG] Để mở đúng đoạn chat
+                        targetName = senderName
+                    )
                 }
             }
         }

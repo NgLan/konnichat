@@ -182,4 +182,14 @@ class UserRepository(
         // Kết quả sẽ trả về qua Callback onFriendRequestSent hoặc update UI optimistic
         NativeClient.sendFriendRequest(targetId)
     }
+
+    fun isUserMuted(userId: Int): Boolean {
+        // Key format: MUTE_NOTIFY_12
+        return prefs.getBoolean("MUTE_NOTIFY_$userId", false)
+    }
+
+    // [THÊM MỚI] Set trạng thái mute
+    fun setUserMute(userId: Int, isMuted: Boolean) {
+        prefs.edit().putBoolean("MUTE_NOTIFY_$userId", isMuted).apply()
+    }
 }

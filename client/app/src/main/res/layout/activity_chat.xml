@@ -24,12 +24,25 @@
 
         <TextView
             android:id="@+id/tvChatTitle"
-            android:layout_width="wrap_content"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
+            android:layout_weight="1"
             android:text="Chat với..."
             android:textSize="18sp"
             android:textStyle="bold"
-            android:layout_marginStart="8dp"/>
+            android:layout_marginStart="8dp"
+            android:maxLines="1"
+            android:ellipsize="end"/>
+
+        <ImageButton
+            android:id="@+id/btnMute"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:src="@android:drawable/stat_notify_chat"
+            android:contentDescription="Mute Notifications"
+            android:padding="8dp" />
+
     </LinearLayout>
 
     <androidx.recyclerview.widget.RecyclerView
