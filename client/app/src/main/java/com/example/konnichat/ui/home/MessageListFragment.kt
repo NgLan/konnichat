@@ -1,5 +1,6 @@
 package com.example.konnichat.ui.home
 
+import android.content.Intent
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -13,6 +14,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.konnichat.App
 import com.example.konnichat.R
+import com.example.konnichat.ui.chat.ChatActivity
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
@@ -40,7 +42,10 @@ class MessageListFragment : Fragment() {
         // Cập nhật Adapter với callback unfriend
         adapter = FriendAdapter(
             onItemClick = { user ->
-                Toast.makeText(requireContext(), "Chat với: ${user.name}", Toast.LENGTH_SHORT).show()
+                val intent = Intent(requireContext(), ChatActivity::class.java)
+                intent.putExtra("TARGET_ID", user.serverId)
+                intent.putExtra("TARGET_NAME", user.name)
+                startActivity(intent)
             },
             onUnfriendClick = { user ->
                 // Gọi ViewModel để hủy kết bạn

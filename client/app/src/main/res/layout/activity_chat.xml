@@ -5,7 +5,6 @@
     android:orientation="vertical"
     android:fitsSystemWindows="true">
 
-    <!-- Header -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -14,7 +13,6 @@
         android:gravity="center_vertical"
         android:padding="8dp">
 
-        <!-- Nút Back -->
         <ImageButton
             android:id="@+id/btnBack"
             android:layout_width="40dp"
@@ -24,7 +22,6 @@
             android:contentDescription="Back"
             android:padding="8dp" />
 
-        <!-- Tiêu đề (Tên bạn bè) -->
         <TextView
             android:id="@+id/tvChatTitle"
             android:layout_width="wrap_content"
@@ -35,7 +32,6 @@
             android:layout_marginStart="8dp"/>
     </LinearLayout>
 
-    <!-- List tin nhắn -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvChat"
         android:layout_width="match_parent"
@@ -43,13 +39,14 @@
         android:layout_weight="1"
         android:padding="8dp"/>
 
-    <!-- Input bar -->
     <LinearLayout
+        android:id="@+id/layoutInput"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:padding="8dp"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:visibility="visible">
 
         <EditText
             android:id="@+id/etMessage"
@@ -67,4 +64,30 @@
             android:text="Gửi"
             android:layout_marginStart="8dp"/>
     </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/layoutBlock"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="16dp"
+        android:gravity="center"
+        android:background="#F5F5F5"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/tvBlockMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Hai bạn chưa phải bạn bè. Kết bạn để nhắn tin."
+            android:textColor="#FF0000"
+            android:layout_marginBottom="8dp"/>
+
+        <Button
+            android:id="@+id/btnAddFriend"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Kết bạn"/>
+    </LinearLayout>
+
 </LinearLayout>

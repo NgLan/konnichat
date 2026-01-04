@@ -14,7 +14,7 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE server_id != :myId ORDER BY is_online DESC, name ASC")
     fun getAllFriends(myId: Int): Flow<List<UserEntity>>
 
-    @Query("SELECT * FROM users WHERE server_id = :id")
+    @Query("SELECT * FROM users WHERE server_id = :id LIMIT 1")
     suspend fun getUserById(id: Int): UserEntity?
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
@@ -35,4 +35,5 @@ interface UserDao {
 
     @Query("DELETE FROM users WHERE server_id = :id")
     suspend fun deleteUserByServerId(id: Int)
+
 }

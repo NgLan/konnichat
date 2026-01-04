@@ -342,7 +342,8 @@ int client_get_history(int target_id, int offset, int limit) {
 
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header) {
-    LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type, header->status_code, header->payload_size);
+    LOGI("=== handle_incoming_packet: CMD=%d, Status=%d, Size=%d ===", header->command_type,
+         header->status_code, header->payload_size);
 
     int bytes_processed = 0;
 
@@ -355,7 +356,7 @@ static void handle_incoming_packet(PacketHeader *header) {
                 int data_size = count * sizeof(UserInfoPayload);
                 // Kiểm tra size an toàn
                 if (data_size <= header->payload_size - bytes_processed) {
-                    UserInfoPayload* friends = (UserInfoPayload*)malloc(data_size);
+                    UserInfoPayload *friends = (UserInfoPayload *) malloc(data_size);
                     if (recv_all(g_socket, friends, data_size) > 0) {
                         bytes_processed += data_size; // FIX: Cập nhật byte đã đọc
                         if (g_callbacks.on_friend_list) g_callbacks.on_friend_list(count, friends);
@@ -378,12 +379,13 @@ static void handle_incoming_packet(PacketHeader *header) {
     }
 
         // 3. STATUS CHANGE
-    // Xử lý STATUS (Online/Offline)
+        // Xử lý STATUS (Online/Offline)
     else if (header->command_type == CMD_NOTIFY_STATUS) {
         StatusNotifyPayload notify;
         if (recv_all(g_socket, &notify, sizeof(StatusNotifyPayload)) > 0) {
             bytes_processed += sizeof(StatusNotifyPayload); // FIX
-            if (g_callbacks.on_status_change) g_callbacks.on_status_change(notify.friend_id, notify.is_online);
+            if (g_callbacks.on_status_change)
+                g_callbacks.on_status_change(notify.friend_id, notify.is_online);
         }
     }
 
@@ -393,7 +395,8 @@ static void handle_incoming_packet(PacketHeader *header) {
         if (recv_all(g_socket, &info, sizeof(PendingReqInfo)) > 0) {
             bytes_processed += sizeof(PendingReqInfo); // FIX
             LOGI("Received Friend Request from: %s (ID: %d)", info.sender_name, info.sender_id);
-            if (g_callbacks.on_friend_req) g_callbacks.on_friend_req(info.request_id, info.sender_id, info.sender_name);
+            if (g_callbacks.on_friend_req)
+                g_callbacks.on_friend_req(info.request_id, info.sender_id, info.sender_name);
         }
     }
 
@@ -402,7 +405,8 @@ static void handle_incoming_packet(PacketHeader *header) {
         UserInfoPayload friend_info;
         if (recv_all(g_socket, &friend_info, sizeof(UserInfoPayload)) > 0) {
             bytes_processed += sizeof(UserInfoPayload); // FIX
-            LOGI("Notification: User %s (%d) accepted your friend request.", friend_info.name, friend_info.user_id);
+            LOGI("Notification: User %s (%d) accepted your friend request.", friend_info.name,
+                 friend_info.user_id);
             if (g_callbacks.on_request_accepted) g_callbacks.on_request_accepted(&friend_info);
         }
     }
@@ -425,14 +429,15 @@ static void handle_incoming_packet(PacketHeader *header) {
             if (count > 0) {
                 int data_size = count * sizeof(UserSearchInfo);
                 if (data_size <= header->payload_size - bytes_processed) {
-                    UserSearchInfo *results = (UserSearchInfo *)malloc(data_size);
+                    UserSearchInfo *results = (UserSearchInfo *) malloc(data_size);
                     if (results && recv_all(g_socket, results, data_size) > 0) {
                         bytes_processed += data_size; // FIX
                         for (int i = 0; i < count; i++) {
                             results[i].name[MAX_NAME_LEN - 1] = '\0';
                             results[i].email[MAX_EMAIL_LEN - 1] = '\0';
                         }
-                        if (g_callbacks.on_search_result) g_callbacks.on_search_result(count, results);
+                        if (g_callbacks.on_search_result)
+                            g_callbacks.on_search_result(count, results);
                     }
                     if (results) free(results);
                 }
@@ -448,7 +453,8 @@ static void handle_incoming_packet(PacketHeader *header) {
         if (recv_all(g_socket, &msg, sizeof(ChatPayload)) > 0) {
             bytes_processed += sizeof(ChatPayload); // FIX
             if (header->status_code == STATUS_SUCCESS) {
-                if (g_callbacks.on_msg_sent) g_callbacks.on_msg_sent(header->request_id, msg.message_id, msg.created_at);
+                if (g_callbacks.on_msg_sent)
+                    g_callbacks.on_msg_sent(header->request_id, msg.message_id, msg.created_at);
             }
         }
     }
@@ -469,7 +475,7 @@ static void handle_incoming_packet(PacketHeader *header) {
             bytes_processed += sizeof(int32_t); // FIX
             if (count > 0) {
                 int data_size = count * sizeof(PendingReqInfo);
-                PendingReqInfo *list = (PendingReqInfo *)malloc(data_size);
+                PendingReqInfo *list = (PendingReqInfo *) malloc(data_size);
                 if (list && recv_all(g_socket, list, data_size) > 0) {
                     bytes_processed += data_size; // FIX
                     if (g_callbacks.on_pending_list) g_callbacks.on_pending_list(count, list);
@@ -485,82 +491,80 @@ static void handle_incoming_packet(PacketHeader *header) {
     else if (header->command_type == CMD_SEND_FRIEND_REQ_RESP ||
              header->command_type == CMD_RESPOND_FRIEND_REQ_RESP ||
              header->command_type == CMD_UNFRIEND_RESP) {
-        if (g_callbacks.on_req_response) g_callbacks.on_req_response(header->command_type, header->status_code);
-    else if (header->command_type == CMD_FETCH_OFFLINE_MSGS_RESP) {
-        if (header->payload_size > 0) discard_payload(g_socket, header->payload_size);
-        LOGI("Offline messages fetch started.");
-    }
+        if (g_callbacks.on_req_response)
+            g_callbacks.on_req_response(header->command_type, header->status_code);
+        else if (header->command_type == CMD_FETCH_OFFLINE_MSGS_RESP) {
+            if (header->payload_size > 0) discard_payload(g_socket, header->payload_size);
+            LOGI("Offline messages fetch started.");
+        } else if (header->command_type == CMD_GET_HISTORY_RESP) {
+            int32_t count = 0;
+            if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
 
-    else if (header->command_type == CMD_GET_HISTORY_RESP) {
-        int32_t count = 0;
-        if (recv_all(g_socket, &count, sizeof(int32_t)) <= 0) return;
+            ChatPayload *msgs = NULL;
+            if (count > 0) {
+                int data_size = count * sizeof(ChatPayload);
+                msgs = (ChatPayload *) malloc(data_size);
 
-        ChatPayload *msgs = NULL;
-        if (count > 0) {
-            int data_size = count * sizeof(ChatPayload);
-            msgs = (ChatPayload *)malloc(data_size);
+                if (msgs) {
+                    memset(msgs, 0, data_size);
 
-            if (msgs) {
-                memset(msgs, 0, data_size);
-
-                if (recv_all(g_socket, msgs, data_size) > 0) {
-                    if (g_callbacks.on_history_received) {
-                        g_callbacks.on_history_received(count, msgs);
+                    if (recv_all(g_socket, msgs, data_size) > 0) {
+                        if (g_callbacks.on_history_received) {
+                            g_callbacks.on_history_received(count, msgs);
+                        }
                     }
                 }
+            } else {
+                if (g_callbacks.on_history_received) {
+                    g_callbacks.on_history_received(0, NULL);
+                }
             }
+            if (msgs) free(msgs);
         } else {
-            if (g_callbacks.on_history_received) {
-                g_callbacks.on_history_received(0, NULL);
-            }
+            LOGW("Unhandled Packet Type: %d", header->command_type);
         }
-        if (msgs) free(msgs);
-    }
 
-    else {
-        LOGW("Unhandled Packet Type: %d", header->command_type);
-    }
-
-    // DỌN DẸP PAYLOAD THỪA (QUAN TRỌNG)
-    int remaining = header->payload_size - bytes_processed;
-    if (remaining > 0) {
-        // Chỉ khi bytes_processed đã được cập nhật đúng thì remaining mới đúng
-        // Nếu không cập nhật bytes_processed, remaining = full size -> đọc lẹm vào gói sau -> DESYNC
-        LOGW("Packet %d: Discarding %d bytes (Size: %d, Processed: %d)",
-             header->command_type, remaining, header->payload_size, bytes_processed);
-        discard_data(g_socket, remaining);
+        // DỌN DẸP PAYLOAD THỪA (QUAN TRỌNG)
+        int remaining = header->payload_size - bytes_processed;
+        if (remaining > 0) {
+            // Chỉ khi bytes_processed đã được cập nhật đúng thì remaining mới đúng
+            // Nếu không cập nhật bytes_processed, remaining = full size -> đọc lẹm vào gói sau -> DESYNC
+            LOGW("Packet %d: Discarding %d bytes (Size: %d, Processed: %d)",
+                 header->command_type, remaining, header->payload_size, bytes_processed);
+            discard_data(g_socket, remaining);
+        }
     }
 }
 
 // --- THREAD LOOP ---
-static void* read_thread_func(void* arg) {
-    PacketHeader header;
-    LOGI("=== READ THREAD STARTED ===");
+    static void *read_thread_func(void *arg) {
+        PacketHeader header;
+        LOGI("=== READ THREAD STARTED ===");
 
-    while (g_is_running) {
-        if (g_socket == -1) {
-            g_is_running = 0;
-            break;
+        while (g_is_running) {
+            if (g_socket == -1) {
+                g_is_running = 0;
+                break;
+            }
+            int n = recv_all(g_socket, &header, sizeof(PacketHeader));
+            if (n <= 0) {
+                LOGE("Server disconnected (recv=%d)", n);
+                g_is_running = 0;
+                if (g_callbacks.on_disconnect) g_callbacks.on_disconnect("Connection Lost");
+                break;
+            }
+            handle_incoming_packet(&header);
         }
-        int n = recv_all(g_socket, &header, sizeof(PacketHeader));
-        if (n <= 0) {
-            LOGE("Server disconnected (recv=%d)", n);
-            g_is_running = 0;
-            if (g_callbacks.on_disconnect) g_callbacks.on_disconnect("Connection Lost");
-            break;
-        }
-        handle_incoming_packet(&header);
-    }
-    g_read_thread = 0;
-    LOGI("=== READ THREAD EXITED ===");
-    return NULL;
-}
-
-void start_reader_thread(NativeCallbacks callbacks) {
-    if (g_read_thread != 0) return;
-    g_callbacks = callbacks;
-    g_is_running = 1;
-    if (pthread_create(&g_read_thread, NULL, read_thread_func, NULL) != 0) {
         g_read_thread = 0;
+        LOGI("=== READ THREAD EXITED ===");
+        return NULL;
     }
-}
+
+    void start_reader_thread(NativeCallbacks callbacks) {
+        if (g_read_thread != 0) return;
+        g_callbacks = callbacks;
+        g_is_running = 1;
+        if (pthread_create(&g_read_thread, NULL, read_thread_func, NULL) != 0) {
+            g_read_thread = 0;
+        }
+    }
