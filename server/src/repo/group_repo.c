@@ -37,7 +37,7 @@ int db_create_group(const char *name, int32_t creator_id, const int32_t *member_
     int32_t group_id = (int32_t)mysql_insert_id(conn);
 
     // 3. Insert Members (Creator + List)
-    char insert_members[4096]; 
+    char insert_members[4096];
     int offset = snprintf(insert_members, sizeof(insert_members),
                           "INSERT INTO group_members (group_id, member_id, role, status) VALUES ");
 
@@ -148,32 +148,107 @@ int db_is_group_member(int32_t group_id, int32_t user_id)
 }
 
 /**
- * @brief Thêm thành viên đơn lẻ
+ * @brief Hàm nội bộ thực thi câu lệnh SQL INSERT/UPDATE.
+ * Hàm này KHÔNG quản lý connection (không get/release), chỉ thực thi trên conn được truyền vào.
+ *
+ * @param conn Connection đang active (có thể đang trong transaction).
+ * @return 0 nếu thành công, -1 nếu thất bại.
  */
-int db_add_group_member(int32_t group_id, int32_t target_user_id)
+static int internal_insert_member(MYSQL *conn, int32_t group_id, int32_t user_id)
+{
+    char query[256];
+    snprintf(query, sizeof(query),
+             "INSERT INTO group_members (group_id, member_id, role, status) "
+             "VALUES (%d, %d, 'member', 'active') "
+             "ON DUPLICATE KEY UPDATE status = 'active'",
+             group_id, user_id);
+
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Internal Insert Member Fail (G:%d, U:%d): %s", group_id, user_id, mysql_error(conn));
+        return -1;
+    }
+    return 0;
+}
+
+// Return:
+//    >= 0: Số lượng thêm thành công
+//    -1: Lỗi DB
+//    -2: Quá giới hạn thành viên (Full)
+int db_add_group_members(int32_t group_id, const int32_t *user_ids, int count)
 {
     MYSQL *conn = db_get_conn();
     if (!conn)
-        return 0;
+        return -1;
 
-    char query[256];
-    snprintf(query, sizeof(query),
-             "INSERT INTO group_members (group_id, member_id, role, status) VALUES (%d, %d, 'member', 'active') "
-             "ON DUPLICATE KEY UPDATE status = 'active'",
-             group_id, target_user_id);
-
-    int success = 0;
-    if (mysql_query(conn, query))
+    // 1. Start Transaction
+    if (mysql_query(conn, "START TRANSACTION"))
     {
-        LOG_ERROR("Add Group Member Error: %s", mysql_error(conn));
+        LOG_ERROR("Failed to start transaction");
+        db_release_conn(conn);
+        return -1;
     }
-    else
+
+    // 2. CHECK SIZE HIỆN TẠI 
+    // Dùng FOR UPDATE để lock, không cho transaction khác sửa danh sách thành viên lúc này
+    char query_count[256];
+    snprintf(query_count, sizeof(query_count),
+             "SELECT COUNT(*) FROM group_members WHERE group_id = %d AND status = 'active' FOR UPDATE",
+             group_id);
+
+    if (mysql_query(conn, query_count))
     {
-        success = 1;
+        LOG_ERROR("Count members failed: %s", mysql_error(conn));
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return -1;
+    }
+
+    int current_members = 0;
+    MYSQL_RES *res = mysql_store_result(conn);
+    if (res)
+    {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row)
+            current_members = atoi(row[0]);
+        mysql_free_result(res);
+    }
+
+    // 3. Validate logic
+    if (current_members + count > MAX_GROUP_MEMBERS)
+    {
+        LOG_WARN("Group %d is full (Current: %d, Adding: %d, Max: %d)",
+                 group_id, current_members, count, MAX_GROUP_MEMBERS);
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return -2; // Mã lỗi quy ước: Group Full
+    }
+
+    // 4. Loop Insert
+    int success_count = 0;
+    for (int i = 0; i < count; i++)
+    {
+        if (internal_insert_member(conn, group_id, user_ids[i]) != 0)
+        {
+            LOG_ERROR("Insert failed at user %d. Rollback.", user_ids[i]);
+            mysql_query(conn, "ROLLBACK");
+            db_release_conn(conn);
+            return -1;
+        }
+        success_count++;
+    }
+
+    // 5. Commit
+    if (mysql_query(conn, "COMMIT"))
+    {
+        LOG_ERROR("Commit failed");
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return -1;
     }
 
     db_release_conn(conn);
-    return success;
+    return success_count;
 }
 
 /**

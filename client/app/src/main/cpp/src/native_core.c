@@ -436,6 +436,32 @@ int client_create_group(const char *name, int32_t *member_ids, int count)
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
+int client_add_group_members(int group_id, int32_t* member_ids, int count)
+{
+    if (g_socket == -1) return ERR_NETWORK_CONN_FAILED;
+    if (count <= 0) return CLIENT_OK;
+
+    int payload_size = sizeof(AddGroupMemberPayload) + (count * sizeof(int32_t));
+    void *buffer = malloc(payload_size);
+    if (!buffer) return ERR_INTERNAL_MEM;
+
+    AddGroupMemberPayload *req = (AddGroupMemberPayload *)buffer;
+    req->group_id = group_id;
+    req->count = count;
+    req->added_by_user = 0; // Server sẽ điền
+    memset(req->added_by_name, 0, MAX_NAME_LEN);
+
+    // Copy mảng ID vào đuôi
+    memcpy((char *)buffer + sizeof(AddGroupMemberPayload), member_ids, count * sizeof(int32_t));
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_ADD_MEMBER, buffer, payload_size);
+    pthread_mutex_unlock(&g_send_mutex);
+
+    free(buffer);
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header)
 {
@@ -631,7 +657,8 @@ static void handle_incoming_packet(PacketHeader *header)
     // 11. Các lệnh chỉ có Header hoặc status (không payload hoặc payload rỗng)
     else if (header->command_type == CMD_SEND_FRIEND_REQ_RESP ||
              header->command_type == CMD_RESPOND_FRIEND_REQ_RESP ||
-             header->command_type == CMD_UNFRIEND_RESP)
+             header->command_type == CMD_UNFRIEND_RESP ||
+             header->command_type == CMD_ADD_MEMBER_RESP)
     {
         if (g_callbacks.on_req_response)
             g_callbacks.on_req_response(header->command_type, header->status_code);
@@ -693,6 +720,8 @@ static void handle_incoming_packet(PacketHeader *header)
             CreateGroupRespPayload resp;
             if (recv_all(g_socket, &resp, sizeof(resp)) > 0)
             {
+                bytes_processed += sizeof(resp);
+
                 LOGI("Group Event: %s (ID: %d)", resp.group_name, resp.group_id);
                 if (g_callbacks.on_group_created)
                 {
@@ -704,14 +733,38 @@ static void handle_incoming_packet(PacketHeader *header)
         {
             LOGE("Group Action Failed with status: %d", header->status_code);
 
-            // 1. Dọn dẹp payload nếu có
-            if (header->payload_size > 0)
-                discard_payload(g_socket, header->payload_size);
-
-            // 2. GỌI CALLBACK báo lỗi về cho Kotlin
             if (g_callbacks.on_req_response)
             {
                 g_callbacks.on_req_response(header->command_type, header->status_code);
+            }
+        }
+    }
+
+    else if (header->command_type == CMD_NOTIFY_MEMBERS_ADDED)
+    {
+        int min_size = sizeof(AddGroupMemberPayload);
+        if (header->payload_size >= min_size) {
+            // Đọc phần Struct Header
+            AddGroupMemberPayload info;
+            if (recv_all(g_socket, &info, min_size) > 0) {
+                bytes_processed += min_size;
+
+                // Phần mảng int phía sau
+                int array_size = info.count * sizeof(int32_t);
+
+                // Kiểm tra an toàn bộ nhớ
+                if (array_size > 0 && (bytes_processed + array_size <= header->payload_size)) {
+                    int32_t *new_ids = (int32_t*)malloc(array_size);
+                    if (new_ids) {
+                        if (recv_all(g_socket, new_ids, array_size) > 0) {
+                            bytes_processed += array_size;
+                            if (g_callbacks.on_group_members_added) {
+                                g_callbacks.on_group_members_added(info.group_id, info.added_by_name, info.count, new_ids);
+                            }
+                        }
+                        free(new_ids);
+                    }
+                }
             }
         }
     }
@@ -777,6 +830,6 @@ void start_reader_thread(NativeCallbacks callbacks)
         LOGE("Failed to create reader thread");
         g_read_thread = 0;
         LOGI("=== READ THREAD EXITED ===");
-        return NULL;
+        return;
     }
 }

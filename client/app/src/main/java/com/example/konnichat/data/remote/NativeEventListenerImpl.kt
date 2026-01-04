@@ -141,10 +141,6 @@ object NativeEventListenerImpl : NativeEventListener {
         }
     }
 
-    // C. Khi bị hủy kết bạn HOẶC Bị từ chối lời mời (Server cần gửi CMD_NOTIFY_UNFRIENDED)
-    override fun onFriendRemoved(exFriendId: Int) {
-        Log.d(TAG, "💔 Quan hệ với User $exFriendId đã bị xóa (Unfriend/Reject).")
-
     override fun onMessageReceived(msg: MessageDto) {
         Log.d(TAG, "📩 Có tin nhắn mới từ ${msg.senderId}: ${msg.content}")
 
@@ -213,15 +209,15 @@ object NativeEventListenerImpl : NativeEventListener {
         }
     }
 
-    override fun onRequestResponse(cmd: Int, status: Int) {
-        Log.d(TAG, "Response CMD: $cmd, Status: $status")
+    override fun onGroupCreated(groupId: Int, groupName: String) {
+        TODO("Not yet implemented")
     }
 
-    override fun onConnectionClosed(reason: String) {
-        Log.e(TAG, "❌ Mất kết nối: $reason")
-    }
-}
-    override fun onGroupCreated(groupId: Int, groupName: String) {
+    override fun onGroupMembersAdded(
+        groupId: Int,
+        addedBy: String,
+        newMemberIds: IntArray
+    ) {
         TODO("Not yet implemented")
     }
 

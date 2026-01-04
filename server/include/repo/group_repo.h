@@ -44,15 +44,6 @@ int db_get_group_member_ids(int32_t group_id, int32_t* out_member_ids, int max_c
 int db_is_group_member(int32_t group_id, int32_t user_id);
 
 /**
- * @brief Thêm thành viên mới vào nhóm đã tồn tại.
- * 
- * @param group_id ID nhóm.
- * @param target_user_id ID người được thêm.
- * @return int 1 nếu thành công, 0 nếu thất bại.
- */
-int db_add_group_member(int32_t group_id, int32_t target_user_id);
-
-/**
  * @brief Xóa (hoặc rời) khỏi nhóm.
  * 
  * @param group_id ID nhóm.
@@ -60,5 +51,15 @@ int db_add_group_member(int32_t group_id, int32_t target_user_id);
  * @return int 1 nếu thành công, 0 nếu thất bại.
  */
 int db_leave_group(int32_t group_id, int32_t user_id);
+
+/**
+ * @brief Thêm nhiều thành viên vào nhóm.
+ * 
+ * @param group_id ID nhóm.
+ * @param user_ids Mảng ID người dùng cần thêm.
+ * @param count Số lượng người.
+ * @return int Số lượng người thực tế thêm được (>=0), hoặc -1 nếu lỗi DB, -2 nếu nhóm chat full người.
+ */
+int db_add_group_members(int32_t group_id, const int32_t* user_ids, int count);
 
 #endif // GROUP_REPO_H

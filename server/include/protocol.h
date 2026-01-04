@@ -12,6 +12,7 @@
 #define MAX_NAME_LEN 64
 #define MAX_CONTENT_LEN 1024
 #define MAX_GROUP_NAME 100
+#define MAX_GROUP_MEMBERS 20
 
 // --- DANH SÁCH LỆNH ---
 typedef enum {
@@ -89,6 +90,7 @@ typedef enum {
     CMD_NOTIFY_MSG_DELIVERED = 85,  // Server báo cho người gửi (A) biết tin đã đến máy người nhận (B)
 
     CMD_NOTIFY_GROUP_CREATED = 86,
+    CMD_NOTIFY_MEMBERS_ADDED = 87, 
 
     // 99. Error 
     CMD_ERROR_UNKNOWN       = 999            
@@ -104,7 +106,8 @@ typedef enum {
     STATUS_ERROR_INVALID_PARAM = 5,
     STATUS_ERROR_ALREADY_EXIST = 6,
     STATUS_ERROR_ALREADY_FRIEND = 7,  // Đã là bạn rồi
-    STATUS_ERROR_REQ_PENDING = 8      // Đã gửi rồi, đừng spam
+    STATUS_ERROR_REQ_PENDING = 8,      // Đã gửi rồi, đừng spam
+    STATUS_ERROR_GROUP_FULL = 9       // Nhóm đã đầy
 } StatusCode;
 
 // --- ĐỊNH NGHĨA TRẠNG THÁI QUAN HỆ ---
@@ -244,5 +247,20 @@ typedef struct __attribute__((packed)) {
     int32_t offset; // Bắt đầu từ 0
     int32_t limit;  // Mặc định 20 - 100
 } GetFriendListReq;
+
+/**
+ * Payload dùng cho:
+ * 1. Request: Client gửi lên Server (CMD_ADD_MEMBER)
+ * 2. Notification: Server báo về Client (CMD_NOTIFY_MEMBERS_ADDED)
+ *
+ * Cấu trúc gói tin thực tế: 
+ * [PacketHeader] + [AddGroupMemberPayload] + [int32_t member_ids[]]
+ */
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+    int32_t count;          // Số lượng người được thêm
+    int32_t added_by_user;  // Server điền ID người thêm (Client gửi lên để 0 cũng được)
+    char added_by_name[MAX_NAME_LEN]; // Server điền tên người thêm
+} AddGroupMemberPayload;
 
 #endif
