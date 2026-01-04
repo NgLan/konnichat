@@ -42,4 +42,6 @@ object NativeClient {
     external fun fetchOfflineMessages()
     external fun getChatHistory(targetId: Int, offset: Int, limit: Int)
     external fun createGroup(name: String, memberIds: IntArray)
+
+    external fun addMembersToGroup(groupId: Int, userIds: IntArray)
 }

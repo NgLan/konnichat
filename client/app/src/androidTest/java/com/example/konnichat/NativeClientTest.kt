@@ -47,7 +47,8 @@ class NativeClientTest {
 
         const val CMD_CREATE_GROUP = 30
         const val CMD_CREATE_GROUP_RESP = 31
-
+        const val CMD_ADD_MEMBER = 32
+        const val CMD_ADD_MEMBER_RESP = 33
 
         const val CMD_SEND_FRIEND_REQ = 42
         const val CMD_SEND_FRIEND_REQ_RESP = 43
@@ -63,6 +64,7 @@ class NativeClientTest {
         const val CMD_NOTIFY_REQ_ACCEPTED = 81
         const val CMD_NOTIFY_MSG_DELIVERED = 85
         const val CMD_NOTIFY_GROUP_CREATED = 86
+        const val CMD_NOTIFY_MEMBERS_ADDED = 87
 
         // --- Status Codes ---
         const val STATUS_SUCCESS = 0
@@ -1148,6 +1150,212 @@ class NativeClientTest {
         // Dựa trên logic Server, nếu name empty -> trả về INVALID_PARAM
         Assert.assertEquals("Phải trả về lỗi INVALID_PARAM", STATUS_ERR_INVALID_PARAM, errorStatus)
     }
+
+    // ==========================================
+    // MODULE 9: ADD MEMBERS TO GROUP
+    // ==========================================
+
+    @Test
+    fun test17_AddMembers_Success_Logic() {
+        val time = System.currentTimeMillis()
+        val ownerEmail = "owner_add_$time@konni.com"
+        val mem1Email = "mem1_$time@konni.com"
+        val newbieEmail = "newbie_$time@konni.com"
+        val pass = "123"
+
+        // 1. Đăng ký 3 user
+        NativeClient.registerUser("Owner", ownerEmail, pass)
+        NativeClient.registerUser("Member1", mem1Email, pass)
+        NativeClient.registerUser("Newbie", newbieEmail, pass)
+
+        // 2. Lấy ID của Member1 và Newbie
+        val idMem1 = helperGetUserId(mem1Email, pass)
+        val idNewbie = helperGetUserId(newbieEmail, pass)
+
+        // 3. Owner tạo nhóm với Member1
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(ownerEmail, pass)
+
+        // Tạo nhóm
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Add Member Test Group", intArrayOf(idMem1))
+        Assert.assertTrue(latchCreate.await(5, TimeUnit.SECONDS))
+        Assert.assertTrue(groupId > 0)
+
+        // 4. Owner thêm Newbie vào nhóm
+        val latchAdd = CountDownLatch(1)
+        var addStatus = -1
+
+        // Thay đổi listener để bắt phản hồi add member
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_ADD_MEMBER_RESP) {
+                    addStatus = status
+                    latchAdd.countDown()
+                }
+            }
+        })
+
+        NativeClient.addMembersToGroup(groupId, intArrayOf(idNewbie))
+
+        // 5. Verify
+        Assert.assertTrue("Timeout chờ phản hồi Add Member", latchAdd.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Thêm thành viên phải trả về SUCCESS", STATUS_SUCCESS, addStatus)
+    }
+
+    @Test
+    fun test18_AddMembers_Realtime_Notification() {
+        // Kịch bản:
+        // 1. A tạo nhóm có B.
+        // 2. B login (NativeClient) và lắng nghe.
+        // 3. A (giả lập FakeTcpClient) thêm C vào nhóm.
+        // 4. B phải nhận được thông báo C vào nhóm.
+
+        val time = System.currentTimeMillis()
+        val emailA = "A_add_$time@konni.com"
+        val emailB = "B_listen_$time@konni.com"
+        val emailC = "C_new_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        NativeClient.registerUser("UserC", emailC, pass)
+
+        val idA = helperGetUserId(emailA, pass)
+        val idC = helperGetUserId(emailC, pass)
+
+        // 1. B tạo nhóm (hoặc A tạo nhóm có B). Ở đây để tiện lấy ID Group, ta cho B tạo.
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Group For Broadcast", intArrayOf(idA))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. B đang Online, lắng nghe sự kiện Add Member
+        val latchNotify = CountDownLatch(1)
+        var notifyAddedBy = ""
+        var notifyCount = 0
+        var notifyNewIds: IntArray? = null
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupMembersAdded(gid: Int, addedBy: String, newMemberIds: IntArray) {
+                if (gid == groupId) {
+                    notifyAddedBy = addedBy
+                    notifyCount = newMemberIds.size
+                    notifyNewIds = newMemberIds
+                    latchNotify.countDown()
+                }
+            }
+        })
+
+        // 3. Fake Client A login và thực hiện thêm C
+        val threadA = Thread {
+            try {
+                val fakeA = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fakeA.login(emailA, pass)
+                Thread.sleep(500)
+                // A thêm C vào nhóm
+                fakeA.addMembersToGroup(groupId, intArrayOf(idC))
+                Thread.sleep(500)
+                fakeA.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadA.start()
+
+        // 4. Verify B nhận được thông báo
+        val success = latchNotify.await(8, TimeUnit.SECONDS)
+        Assert.assertTrue("User B không nhận được thông báo thành viên mới", success)
+
+        // Kiểm tra nội dung thông báo
+        Assert.assertTrue("Người thêm phải là UserA", notifyAddedBy.contains("UserA"))
+        Assert.assertEquals("Số lượng thêm phải là 1", 1, notifyCount)
+        Assert.assertEquals("ID người mới phải là UserC", idC, notifyNewIds?.get(0))
+    }
+
+    @Test
+    fun test19_AddMembers_Security_NotMember() {
+        // Kịch bản: D (người lạ) cố tình thêm E vào nhóm của A&B.
+        // Server phải chặn và trả về lỗi Auth.
+
+        val time = System.currentTimeMillis()
+        val emailA = "owner_secure_$time@konni.com"
+        val emailD = "hacker_$time@konni.com"
+        val emailE = "victim_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("HackerD", emailD, pass)
+        NativeClient.registerUser("VictimE", emailE, pass)
+
+        val idE = helperGetUserId(emailE, pass)
+
+        // 1. A tạo nhóm (chỉ có một mình)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Private Group", intArrayOf()) // Nhóm không member
+        latchCreate.await(5, TimeUnit.SECONDS)
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // 2. D (Hacker) Login
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailD, pass)
+
+        val latchFail = CountDownLatch(1)
+        var failStatus = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_ADD_MEMBER_RESP) {
+                    failStatus = status
+                    latchFail.countDown()
+                }
+            }
+        })
+
+        // 3. D cố thêm E vào nhóm của A
+        NativeClient.addMembersToGroup(groupId, intArrayOf(idE))
+
+        // 4. Verify
+        latchFail.await(5, TimeUnit.SECONDS)
+        Assert.assertEquals("Người lạ thêm thành viên phải bị lỗi AUTH", STATUS_ERR_AUTH, failStatus)
+    }
+
+    // --- Helper Utility để lấy nhanh ID User ---
+    private fun helperGetUserId(email: String, pass: String): Int {
+        NativeClient.disconnect()
+        Thread.sleep(100)
+        NativeClient.connect(SERVER_IP, SERVER_PORT)
+        val user = NativeClient.loginUser(email, pass)
+        val id = user!!.id
+        NativeClient.disconnect()
+        Thread.sleep(100)
+        return id
+    }
 }
 
 // =========================================================
@@ -1170,6 +1378,11 @@ open class StubNativeEventListener : NativeEventListener {
 
     override fun onConnectionClosed(reason: String) {}
     override fun onGroupCreated(groupId: Int, groupName: String) {}
+    override fun onGroupMembersAdded(
+        groupId: Int,
+        addedBy: String,
+        newMemberIds: IntArray
+    ) {}
 }
 
 /**
@@ -1320,6 +1533,41 @@ class FakeTcpClient(ip: String, port: Int) {
         buffer.putInt(memberIds.size)
 
         // Member IDs (N * 4 bytes)
+        for (id in memberIds) {
+            buffer.putInt(id)
+        }
+
+        output.write(buffer.array())
+        output.flush()
+    }
+
+    fun addMembersToGroup(groupId: Int, memberIds: IntArray) {
+        // Struct AddGroupMemberPayload:
+        // int32 group_id;          (4)
+        // int32 count;             (4)
+        // int32 added_by_user;     (4) - Client gửi lên để 0
+        // char added_by_name[64];  (64) - Client gửi lên để trống
+        // --------------------------------
+        // Total Fixed Size = 76 bytes
+
+        val fixedPayloadSize = 76
+        val arraySize = memberIds.size * 4
+        val totalPayloadSize = fixedPayloadSize + arraySize
+        val totalPacketSize = PACKET_HEADER_SIZE + totalPayloadSize
+
+        val buffer = ByteBuffer.allocate(totalPacketSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        // 1. Header
+        writeHeader(buffer, 32, totalPayloadSize) // CMD_ADD_MEMBER = 32
+
+        // 2. Fixed Payload
+        buffer.putInt(groupId)
+        buffer.putInt(memberIds.size)
+        buffer.putInt(0) // added_by_user (Ignored)
+        writeFixedString(buffer, "", 64) // added_by_name (Ignored)
+
+        // 3. Array IDs
         for (id in memberIds) {
             buffer.putInt(id)
         }
