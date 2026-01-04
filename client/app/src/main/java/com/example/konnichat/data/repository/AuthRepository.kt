@@ -1,6 +1,10 @@
 package com.example.konnichat.data.repository
 
 import com.example.konnichat.core.Constants
+import com.example.konnichat.data.local.AppDatabase
+import com.example.konnichat.data.local.dao.UserDao
+import com.example.konnichat.data.local.entity.UserEntity
+import java.util.Date
 import com.example.konnichat.core.exception.NativeException
 import com.example.konnichat.core.state.Resource
 import com.example.konnichat.data.remote.NativeClient
@@ -8,7 +12,10 @@ import com.example.konnichat.data.remote.dto.UserDto
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-class AuthRepository {
+class AuthRepository (
+    private val userDao: UserDao,
+    private val db: AppDatabase
+){
 
     // Hàm kết nối đến Server (Dùng cho Splash Screen)
     // Chạy trên luồng IO để không chặn UI
@@ -32,6 +39,19 @@ class AuthRepository {
             // NativeClient.loginUser là hàm blocking, nó sẽ chờ server trả lời hoặc ném Exception
             val user = NativeClient.loginUser(email, pass)
             if (user != null) {
+                db.clearAllTables()
+                val myUserEntity = UserEntity(
+                    serverId = user.id,
+                    email = user.email,
+                    name = user.name,
+                    age = null,
+                    status = "active",
+                    isOnline = true, // Vừa login xong chắc chắn online
+                    avatarUrl = null,
+                    createdAt = Date(),
+                    updatedAt = Date()
+                )
+                userDao.insertUser(myUserEntity)
                 Resource.Success(user)
             } else {
                 Resource.Error("Dữ liệu người dùng trả về bị rỗng")

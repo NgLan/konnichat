@@ -9,12 +9,14 @@ import com.example.konnichat.data.local.entity.MessageEntity
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 
 class ChatViewModel(
     private val chatRepository: ChatRepository,
     private val userRepository: UserRepository
 ) : ViewModel() {
 
+    private var isLoadingHistory = false
     // Trạng thái quan hệ bạn bè (True: Hiện chat, False: Hiện nút kết bạn)
     private val _isFriend = MutableLiveData<Boolean>(false)
     val isFriend: LiveData<Boolean> = _isFriend
@@ -46,8 +48,14 @@ class ChatViewModel(
 
     // Load thêm lịch sử (Pagination khi vuốt lên)
     fun loadMoreHistory(targetId: Int, currentCount: Int) {
+        if (isLoadingHistory) return
+
+        isLoadingHistory = true
+
         viewModelScope.launch {
             chatRepository.loadHistory(targetId, currentCount, 20)
+            delay(2000)
+            isLoadingHistory = false
         }
     }
 

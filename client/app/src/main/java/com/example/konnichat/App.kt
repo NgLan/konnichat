@@ -9,6 +9,7 @@ import com.example.konnichat.data.remote.DataSyncManager
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.data.repository.AuthRepository
 import com.example.konnichat.utils.NotificationHelper
 import com.example.konnichat.data.remote.NativeEventListenerImpl
 
@@ -33,6 +34,10 @@ class App : Application() {
     }
 
     val chatRepository by lazy { ChatRepository(db.conversationDao(), db.messageDao()) }
+
+    val authRepository by lazy {
+        AuthRepository(db.userDao(), db)
+    }
 
     override fun onCreate() {
         super.onCreate()

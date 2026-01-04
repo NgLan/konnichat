@@ -21,6 +21,9 @@ interface MessageDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertMessage(message: MessageEntity)
 
+    @Query("SELECT * FROM messages WHERE server_id = :id")
+    suspend fun getMessageById(id: Int): MessageEntity?
+
     // 1. Xóa tin nhắn theo ID (Dùng để xóa tin tạm khi có ACK từ server)
     @Query("DELETE FROM messages WHERE server_id = :id")
     suspend fun deleteMessageById(id: Int)

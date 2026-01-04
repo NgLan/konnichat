@@ -9,10 +9,12 @@ import android.widget.Toast
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import com.example.konnichat.core.state.Resource
-
+import com.example.konnichat.App
 class RegisterActivity : AppCompatActivity() {
 
-    private val viewModel: AuthViewModel by viewModels()
+    private val viewModel: AuthViewModel by viewModels {
+        AuthViewModelFactory((application as App).authRepository)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)

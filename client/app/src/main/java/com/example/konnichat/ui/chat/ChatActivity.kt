@@ -75,8 +75,11 @@ class ChatActivity : AppCompatActivity() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                 super.onScrolled(rv, dx, dy)
                 // Nếu cuộn lên đỉnh (vị trí 0) -> Load thêm lịch sử
-                if (!rv.canScrollVertically(-1)) {
-                    viewModel.loadMoreHistory(targetUserId, adapter.itemCount)
+                if (dy < 0 && !rv.canScrollVertically(-1) && adapter.itemCount > 0) {
+                    val currentCount = adapter.itemCount
+                    // Log để kiểm tra (Optional)
+                    // Log.d("ChatActivity", "Scrolled to top, loading more from offset $currentCount")
+                    viewModel.loadMoreHistory(targetUserId, currentCount)
                 }
             }
         })
