@@ -657,7 +657,7 @@ static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload
     if (group_id > 0)
     {
         CreateGroupRespPayload resp;
-        memset(&resp, 0, sizeof(CreateGroupRespPayload)); 
+        memset(&resp, 0, sizeof(CreateGroupRespPayload));
         resp.group_id = group_id;
 
         strncpy(resp.group_name, req->group_name, MAX_GROUP_NAME - 1);
@@ -689,6 +689,86 @@ static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload
     {
         LOG_ERROR("User %d failed to create group in DB", current_user_id);
         send_response(sock, CMD_CREATE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
+    }
+}
+
+static void handle_add_members(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    // 1. Validate Payload Size cơ bản
+    if (reqHeader->payload_size < (int32_t)sizeof(AddGroupMemberPayload))
+    {
+        send_response(sock, CMD_ADD_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
+    }
+
+    AddGroupMemberPayload *req = (AddGroupMemberPayload *)payload;
+
+    // 2. Validate Size khớp với Count
+    int32_t expected_size = sizeof(AddGroupMemberPayload) + (req->count * sizeof(int32_t));
+    if (reqHeader->payload_size != expected_size)
+    {
+        LOG_WARN("Payload size mismatch in ADD_MEMBER");
+        send_response(sock, CMD_ADD_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
+    }
+
+    // 3. CHECK QUYỀN: Người thêm phải đang ở trong nhóm
+    if (db_is_group_member(req->group_id, current_user_id) != 1)
+    {
+        LOG_WARN("User %d tried to add members to Group %d but is not a member", current_user_id, req->group_id);
+        send_response(sock, CMD_ADD_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
+        return;
+    }
+
+    // 4. Lấy danh sách ID từ payload
+    int32_t *target_ids = (int32_t *)((char *)payload + sizeof(AddGroupMemberPayload));
+
+    // 5. Thực thi DB Transaction
+    int added_count = db_add_group_members(req->group_id, target_ids, req->count);
+
+    if (added_count >= 0)
+    {
+        // --- A. Phản hồi cho người gửi (Success) ---
+        send_response(sock, CMD_ADD_MEMBER_RESP, reqHeader->request_id, STATUS_SUCCESS, NULL, 0);
+
+        // --- B. Broadcast Notification (CMD_NOTIFY_MEMBERS_ADDED) ---
+        // Chuẩn bị gói tin notify
+        // Tái sử dụng struct req, nhưng điền thêm thông tin người add
+        req->added_by_user = current_user_id;
+        get_user_name_by_id(current_user_id, req->added_by_name, MAX_NAME_LEN);
+
+        // Lấy danh sách toàn bộ thành viên hiện tại của nhóm để gửi thông báo
+        // (Bao gồm cả người cũ và người mới vừa thêm)
+        int32_t all_members[MAX_GROUP_MEMBERS]; 
+        int total_mem = db_get_group_member_ids(req->group_id, all_members, MAX_GROUP_MEMBERS);
+
+        for (int i = 0; i < total_mem; i++)
+        {
+            int mem_id = all_members[i];
+
+            // Không gửi notify ngược lại cho người thực hiện (vì đã nhận RESP ở trên)
+            if (mem_id == current_user_id)
+                continue;
+
+            int target_sock = get_socket_by_user_id(mem_id);
+            if (target_sock != -1)
+            {
+                // Gửi toàn bộ cục payload (Header struct + Array IDs)
+                send_response(target_sock, CMD_NOTIFY_MEMBERS_ADDED, 0, STATUS_SUCCESS,
+                              payload, expected_size);
+            }
+        }
+        LOG_INFO("User %d added %d members to Group %d. Notified %d users.",
+                 current_user_id, req->count, req->group_id, total_mem - 1);
+    }
+    else if (added_count == -2)
+    {
+        // Trả về lỗi Full
+        send_response(sock, CMD_ADD_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_GROUP_FULL, NULL, 0);
+    }
+    else
+    {
+        send_response(sock, CMD_ADD_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
     }
 }
 
@@ -795,6 +875,9 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_CREATE_GROUP:
             handle_create_group(sock, &header, payload, current_user_id);
+            break;
+        case CMD_ADD_MEMBER:
+            handle_add_members(sock, &header, payload, current_user_id);
             break;
 
         default:

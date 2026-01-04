@@ -10,7 +10,6 @@ static jobject g_listener = NULL;
 
 // --- Global Cache (Để tối ưu hiệu năng) ---
 static jmethodID m_onFriendList;
-static jmethodID m_onMessage;
 static jmethodID m_onStatus;
 static jmethodID m_onDisconnect;
 static jmethodID m_onFriendReq;
@@ -22,8 +21,7 @@ static jmethodID m_onMsgSent;
 static jmethodID m_onMsgReceived;
 static jmethodID m_onMsgDelivered;
 static jmethodID m_onPendingList;
-static jclass c_PendingRequestDto;
-static jmethodID m_PendingRequestDtoInit;
+static jmethodID m_onGroupMembersAdded;
 
 static jmethodID m_onHistoryReceived;
 static jmethodID m_onGroupCreated;
@@ -34,6 +32,8 @@ static jclass c_UserSearchDto;
 static jmethodID m_UserSearchDtoInit;
 static jclass c_MessageDto;
 static jmethodID m_MessageDtoInit;
+static jclass c_PendingRequestDto;
+static jmethodID m_PendingRequestDtoInit;
 
 // Các class Exception
 static jclass g_AuthException;
@@ -306,6 +306,21 @@ void jni_on_pending_list(int count, PendingReqInfo *list) {
     (*env)->DeleteLocalRef(env, jArray);
 }
 
+void jni_on_group_members_added(int group_id, const char* added_by, int count, int* new_member_ids) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    jstring jAddedBy = (*env)->NewStringUTF(env, added_by);
+    jintArray jIds = (*env)->NewIntArray(env, count);
+    (*env)->SetIntArrayRegion(env, jIds, 0, count, (jint*)new_member_ids);
+
+    (*env)->CallVoidMethod(env, g_listener, m_onGroupMembersAdded,
+                           (jint)group_id, jAddedBy, jIds);
+
+    (*env)->DeleteLocalRef(env, jAddedBy);
+    (*env)->DeleteLocalRef(env, jIds);
+}
+
 // --- Helper ném lỗi ---
 void throw_unified_error(JNIEnv *env, int result_code) {
     jclass exClass = g_UnknownException;
@@ -394,6 +409,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onMsgDelivered = (*env)->GetMethodID(env, lClass, "onMessageDelivered", "(I)V");
     m_onHistoryReceived = (*env)->GetMethodID(env, lClass, "onHistoryReceived", "([Lcom/example/konnichat/data/remote/dto/MessageDto;)V");
     m_onGroupCreated = (*env)->GetMethodID(env, lClass, "onGroupCreated", "(ILjava/lang/String;)V");
+    m_onGroupMembersAdded = (*env)->GetMethodID(env, lClass, "onGroupMembersAdded", "(ILjava/lang/String;[I)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
     // Cache UserDto
@@ -446,11 +462,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     return JNI_VERSION_1_6;
 }
 
-
-
-
-void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *env, jobject thiz,
-                                                                        jobject listener) {
+void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *env, jobject thiz, jobject listener) {
     // 1. Giữ Global Ref cho listener để không bị GC thu hồi
     if (g_listener != NULL)
         (*env)->DeleteGlobalRef(env, g_listener);
@@ -472,6 +484,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_group_created = jni_on_group_created;
     cbs.on_disconnect = jni_on_disconnect;
     cbs.on_pending_list = jni_on_pending_list;
+    cbs.on_group_members_added = jni_on_group_members_added;
     // 3. Start C Thread
     start_reader_thread(cbs);
 }
@@ -644,6 +657,21 @@ Java_com_example_konnichat_data_remote_NativeClient_createGroup(JNIEnv *env, job
     // Giải phóng
     (*env)->ReleaseIntArrayElements(env, members, body, 0);
     (*env)->ReleaseStringUTFChars(env, name, n_name);
+
+    if (status != CLIENT_OK) {
+        throw_unified_error(env, status);
+    }
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_addMembersToGroup(JNIEnv *env, jobject thiz,
+                                                                      jint groupId, jintArray userIds) {
+    jsize len = (*env)->GetArrayLength(env, userIds);
+    jint *body = (*env)->GetIntArrayElements(env, userIds, 0);
+
+    int status = client_add_group_members(groupId, (int32_t*)body, (int)len);
+
+    (*env)->ReleaseIntArrayElements(env, userIds, body, 0);
 
     if (status != CLIENT_OK) {
         throw_unified_error(env, status);
