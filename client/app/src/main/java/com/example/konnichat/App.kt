@@ -10,6 +10,7 @@ import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
 import com.example.konnichat.utils.NotificationHelper
+import com.example.konnichat.data.remote.NativeEventListenerImpl
 
 class App : Application() {
 
@@ -31,7 +32,7 @@ class App : Application() {
         UserRepository(db.userDao(), prefs)
     }
 
-    val chatRepository by lazy { ChatRepository(db.conversationDao()) }
+    val chatRepository by lazy { ChatRepository(db.conversationDao(), db.messageDao()) }
 
     override fun onCreate() {
         super.onCreate()
@@ -39,6 +40,9 @@ class App : Application() {
         // 2. Tạo bộ quản lý đồng bộ
         syncManager = DataSyncManager(db)
 
+        NativeEventListenerImpl.context = applicationContext
+        NativeEventListenerImpl.userRepository = userRepository
+        NativeEventListenerImpl.chatRepository = chatRepository
 
         NotificationHelper.createNotificationChannel(this)
         // 3. Bắt đầu lắng nghe sự kiện từ Native (C)

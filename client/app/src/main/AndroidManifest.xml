@@ -28,6 +28,9 @@
         <activity android:name=".ui.auth.RegisterActivity" />
 
         <activity android:name=".ui.home.HomeActivity" />
+
+        <activity android:name=".ui.chat.ChatActivity" />
+
     </application>
 
 </manifest>
