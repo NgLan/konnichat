@@ -1,26 +1,37 @@
 package com.example.konnichat.core.exception
 
-// Exception gốc cho lỗi từ Native
+// [QUAN TRỌNG] Dòng này phải có đóng ngoặc đàng hoàng thì bên dưới mới hiểu
 open class NativeException(message: String, val code: Int) : Exception(message)
 
-// 1. Lỗi xác thực (Sai pass, sai email)
-class AuthenticationException(code: Int) :
-    NativeException("Lỗi xác thực: Sai email hoặc mật khẩu", code)
+// 1. Lỗi xác thực
+// [SỬA ĐỔI]: Đổi input từ Int -> message: String để khớp với lệnh ThrowNew bên C
+class AuthenticationException(message: String) :
+    NativeException(message, 401)
 
 // 2. Lỗi không tìm thấy người dùng
-class UserNotFoundException(code: Int) : NativeException("Tài khoản không tồn tại", code)
+// [SỬA ĐỔI]: Đổi input từ Int -> message: String
+class UserNotFoundException(message: String) :
+    NativeException(message, 404)
 
-// 3. Lỗi tài khoản đã tồn tại (Khi đăng ký)
-class UserAlreadyExistsException(code: Int) : NativeException("Email đã được sử dụng", code)
+// 3. Lỗi tài khoản đã tồn tại
+// [SỬA ĐỔI]: Đổi input từ Int -> message: String
+class UserAlreadyExistsException(message: String) :
+    NativeException(message, 409)
 
-// 4. Lỗi Server/DB (Server crash, DB full)
-class ServerInternalException(code: Int) : NativeException("Lỗi nội bộ Server", code)
+// 4. Lỗi Server
+// [SỬA ĐỔI]: Đổi input từ Int -> message: String
+class ServerInternalException(message: String) :
+    NativeException(message, 500)
 
-// 5. Lỗi tham số (Gửi thiếu field, format sai)
+// -----------------------------------------------------------------------------
+// CÁC CLASS DƯỚI ĐÂY GIỮ NGUYÊN
+// -----------------------------------------------------------------------------
+
+// 5. Lỗi tham số
 class InvalidParameterException(code: Int) : NativeException("Dữ liệu gửi đi không hợp lệ", code)
 
-// 6. Lỗi mạng (Socket closed, timeout)
+// 6. Lỗi mạng
 class NetworkException(message: String) : NativeException(message, -1)
 
-// 7. Lỗi giao thức (Server trả về command lạ)
+// 7. Lỗi giao thức
 class ProtocolException(message: String) : NativeException(message, -2)
