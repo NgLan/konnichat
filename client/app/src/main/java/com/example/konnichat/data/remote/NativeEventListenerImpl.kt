@@ -1,5 +1,6 @@
 package com.example.konnichat.data.remote
 
+import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
 import com.example.konnichat.data.remote.dto.MessageDto
@@ -15,8 +16,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+@SuppressLint("StaticFieldLeak")
 object NativeEventListenerImpl : NativeEventListener {
-
     var userRepository: UserRepository? = null
     var chatRepository: ChatRepository? = null // Tui đã thêm biến này để tránh lỗi
     var context: Context? = null
@@ -26,7 +27,12 @@ object NativeEventListenerImpl : NativeEventListener {
 
     private const val TAG = "KONNI_EVENT"
 
-    // --- 1. XỬ LÝ KẾT BẠN ---
+    fun init(context: Context, userRepository: UserRepository) {
+        this.context = context.applicationContext // Luôn lấy Application Context
+        this.userRepository = userRepository
+    }
+
+    // --- 1. XỬ LÝ KẾT BẠN (TRỌNG TÂM) ---
 
     override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {
         Log.d(TAG, "🔔 Nhận lời mời từ: $senderName (ID: $senderId) - ReqID: $requestId")
@@ -116,7 +122,13 @@ object NativeEventListenerImpl : NativeEventListener {
         }
     }
 
-    // --- 2. XỬ LÝ TIN NHẮN ---
+    override fun onRequestResponse(cmd: Int, status: Int) {
+        Log.d(TAG, "Response CMD: $cmd, Status: $status")
+    }
+
+    // C. Khi bị hủy kết bạn HOẶC Bị từ chối lời mời (Server cần gửi CMD_NOTIFY_UNFRIENDED)
+    override fun onFriendRemoved(exFriendId: Int) {
+        Log.d(TAG, "💔 Quan hệ với User $exFriendId đã bị xóa (Unfriend/Reject).")
 
     override fun onMessageReceived(msg: MessageDto) {
         Log.d(TAG, "📩 Có tin nhắn mới từ ${msg.senderId}: ${msg.content}")
@@ -192,5 +204,13 @@ object NativeEventListenerImpl : NativeEventListener {
 
     override fun onConnectionClosed(reason: String) {
         Log.e(TAG, "❌ Mất kết nối: $reason")
+    }
+}
+    override fun onGroupCreated(groupId: Int, groupName: String) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onConnectionClosed(reason: String) { 
+        Log.e(TAG, "Mất kết nối: $reason") 
     }
 }
