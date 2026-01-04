@@ -4,6 +4,7 @@ package com.example.konnichat.data.repository
 import android.content.SharedPreferences
 import com.example.konnichat.data.local.dao.UserDao
 import com.example.konnichat.data.local.entity.UserEntity
+import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
@@ -168,5 +169,17 @@ class UserRepository(
             currentList[index] = updatedItem
             _searchResults.value = currentList
         }
+    }
+
+    // 1. Lấy thông tin User theo ID (để check xem có phải bạn bè không)
+    suspend fun getFriendById(targetId: Int): UserEntity? {
+        return userDao.getUserById(targetId)
+    }
+
+    // 2. Gửi lời mời kết bạn (Wrapper gọi xuống Native)
+    suspend fun sendFriendRequest(targetId: Int) {
+        // Gọi Native Client, hàm này sẽ gửi packet xuống server
+        // Kết quả sẽ trả về qua Callback onFriendRequestSent hoặc update UI optimistic
+        NativeClient.sendFriendRequest(targetId)
     }
 }

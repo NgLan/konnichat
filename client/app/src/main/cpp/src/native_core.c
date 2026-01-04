@@ -668,6 +668,10 @@ static void handle_incoming_packet(PacketHeader *header)
                         g_callbacks.on_history_received(count, msgs);
                     }
                 }
+            } else {
+                if (g_callbacks.on_history_received) {
+                    g_callbacks.on_history_received(0, NULL);
+                }
             }
         }
         else
@@ -772,5 +776,7 @@ void start_reader_thread(NativeCallbacks callbacks)
     {
         LOGE("Failed to create reader thread");
         g_read_thread = 0;
+        LOGI("=== READ THREAD EXITED ===");
+        return NULL;
     }
 }
