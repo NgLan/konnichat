@@ -84,6 +84,10 @@ class ChatActivity : AppCompatActivity() {
             }
         })
 
+        binding.btnMute.setOnClickListener {
+            viewModel.toggleMute(targetUserId)
+        }
+
         // Xử lý nút Gửi
         binding.btnSend.setOnClickListener {
             val content = binding.etMessage.text.toString().trim()
@@ -99,6 +103,8 @@ class ChatActivity : AppCompatActivity() {
             binding.btnAddFriend.isEnabled = false
             binding.btnAddFriend.text = "Đang gửi..."
         }
+
+
 
         // Nút Back
         binding.btnBack.setOnClickListener { finish() }
@@ -141,6 +147,19 @@ class ChatActivity : AppCompatActivity() {
                 binding.btnAddFriend.isEnabled = true
                 binding.btnAddFriend.text = "Kết bạn"
                 Toast.makeText(this, "Gửi thất bại", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        viewModel.isMuted.observe(this) { isMuted ->
+            if (isMuted) {
+                // Đã tắt thông báo -> Icon im lặng
+                binding.btnMute.setImageResource(android.R.drawable.ic_lock_silent_mode)
+                // Optional: Toast thông báo
+                // Toast.makeText(this, "Đã tắt thông báo cuộc trò chuyện này", Toast.LENGTH_SHORT).show()
+            } else {
+                // Đang bật -> Icon thông báo
+                binding.btnMute.setImageResource(android.R.drawable.stat_notify_chat)
+                // Toast.makeText(this, "Đã bật thông báo", Toast.LENGTH_SHORT).show()
             }
         }
     }
