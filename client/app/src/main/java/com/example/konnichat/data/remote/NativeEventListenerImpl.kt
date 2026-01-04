@@ -124,26 +124,7 @@ object NativeEventListenerImpl : NativeEventListener {
 
     override fun onRequestResponse(cmd: Int, status: Int) {
         Log.d(TAG, "Response CMD: $cmd, Status: $status")
-        Log.d(TAG, "Den day r")
-
-        // CMD 45: CMD_RESPOND_FRIEND_REQ_RESP
-        // Status 0: STATUS_SUCCESS
-        if (cmd == 45 && status == 0) {
-            Log.d(TAG, "✅ Đã chấp nhận kết bạn thành công. Đang tải lại danh sách bạn bè...")
-            CoroutineScope(Dispatchers.IO).launch {
-                try {
-                    // Tự động gọi lại danh sách bạn bè để cập nhật UI
-                    NativeClient.getFriends(0, 100)
-                } catch (e: Exception) {
-                    Log.e(TAG, "Lỗi khi auto-fetch friend list: ${e.message}")
-                }
-            }
-        }
     }
-
-    // C. Khi bị hủy kết bạn HOẶC Bị từ chối lời mời (Server cần gửi CMD_NOTIFY_UNFRIENDED)
-    override fun onFriendRemoved(exFriendId: Int) {
-        Log.d(TAG, "💔 Quan hệ với User $exFriendId đã bị xóa (Unfriend/Reject).")
 
     override fun onMessageReceived(msg: MessageDto) {
         Log.d(TAG, "📩 Có tin nhắn mới từ ${msg.senderId}: ${msg.content}")
@@ -213,19 +194,11 @@ object NativeEventListenerImpl : NativeEventListener {
         }
     }
 
-    override fun onRequestResponse(cmd: Int, status: Int) {
-        Log.d(TAG, "Response CMD: $cmd, Status: $status")
-    }
-
-    override fun onConnectionClosed(reason: String) {
-        Log.e(TAG, "❌ Mất kết nối: $reason")
-    }
-}
     override fun onGroupCreated(groupId: Int, groupName: String) {
         TODO("Not yet implemented")
     }
 
-    override fun onConnectionClosed(reason: String) { 
-        Log.e(TAG, "Mất kết nối: $reason") 
+    override fun onConnectionClosed(reason: String) {
+        Log.e(TAG, "Mất kết nối: $reason")
     }
 }

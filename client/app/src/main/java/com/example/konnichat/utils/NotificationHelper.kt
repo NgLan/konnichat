@@ -54,11 +54,17 @@ object NotificationHelper {
             .setContentIntent(pendingIntent)
             .setAutoCancel(true) // Tự đóng khi click
 
-        try {
-            NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_FRIEND_REQ, builder.build())
-        } catch (e: SecurityException) {
-            // Android 13+ cần xin quyền POST_NOTIFICATIONS, tạm thời bỏ qua nếu chưa có quyền
-            e.printStackTrace()
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (androidx.core.app.ActivityCompat.checkSelfPermission(
+                    context,
+                    android.Manifest.permission.POST_NOTIFICATIONS
+                ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+            ) {
+                // Nếu chưa có quyền thì không hiện thông báo để tránh crash
+                return
+            }
         }
+
+        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_FRIEND_REQ, builder.build())
     }
 }

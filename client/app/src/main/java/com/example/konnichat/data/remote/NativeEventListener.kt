@@ -34,4 +34,5 @@ interface NativeEventListener {
     // Khi bị ngắt kết nối
     fun onConnectionClosed(reason: String)
     fun onGroupCreated(groupId: Int, groupName: String)
+    
 }
