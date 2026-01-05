@@ -96,7 +96,7 @@ typedef enum {
     CMD_NOTIFY_GROUP_CREATED = 86,
     CMD_NOTIFY_MEMBERS_ADDED = 87,
     CMD_NOTIFY_MEMBER_LEFT   = 88,
-
+    CMD_NOTIFY_MEMBER_REMOVED = 89,
     // 99. Error
     CMD_ERROR_UNKNOWN       = 999
 } CommandType;
@@ -113,7 +113,9 @@ typedef enum {
     STATUS_ERROR_ALREADY_FRIEND = 7,  // Đã là bạn rồi
     STATUS_ERROR_REQ_PENDING = 8,      // Đã gửi rồi, đừng spam
     STATUS_ERROR_GROUP_FULL = 9,       // Nhóm đã đầy
-    STATUS_ERROR_USER_NOT_IN_GROUP = 10  // Người dùng không thuộc nhóm
+    STATUS_ERROR_USER_NOT_IN_GROUP = 10,  // Người dùng không thuộc nhóm
+    STATUS_ERROR_NOT_GROUP_ADMIN = 11,   // Người dùng không phải admin nhóm
+    STATUS_ERROR_CANNOT_REMOVE_SELF = 12  // Không thể tự kick chính mình khỏi nhóm
 } StatusCode;
 
 // --- ĐỊNH NGHĨA TRẠNG THÁI QUAN HỆ ---
@@ -300,5 +302,20 @@ typedef struct __attribute__((packed)) {
     char group_name[MAX_GROUP_NAME];
     char avatar_url[MAX_AVATAR_LEN];
 } GroupInfoPayload;
+
+// Request (Client Admin -> Server)
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+    int32_t target_user_id; // Người bị kick
+} RemoveMemberReqPayload;
+
+// Notify (Server -> Client Members)
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+    int32_t member_id;              // ID người bị kick
+    char member_name[MAX_NAME_LEN]; // Tên người bị kick (để hiển thị UI)
+    int32_t admin_id;               // ID người thực hiện kick
+    char admin_name[MAX_NAME_LEN];  // Tên admin
+} MemberRemovedNotifyPayload;
 
 #endif

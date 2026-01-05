@@ -338,3 +338,63 @@ int db_get_joined_groups(int user_id, GroupInfoPayload *groups_out, int limit, i
     db_release_conn(conn);
     return count;
 }
+
+char *db_get_member_role(int32_t group_id, int32_t user_id)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return NULL;
+
+    char query[256];
+    snprintf(query, sizeof(query),
+             "SELECT role FROM group_members WHERE group_id = %d AND member_id = %d AND status = 'active'",
+             group_id, user_id);
+
+    if (mysql_query(conn, query))
+    {
+        db_release_conn(conn);
+        return NULL;
+    }
+
+    MYSQL_RES *res = mysql_store_result(conn);
+    char *role = NULL;
+    if (res)
+    {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row && row[0])
+        {
+            role = strdup(row[0]); // Copy chuỗi ra vùng nhớ mới
+        }
+        mysql_free_result(res);
+    }
+    db_release_conn(conn);
+    return role;
+}
+
+int db_kick_member(int32_t group_id, int32_t target_id)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    char query[256];
+    // Chỉ update status thành 'kicked'
+    snprintf(query, sizeof(query),
+             "UPDATE group_members SET status = 'kicked' "
+             "WHERE group_id = %d AND member_id = %d",
+             group_id, target_id);
+
+    int success = 0;
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Kick Member Error: %s", mysql_error(conn));
+    }
+    else
+    {
+        if (mysql_affected_rows(conn) > 0)
+            success = 1;
+    }
+
+    db_release_conn(conn);
+    return success;
+}

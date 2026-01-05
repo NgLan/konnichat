@@ -73,4 +73,17 @@ int db_add_group_members(int32_t group_id, const int32_t* user_ids, int count);
  */
 int db_get_joined_groups(int user_id, GroupInfoPayload* groups_out, int limit, int offset);
 
+/**
+ * @brief Lấy vai trò của user trong nhóm.
+ * @return Chuỗi role ("admin", "member") hoặc NULL nếu không trong nhóm.
+ * Caller phải free chuỗi trả về.
+ */
+char* db_get_member_role(int32_t group_id, int32_t user_id);
+
+/**
+ * @brief Chuyển trạng thái thành viên thành 'kicked'.
+ * @return 1 nếu thành công, 0 nếu thất bại.
+ */
+int db_kick_member(int32_t group_id, int32_t target_id);
+
 #endif // GROUP_REPO_H

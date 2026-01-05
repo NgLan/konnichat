@@ -132,4 +132,14 @@ class DataSyncManager(private val db: AppDatabase) : NativeEventListener {
     override fun onGroupListReceived(groups: Array<GroupDto>) {
         TODO("Not yet implemented")
     }
+
+    override fun onMemberRemoved(
+        groupId: Int,
+        memberId: Int,
+        memberName: String,
+        adminId: Int,
+        adminName: String
+    ) {
+        TODO("Not yet implemented")
+    }
 }
