@@ -44,7 +44,7 @@ int db_get_group_member_ids(int32_t group_id, int32_t* out_member_ids, int max_c
 int db_is_group_member(int32_t group_id, int32_t user_id);
 
 /**
- * @brief Xóa (hoặc rời) khỏi nhóm.
+ * @brief Rời khỏi nhóm.
  * 
  * @param group_id ID nhóm.
  * @param user_id ID người rời nhóm.
@@ -61,5 +61,16 @@ int db_leave_group(int32_t group_id, int32_t user_id);
  * @return int Số lượng người thực tế thêm được (>=0), hoặc -1 nếu lỗi DB, -2 nếu nhóm chat full người.
  */
 int db_add_group_members(int32_t group_id, const int32_t* user_ids, int count);
+
+/**
+ * @brief Lấy danh sách nhóm mà user đang tham gia (status = 'active')
+ * 
+ * @param user_id ID người dùng
+ * @param groups_out Pointer đến mảng struct để hứng dữ liệu
+ * @param limit Số lượng tối đa
+ * @param offset Vị trí bắt đầu
+ * @return int Số lượng nhóm lấy được
+ */
+int db_get_joined_groups(int user_id, GroupInfoPayload* groups_out, int limit, int offset);
 
 #endif // GROUP_REPO_H

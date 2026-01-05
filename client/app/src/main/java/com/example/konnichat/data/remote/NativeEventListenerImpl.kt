@@ -3,6 +3,7 @@ package com.example.konnichat.data.remote
 import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
+import com.example.konnichat.data.remote.dto.GroupDto
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
@@ -235,7 +236,17 @@ object NativeEventListenerImpl : NativeEventListener {
         }
     }
 
-    // ... (Các hàm khác giữ nguyên)
+    override fun onMemberLeft(
+        groupId: Int,
+        memberId: Int,
+        memberName: String
+    ) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onGroupListReceived(groups: Array<GroupDto>) {
+        TODO("Not yet implemented")
+    }
 
     override fun onConnectionClosed(reason: String) {
         Log.e(TAG, "Mất kết nối: $reason")

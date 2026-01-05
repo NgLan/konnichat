@@ -158,9 +158,9 @@ static int internal_insert_member(MYSQL *conn, int32_t group_id, int32_t user_id
 {
     char query[256];
     snprintf(query, sizeof(query),
-             "INSERT INTO group_members (group_id, member_id, role, status) "
-             "VALUES (%d, %d, 'member', 'active') "
-             "ON DUPLICATE KEY UPDATE status = 'active'",
+             "INSERT INTO group_members (group_id, member_id, role, status, joined_at) "
+             "VALUES (%d, %d, 'member', 'active', NOW()) "
+             "ON DUPLICATE KEY UPDATE status = 'active', joined_at = NOW()",
              group_id, user_id);
 
     if (mysql_query(conn, query))
@@ -189,7 +189,7 @@ int db_add_group_members(int32_t group_id, const int32_t *user_ids, int count)
         return -1;
     }
 
-    // 2. CHECK SIZE HIỆN TẠI 
+    // 2. CHECK SIZE HIỆN TẠI
     // Dùng FOR UPDATE để lock, không cho transaction khác sửa danh sách thành viên lúc này
     char query_count[256];
     snprintf(query_count, sizeof(query_count),
@@ -261,7 +261,7 @@ int db_leave_group(int32_t group_id, int32_t user_id)
         return 0;
 
     char query[256];
-    // Không DELETE vật lý để giữ history tin nhắn, chỉ chuyển trạng thái
+    // LOGIC: Chỉ update status thành 'left', không xóa bản ghi
     snprintf(query, sizeof(query),
              "UPDATE group_members SET status = 'left' WHERE group_id = %d AND member_id = %d",
              group_id, user_id);
@@ -273,9 +273,68 @@ int db_leave_group(int32_t group_id, int32_t user_id)
     }
     else
     {
-        success = (mysql_affected_rows(conn) > 0);
+        // Kiểm tra xem có dòng nào được update không (nếu user chưa vào nhóm thì row=0)
+        if (mysql_affected_rows(conn) > 0)
+        {
+            success = 1;
+        }
     }
 
     db_release_conn(conn);
     return success;
+}
+
+int db_get_joined_groups(int user_id, GroupInfoPayload *groups_out, int limit, int offset)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    char query[1024];
+    // Chọn thông tin nhóm từ bảng groups (g)
+    // Join với group_members (gm) để lọc ra những nhóm user_id đang tham gia
+    snprintf(query, sizeof(query),
+             "SELECT g.id, g.name, g.avatar_url "
+             "FROM `groups` g "
+             "JOIN group_members gm ON g.id = gm.group_id "
+             "WHERE gm.member_id = %d AND gm.status = 'active' "
+             "ORDER BY gm.joined_at DESC, g.id DESC " // Nhóm mới vào/tạo lên đầu
+             "LIMIT %d OFFSET %d",
+             user_id, limit, offset);
+
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Get Joined Groups Error: %s", mysql_error(conn));
+        db_release_conn(conn);
+        return 0;
+    }
+
+    MYSQL_RES *res = mysql_store_result(conn);
+    int count = 0;
+    if (res)
+    {
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(res)) && count < limit)
+        {
+            groups_out[count].group_id = atoi(row[0]);
+
+            // Copy tên nhóm
+            if (row[1])
+                strncpy(groups_out[count].group_name, row[1], MAX_GROUP_NAME - 1);
+            else
+                strcpy(groups_out[count].group_name, "Unknown Group");
+
+            // Copy avatar
+            if (row[2])
+                strncpy(groups_out[count].avatar_url, row[2], MAX_AVATAR_LEN - 1);
+            else
+                strcpy(groups_out[count].avatar_url, "");
+
+            count++;
+        }
+        mysql_free_result(res);
+    }
+
+    db_release_conn(conn);
+    return count;
 }

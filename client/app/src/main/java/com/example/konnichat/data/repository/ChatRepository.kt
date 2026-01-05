@@ -102,7 +102,7 @@ class ChatRepository(
     // [NEW] Load lịch sử cũ hơn
     fun loadHistory(targetId: Int, offset: Int, limit: Int) {
         // Gọi Native, dữ liệu trả về sẽ vào callback onHistoryReceived -> lưu DB -> Flow update UI
-        NativeClient.getChatHistory(targetId, offset, limit)
+        NativeClient.getChatHistory(targetId, false, offset, limit)
     }
 
     // [NEW] Lưu tin nhắn từ Network (Socket trả về)

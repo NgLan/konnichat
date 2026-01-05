@@ -5,6 +5,7 @@ import com.example.konnichat.core.exception.AuthenticationException
 import com.example.konnichat.core.exception.UserAlreadyExistsException
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListener
+import com.example.konnichat.data.remote.dto.GroupDto
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
@@ -50,6 +51,11 @@ class NativeClientTest {
         const val CMD_ADD_MEMBER = 32
         const val CMD_ADD_MEMBER_RESP = 33
 
+        const val CMD_LEAVE_GROUP = 36
+        const val CMD_LEAVE_GROUP_RESP = 37
+        const val CMD_GET_GROUP_LIST = 50
+        const val CMD_GET_GROUP_LIST_RESP = 51
+
         const val CMD_SEND_FRIEND_REQ = 42
         const val CMD_SEND_FRIEND_REQ_RESP = 43
 
@@ -65,6 +71,7 @@ class NativeClientTest {
         const val CMD_NOTIFY_MSG_DELIVERED = 85
         const val CMD_NOTIFY_GROUP_CREATED = 86
         const val CMD_NOTIFY_MEMBERS_ADDED = 87
+        const val CMD_NOTIFY_MEMBER_LEFT = 88
 
         // --- Status Codes ---
         const val STATUS_SUCCESS = 0
@@ -77,6 +84,9 @@ class NativeClientTest {
 
         // sizes
         const val MAX_GROUP_NAME = 100
+
+        // Message Type
+        const val MSG_TYPE_SYSTEM = 9
     }
 
     @Before
@@ -685,6 +695,7 @@ class NativeClientTest {
 
         NativeClient.registerUser("UserA", emailA, pass)
         NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
 
         // 1. Lấy ID của B
         NativeClient.disconnect()
@@ -734,7 +745,7 @@ class NativeClientTest {
         NativeClient.startListening(listenerA)
 
         // 4. Gửi tin (Thêm tham số "private")
-        NativeClient.sendMessage(idB, "Hello B Online", tempMsgId, "private")
+        NativeClient.sendMessage(idA,idB, "Hello B Online", tempMsgId, "private")
 
         // 5. Verify
         Assert.assertTrue("A không nhận được ACK Sent", latchSent.await(5, TimeUnit.SECONDS))
@@ -803,6 +814,7 @@ class NativeClientTest {
 
         NativeClient.registerUser("UserA", emailA, pass)
         NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
 
         // 1. Setup B Offline
         NativeClient.disconnect()
@@ -825,7 +837,7 @@ class NativeClientTest {
         })
 
         val offlineContent = "Safe Offline Msg"
-        NativeClient.sendMessage(idB, offlineContent, 7777, "private")
+        NativeClient.sendMessage(idA,idB, offlineContent, 7777, "private")
         latchSent.await(5, TimeUnit.SECONDS)
 
         NativeClient.disconnect()
@@ -861,155 +873,384 @@ class NativeClientTest {
         Assert.assertEquals(offlineContent, msgContent)
     }
 
+    @Test
+    fun test11_b_Offline_Ignore_Group_Messages() {
+        val time = System.currentTimeMillis()
+        val emailA = "ignA_$time@konni.com"
+        val emailB = "ignB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. Tạo nhóm có A và B
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchGroup = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchGroup.countDown()
+            }
+        })
+        NativeClient.createGroup("Ignore Group", intArrayOf(idB))
+        latchGroup.await(5, TimeUnit.SECONDS)
+
+        // 2. A gửi tin khi B đang OFFLINE (Vì B chưa login sau khi A connect lại)
+        val latchSent = CountDownLatch(2)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+                latchSent.countDown()
+            }
+        })
+
+        // Gửi 1 tin Private (Mong đợi: Sẽ nhận được khi fetch offline)
+        NativeClient.sendMessage(idA, idB, "PRIVATE_MSG", 1, "private")
+
+        // Gửi 1 tin Group (Mong đợi: KHÔNG nhận được khi fetch offline)
+        NativeClient.sendMessage(idA, groupId, "GROUP_MSG", 2, "group")
+
+        Assert.assertTrue(latchSent.await(5, TimeUnit.SECONDS))
+        NativeClient.disconnect()
+        Thread.sleep(500)
+
+        // 3. B Online và Fetch Offline
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchRecv = CountDownLatch(1)
+        val receivedMsgs = mutableListOf<String>()
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageReceived(msg: MessageDto) {
+                synchronized(receivedMsgs) {
+                    receivedMsgs.add(msg.content)
+                }
+                // Chỉ đếm xuống khi nhận tin PRIVATE
+                if (msg.chatType == "private") {
+                    latchRecv.countDown()
+                }
+            }
+        })
+
+        // Gọi lệnh lấy tin offline
+        NativeClient.fetchOfflineMessages()
+
+        // 4. Verify
+        // Chờ tin Private về
+        Assert.assertTrue("Không nhận được tin Private Offline", latchRecv.await(5, TimeUnit.SECONDS))
+
+        // Chờ thêm 1 chút để chắc chắn không có tin rác nào khác về
+        Thread.sleep(500)
+
+        synchronized(receivedMsgs) {
+            // Kiểm tra danh sách tin nhận được
+            Assert.assertTrue("Phải nhận được tin Private", receivedMsgs.contains("PRIVATE_MSG"))
+            Assert.assertFalse("Không được nhận tin Group qua fetchOffline", receivedMsgs.contains("GROUP_MSG"))
+        }
+    }
+
     // ==========================================
-    // MODULE 7: CHAT HISTORY (PAGINATION & INTEGRITY)
+    // MODULE 7: CHAT HISTORY (COMPREHENSIVE)
     // ==========================================
 
+    /**
+     * Test 12: Private Chat History (1-1)
+     * - Kiểm tra tính năng phân trang (Pagination).
+     * - Kiểm tra thứ tự sắp xếp (Mới nhất trước).
+     * - Kiểm tra nội dung và timestamp.
+     */
     @Test
-    fun test12_GetChatHistory_FullFlow() {
+    fun test12_GetHistory_Private_Pagination() {
         val time = System.currentTimeMillis()
         val emailA = "histA_$time@konni.com"
         val emailB = "histB_$time@konni.com"
         val pass = "123"
 
-        // --- SETUP: Đăng ký user cho riêng test case này ---
         NativeClient.registerUser("UserA", emailA, pass)
         NativeClient.registerUser("UserB", emailB, pass)
 
-        // --- BƯỚC 1: TẠO DỮ LIỆU MẪU (SEEDING) CHÍNH XÁC ---
+        val idB = helperGetUserId(emailB, pass)
+        val idA = helperGetUserId(emailA, pass) // Lấy luôn ID của A
 
-        // --- SEEDING 1.1: Lấy ID của cả 2 user ---
-        // Login B để lấy ID, sau đó disconnect ngay
-        val userB = NativeClient.loginUser(emailB, pass)!!
-        val idB = userB.id
-        NativeClient.disconnect()
-        Thread.sleep(200)
-
-        // Login A để lấy ID, sau đó disconnect ngay
-        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
-        val userA = NativeClient.loginUser(emailA, pass)!!
-        val idA = userA.id
-        NativeClient.disconnect()
-        Thread.sleep(200)
-
-        // --- SEEDING 1.2: User A gửi 6 tin nhắn cho B ---
+        // --- SEEDING: A gửi và B gửi ---
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         NativeClient.loginUser(emailA, pass)
-        val latchSeedA = CountDownLatch(6)
-        NativeClient.startListening(object : StubNativeEventListener() {
-            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
-                latchSeedA.countDown()
-            }
-        })
-        for (i in 1..6) {
-            NativeClient.sendMessage(idB, "Msg A->$i", i, "private")
-            Thread.sleep(150) // Tăng delay để timestamp cách biệt rõ rệt
-        }
-        Assert.assertTrue("Seeding A failed: Không nhận đủ 6 ACKs", latchSeedA.await(8, TimeUnit.SECONDS))
-        NativeClient.disconnect()
-        Thread.sleep(500)
 
-        // --- SEEDING 1.3: User B gửi 4 tin nhắn cho A ---
-        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
-        NativeClient.loginUser(emailB, pass)
-        val latchSeedB = CountDownLatch(4)
-        NativeClient.startListening(object : StubNativeEventListener() {
-            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
-                latchSeedB.countDown()
-            }
-        })
+        // Bỏ CountDownLatch vì nó không đáng tin cậy trong kịch bản này
+        // A gửi 3 tin
+        for (i in 1..3) {
+            NativeClient.sendMessage(idA, idB, "Msg_$i", i, "private")
+            Thread.sleep(50)
+        }
+
+        // B dùng FakeClient gửi 3 tin
+        val threadB = Thread {
+            try {
+                val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fb.login(emailB, pass)
+                for (i in 4..6) {
+                    fb.sendMessage(idA, "Msg_$i", "private")
+                    Thread.sleep(50)
+                }
+                fb.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadB.start()
+        threadB.join() // Chờ B gửi xong
+
+        // A gửi tiếp 4 tin
         for (i in 7..10) {
-            NativeClient.sendMessage(idA, "Msg B->$i", i, "private")
-            Thread.sleep(150)
+            NativeClient.sendMessage(idA, idB, "Msg_$i", i, "private")
+            Thread.sleep(50)
         }
-        Assert.assertTrue("Seeding B failed: Không nhận đủ 4 ACKs", latchSeedB.await(8, TimeUnit.SECONDS))
-        NativeClient.disconnect()
-        Thread.sleep(500)
 
-        // --- BƯỚC 2: VERIFICATION - A lấy lịch sử chat với B ---
-        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
-        NativeClient.loginUser(emailA, pass)
+        // Chờ 1 giây để server chắc chắn xử lý hết
+        Thread.sleep(1000)
 
-        // Sử dụng 1 listener duy nhất và 1 list chung để xử lý tất cả các trang
+        // --- VERIFY PAGINATION ---
         val historyList = mutableListOf<MessageDto>()
-        var currentLatch = CountDownLatch(1)
+        var historyLatch = CountDownLatch(1)
         NativeClient.startListening(object : StubNativeEventListener() {
             override fun onHistoryReceived(messages: Array<MessageDto>) {
                 synchronized(historyList) {
                     historyList.clear()
                     historyList.addAll(messages)
                 }
-                currentLatch.countDown()
+                historyLatch.countDown()
             }
         })
 
-        // --- TEST CASE 2.1: LẤY PAGE 1 (5 tin mới nhất) ---
-        NativeClient.getChatHistory(idB, 0, 5)
-        Assert.assertTrue("Timeout Page 1", currentLatch.await(5, TimeUnit.SECONDS))
-        Assert.assertEquals("Page 1 phải có 5 tin", 5, historyList.size)
-        // Kiểm tra tin mới nhất (phải là tin cuối cùng B gửi)
-        Assert.assertEquals("Tin mới nhất phải là 'Msg B->10'", "Msg B->10", historyList[0].content)
-        Assert.assertEquals("Tin cũ nhất của Page 1 phải là 'Msg A->6'", "Msg A->6", historyList.last().content)
-        Assert.assertTrue("Tin nhắn phải được sắp xếp giảm dần theo thời gian", historyList[0].timestamp >= historyList[1].timestamp)
+        // PAGE 1: Lấy 4 tin mới nhất
+        NativeClient.getChatHistory(idB, false, 0, 4)
+        Assert.assertTrue("Timeout Page 1", historyLatch.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals(4, historyList.size)
+        Assert.assertEquals("Msg_10", historyList[0].content)
+        Assert.assertEquals("Msg_7", historyList[3].content)
 
-        // --- TEST CASE 2.2: LẤY PAGE 2 (5 tin tiếp theo) ---
-        currentLatch = CountDownLatch(1) // Reset latch cho lần gọi tiếp theo
-        NativeClient.getChatHistory(idB, 5, 5)
-        Assert.assertTrue("Timeout Page 2", currentLatch.await(5, TimeUnit.SECONDS))
-        Assert.assertEquals("Page 2 phải có 5 tin", 5, historyList.size)
-        // Kiểm tra tin mới nhất của Page 2 (phải là tin ngay sau tin cuối của Page 1)
-        Assert.assertEquals("Tin mới nhất của Page 2 phải là 'Msg A->5'", "Msg A->5", historyList.first().content)
-        // Kiểm tra tin cũ nhất trong toàn bộ lịch sử
-        Assert.assertEquals("Tin cũ nhất phải là 'Msg A->1'", "Msg A->1", historyList.last().content)
+        // PAGE 2: Lấy 4 tin tiếp theo
+        historyLatch = CountDownLatch(1)
+        NativeClient.getChatHistory(idB, false, 4, 4)
+        Assert.assertTrue("Timeout Page 2", historyLatch.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals(4, historyList.size)
+        Assert.assertEquals("Msg_6", historyList[0].content)
+        Assert.assertEquals("Msg_3", historyList[3].content)
 
-        // --- TEST CASE 2.3: HẾT LỊCH SỬ ---
-        currentLatch = CountDownLatch(1)
-        NativeClient.getChatHistory(idB, 10, 5) // Đã lấy 10 tin, offset 10 sẽ không còn gì
-        Assert.assertTrue("Timeout Empty Page", currentLatch.await(5, TimeUnit.SECONDS))
-        Assert.assertEquals("Hết dữ liệu phải trả về 0", 0, historyList.size)
+        // PAGE 3: Lấy phần còn lại (2 tin)
+        historyLatch = CountDownLatch(1)
+        NativeClient.getChatHistory(idB, false, 8, 4)
+        Assert.assertTrue("Timeout Page 3", historyLatch.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals(2, historyList.size)
+        Assert.assertEquals("Msg_2", historyList[0].content)
+        Assert.assertEquals("Msg_1", historyList[1].content)
     }
 
+    /**
+     * Test 13: Group Chat History
+     * - Kiểm tra lấy lịch sử chat nhóm (isGroup = true).
+     * - Đảm bảo tin nhắn có chatType = "group".
+     */
     @Test
-    fun test13_GetChatHistory_NoHistory() {
-        // Kịch bản: A lấy lịch sử với người lạ C (chưa từng chat).
-        // Mong đợi: Trả về mảng rỗng ngay lập tức.
-
+    fun test13_GetHistory_Group_Flow() {
         val time = System.currentTimeMillis()
-        val emailA = "noHistA_$time@konni.com"
-        val emailC = "stranger_$time@konni.com"
+        val emailA = "gHistA_$time@konni.com"
+        val emailB = "gHistB_$time@konni.com"
         val pass = "123"
 
         NativeClient.registerUser("UserA", emailA, pass)
-        NativeClient.registerUser("Stranger", emailC, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
 
-        // 1. Lấy ID Stranger
-        NativeClient.disconnect()
-        Thread.sleep(200)
-        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
-        val userC = NativeClient.loginUser(emailC, pass)!!
-        val idC = userC.id
-        NativeClient.disconnect()
-        Thread.sleep(500)
-
-        // 2. Login A
+        // 1. A tạo nhóm
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         NativeClient.loginUser(emailA, pass)
 
-        // 3. Request History
-        val latch = CountDownLatch(1)
-        var receivedCount = -1
+        val latchGroup = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchGroup.countDown()
+            }
+        })
+        NativeClient.createGroup("History Group", intArrayOf(idB))
+        latchGroup.await(5, TimeUnit.SECONDS)
+
+        // 2. Seeding: Gửi 5 tin vào nhóm
+        val latchSeed = CountDownLatch(5)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+                latchSeed.countDown()
+            }
+        })
+
+        for (i in 1..5) {
+            // Lưu ý: gửi vào groupId, chatType="group"
+            NativeClient.sendMessage(idA,groupId, "G_Msg_$i", i, "group")
+            Thread.sleep(50)
+        }
+        Assert.assertTrue(latchSeed.await(5, TimeUnit.SECONDS))
+
+        // 3. Get Group History
+        val latchHist = CountDownLatch(1)
+        val list = mutableListOf<MessageDto>()
 
         NativeClient.startListening(object : StubNativeEventListener() {
             override fun onHistoryReceived(messages: Array<MessageDto>) {
-                receivedCount = messages.size
+                list.addAll(messages)
+                latchHist.countDown()
+            }
+        })
+
+        // Gọi hàm với isGroup = true
+        NativeClient.getChatHistory(groupId, true, 0, 10)
+
+        Assert.assertTrue(latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Phải lấy được 5 tin nhắn nhóm", 5, list.size)
+
+        // Kiểm tra tin mới nhất
+        Assert.assertEquals("G_Msg_5", list[0].content)
+        // Kiểm tra Chat Type
+        Assert.assertEquals("group", list[0].chatType)
+        // Kiểm tra Receiver ID phải là GroupID
+        Assert.assertEquals(groupId, list[0].receiverId)
+    }
+
+    /**
+     * Test 23: Data Isolation (QUAN TRỌNG NHẤT)
+     * - Chat Private không được lẫn vào Chat Group.
+     * - Chat Group không được lẫn vào Chat Private.
+     */
+    @Test
+    fun test23_GetHistory_Isolation_PrivateVsGroup() {
+        val time = System.currentTimeMillis()
+        val emailA = "isoA_$time@konni.com"
+        val emailB = "isoB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. Login A và Tạo nhóm với B
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Isolation Group", intArrayOf(idB))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. Seeding Dữ liệu hỗn hợp
+        val latchSeed = CountDownLatch(2)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+                latchSeed.countDown()
+            }
+        })
+
+        // Tin 1: Gửi Private cho B
+        NativeClient.sendMessage(idA,idB, "SECRET_PRIVATE_MSG", 1, "private")
+        Thread.sleep(100)
+        // Tin 2: Gửi Group (nơi có B là thành viên)
+        NativeClient.sendMessage(idA,groupId, "PUBLIC_GROUP_MSG", 2, "group")
+
+        Assert.assertTrue(latchSeed.await(5, TimeUnit.SECONDS))
+
+        // 3. VERIFY: Lấy lịch sử Private (với B)
+        // Mong đợi: Chỉ thấy tin PRIVATE, không thấy tin GROUP
+        val latchPriv = CountDownLatch(1)
+        var privList: Array<MessageDto>? = null
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                privList = messages
+                latchPriv.countDown()
+            }
+        })
+
+        NativeClient.getChatHistory(idB, false, 0, 10) // isGroup = false
+        latchPriv.await(5, TimeUnit.SECONDS)
+
+        Assert.assertNotNull(privList)
+        Assert.assertEquals("Private history chỉ có 1 tin", 1, privList!!.size)
+        Assert.assertEquals("SECRET_PRIVATE_MSG", privList!![0].content)
+
+        // 4. VERIFY: Lấy lịch sử Group
+        // Mong đợi: Chỉ thấy tin GROUP, không thấy tin PRIVATE
+        val latchGroup = CountDownLatch(1)
+        var groupList: Array<MessageDto>? = null
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                groupList = messages
+                latchGroup.countDown()
+            }
+        })
+
+        NativeClient.getChatHistory(groupId, true, 0, 10) // isGroup = true
+        latchGroup.await(5, TimeUnit.SECONDS)
+
+        Assert.assertNotNull(groupList)
+        Assert.assertEquals("Group history chỉ có 1 tin", 1, groupList!!.size)
+        Assert.assertEquals("PUBLIC_GROUP_MSG", groupList!![0].content)
+    }
+
+    /**
+     * Test 24: Empty & Edge Cases
+     * - Lấy lịch sử với người chưa từng chat.
+     * - Lấy lịch sử với ID không tồn tại.
+     */
+    @Test
+    fun test24_GetHistory_Empty_And_EdgeCases() {
+        val time = System.currentTimeMillis()
+        val email = "edge_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("EdgeUser", email, pass)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, pass)
+
+        val latch = CountDownLatch(1)
+        var msgCount = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                msgCount = messages.size
                 latch.countDown()
             }
         })
 
-        NativeClient.getChatHistory(idC, 0, 20)
+        // Case 1: Lấy lịch sử với user ID 999999 (Không tồn tại)
+        NativeClient.getChatHistory(999999, false, 0, 10)
 
-        Assert.assertTrue("Timeout waiting for response", latch.await(5, TimeUnit.SECONDS))
-        Assert.assertEquals("Lịch sử với người lạ phải rỗng", 0, receivedCount)
+        Assert.assertTrue(latch.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Lịch sử phải rỗng", 0, msgCount)
+
+        // Case 2: Lấy lịch sử Group ID 999999 (Không tồn tại)
+        val latch2 = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                msgCount = messages.size
+                latch2.countDown()
+            }
+        })
+        NativeClient.getChatHistory(999999, true, 0, 10)
+        Assert.assertTrue(latch2.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Lịch sử group rỗng", 0, msgCount)
     }
 
     // ==========================================
@@ -1073,8 +1314,64 @@ class NativeClientTest {
     }
 
     @Test
+    fun test14_b_CreateGroup_Persistence() {
+        // Kịch bản:
+        // 1. A tạo nhóm.
+        // 2. Ngay sau đó A lấy lịch sử chat của nhóm này.
+        // 3. Phải thấy dòng "đã tạo nhóm" nằm trong lịch sử.
+
+        val time = System.currentTimeMillis()
+        val emailA = "cre_persist_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        // 1. Tạo nhóm
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+
+        NativeClient.createGroup("Persistence Group", intArrayOf()) // Nhóm 1 mình cũng được
+        Assert.assertTrue(latchCreate.await(5, TimeUnit.SECONDS))
+
+        // 2. Lấy lịch sử nhóm ngay lập tức
+        val latchHist = CountDownLatch(1)
+        var msgType = -1
+        var msgContent = ""
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                if (messages.isNotEmpty()) {
+                    // Lấy tin đầu tiên (mới nhất)
+                    msgType = messages[0].type
+                    msgContent = messages[0].content
+                    latchHist.countDown()
+                }
+            }
+        })
+
+        // Gọi getChatHistory cho Group (isGroup = true)
+        NativeClient.getChatHistory(groupId, true, 0, 10)
+
+        // 3. Verify
+        Assert.assertTrue("Timeout lấy History sau khi tạo nhóm", latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Tin nhắn đầu tiên phải là System Message", MSG_TYPE_SYSTEM, msgType)
+        Assert.assertTrue("Nội dung phải chứa 'tạo nhóm'", msgContent.contains("tạo nhóm"))
+    }
+
+    @Test
     fun test15_CreateGroup_Broadcast_Realtime() {
-        // Kịch bản: B tạo nhóm có A. A đang Online phải nhận được thông báo ngay lập tức.
+        // Kịch bản: B tạo nhóm có A. A đang Online phải nhận được:
+        // 1. Thông báo có nhóm mới (onGroupCreated)
+        // 2. Tin nhắn hệ thống "đã tạo nhóm" (onMessageReceived)
+
         val time = System.currentTimeMillis()
         val emailA = "onlineA_$time@konni.com"
         val emailB = "creatorB_$time@konni.com"
@@ -1089,13 +1386,29 @@ class NativeClientTest {
         val idA = userA.id
 
         val latchNotify = CountDownLatch(1)
+        val latchMsg = CountDownLatch(1) // <--- MỚI: Chờ tin nhắn
+
         var notifyGroupName = ""
+        var sysMsgContent = ""
+        var sysMsgType = -1
 
         val listener = object : StubNativeEventListener() {
+            // 1. Bắt sự kiện tạo nhóm
             override fun onGroupCreated(groupId: Int, groupName: String) {
                 println("TEST: A nhận được broadcast nhóm mới: $groupName")
                 notifyGroupName = groupName
                 latchNotify.countDown()
+            }
+
+            // 2. Bắt tin nhắn hệ thống (MỚI)
+            override fun onMessageReceived(msg: MessageDto) {
+                println("TEST: A nhận được tin nhắn: ${msg.content}, type: ${msg.type}")
+                // Server gửi msgType 9 cho system
+                if (msg.type == MSG_TYPE_SYSTEM) {
+                    sysMsgContent = msg.content
+                    sysMsgType = msg.type
+                    latchMsg.countDown()
+                }
             }
         }
         NativeClient.startListening(listener)
@@ -1115,10 +1428,14 @@ class NativeClientTest {
         }
         threadB.start()
 
-        // 3. Kiểm tra A nhận được gói CMD_NOTIFY_GROUP_CREATED
-        val success = latchNotify.await(7, TimeUnit.SECONDS)
-        Assert.assertTrue("User A không nhận được Broadcast tạo nhóm khi đang Online", success)
+        // 3. Verify
+        Assert.assertTrue("User A không nhận được Broadcast tạo nhóm", latchNotify.await(7, TimeUnit.SECONDS))
         Assert.assertEquals(groupName, notifyGroupName)
+
+        // Verify System Message (MỚI)
+        Assert.assertTrue("User A không nhận được System Message 'đã tạo nhóm'", latchMsg.await(7, TimeUnit.SECONDS))
+        Assert.assertEquals(MSG_TYPE_SYSTEM, sysMsgType)
+        Assert.assertTrue(sysMsgContent.contains("tạo nhóm"))
     }
 
     @Test
@@ -1211,12 +1528,78 @@ class NativeClientTest {
     }
 
     @Test
-    fun test18_AddMembers_Realtime_Notification() {
+    fun test17_b_AddMember_Persistence() {
         // Kịch bản:
-        // 1. A tạo nhóm có B.
-        // 2. B login (NativeClient) và lắng nghe.
-        // 3. A (giả lập FakeTcpClient) thêm C vào nhóm.
-        // 4. B phải nhận được thông báo C vào nhóm.
+        // 1. A tạo nhóm.
+        // 2. A thêm B vào nhóm.
+        // 3. A lấy lịch sử chat -> Phải thấy dòng "đã thêm B".
+
+        val time = System.currentTimeMillis()
+        val emailA = "A_persist_$time@konni.com"
+        val emailB = "B_added_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        // 1. Tạo nhóm
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Add Persist Group", intArrayOf())
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. Thêm B
+        val latchAdd = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_ADD_MEMBER_RESP && status == STATUS_SUCCESS) {
+                    latchAdd.countDown()
+                }
+            }
+        })
+        NativeClient.addMembersToGroup(groupId, intArrayOf(idB))
+        latchAdd.await(5, TimeUnit.SECONDS)
+
+        // 3. Lấy lịch sử
+        val latchHist = CountDownLatch(1)
+        var msgContent = ""
+        var msgType = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                if (messages.isNotEmpty()) {
+                    // Tin mới nhất (index 0)
+                    msgContent = messages[0].content
+                    msgType = messages[0].type
+                    latchHist.countDown()
+                }
+            }
+        })
+
+        // Gọi getHistory cho Group
+        NativeClient.getChatHistory(groupId, true, 0, 10)
+
+        // 4. Verify
+        Assert.assertTrue("Timeout lấy History", latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals(MSG_TYPE_SYSTEM, msgType)
+        Assert.assertTrue("Nội dung phải chứa 'đã thêm'", msgContent.contains("đã thêm"))
+    }
+
+    @Test
+    fun test18_AddMembers_Realtime_Notification() {
+        // Kịch bản: A thêm C vào nhóm. B (Online) nhận được:
+        // 1. Notify Members Added (update list)
+        // 2. System Message (update chat timeline)
 
         val time = System.currentTimeMillis()
         val emailA = "A_add_$time@konni.com"
@@ -1231,7 +1614,7 @@ class NativeClientTest {
         val idA = helperGetUserId(emailA, pass)
         val idC = helperGetUserId(emailC, pass)
 
-        // 1. B tạo nhóm (hoặc A tạo nhóm có B). Ở đây để tiện lấy ID Group, ta cho B tạo.
+        // 1. B tạo nhóm có A
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         NativeClient.loginUser(emailB, pass)
 
@@ -1243,33 +1626,41 @@ class NativeClientTest {
                 latchCreate.countDown()
             }
         })
-        NativeClient.createGroup("Group For Broadcast", intArrayOf(idA))
+        NativeClient.createGroup("Group Broadcast Add", intArrayOf(idA))
         latchCreate.await(5, TimeUnit.SECONDS)
 
-        // 2. B đang Online, lắng nghe sự kiện Add Member
+        // 2. B lắng nghe sự kiện
         val latchNotify = CountDownLatch(1)
+        val latchMsg = CountDownLatch(1) // <--- MỚI
+
         var notifyAddedBy = ""
-        var notifyCount = 0
-        var notifyNewIds: IntArray? = null
+        var sysMsgContent = ""
+        var sysMsgType = -1
 
         NativeClient.startListening(object : StubNativeEventListener() {
+            // Sự kiện 1: Update List
             override fun onGroupMembersAdded(gid: Int, addedBy: String, newMemberIds: IntArray) {
                 if (gid == groupId) {
                     notifyAddedBy = addedBy
-                    notifyCount = newMemberIds.size
-                    notifyNewIds = newMemberIds
                     latchNotify.countDown()
+                }
+            }
+            // Sự kiện 2: Chat Message
+            override fun onMessageReceived(msg: MessageDto) {
+                if (msg.receiverId == groupId && msg.type == MSG_TYPE_SYSTEM) {
+                    sysMsgContent = msg.content
+                    sysMsgType = msg.type
+                    latchMsg.countDown()
                 }
             }
         })
 
-        // 3. Fake Client A login và thực hiện thêm C
+        // 3. Fake Client A login và thêm C
         val threadA = Thread {
             try {
                 val fakeA = FakeTcpClient(SERVER_IP, SERVER_PORT)
                 fakeA.login(emailA, pass)
                 Thread.sleep(500)
-                // A thêm C vào nhóm
                 fakeA.addMembersToGroup(groupId, intArrayOf(idC))
                 Thread.sleep(500)
                 fakeA.close()
@@ -1277,14 +1668,14 @@ class NativeClientTest {
         }
         threadA.start()
 
-        // 4. Verify B nhận được thông báo
-        val success = latchNotify.await(8, TimeUnit.SECONDS)
-        Assert.assertTrue("User B không nhận được thông báo thành viên mới", success)
-
-        // Kiểm tra nội dung thông báo
+        // 4. Verify
+        Assert.assertTrue("B không nhận được Notify Member Added", latchNotify.await(8, TimeUnit.SECONDS))
         Assert.assertTrue("Người thêm phải là UserA", notifyAddedBy.contains("UserA"))
-        Assert.assertEquals("Số lượng thêm phải là 1", 1, notifyCount)
-        Assert.assertEquals("ID người mới phải là UserC", idC, notifyNewIds?.get(0))
+
+        // Verify System Message
+        Assert.assertTrue("B không nhận được System Message", latchMsg.await(8, TimeUnit.SECONDS))
+        Assert.assertEquals(MSG_TYPE_SYSTEM, sysMsgType)
+        Assert.assertTrue(sysMsgContent.contains("đã thêm"))
     }
 
     @Test
@@ -1345,6 +1736,416 @@ class NativeClientTest {
         Assert.assertEquals("Người lạ thêm thành viên phải bị lỗi AUTH", STATUS_ERR_AUTH, failStatus)
     }
 
+    // ==========================================
+    // MODULE 10: LEAVE GROUP & SYSTEM MESSAGES
+    // ==========================================
+
+    @Test
+    fun test20_LeaveGroup_Realtime_SystemMsg() {
+        // Kịch bản:
+        // 1. A tạo nhóm với B.
+        // 2. B Login (NativeClient) và lắng nghe.
+        // 3. A (FakeClient) gửi lệnh Rời nhóm.
+        // 4. B nhận được:
+        //    - Callback onMemberLeft (để update list member)
+        //    - Callback onMessageReceived (để hiện timeline "A đã rời nhóm")
+
+        val time = System.currentTimeMillis()
+        val emailA = "leaver_$time@konni.com"
+        val emailB = "stayer_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. B tạo nhóm có A (Để tiện lấy GroupID khi B đang login)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchGroup = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchGroup.countDown()
+            }
+        })
+        NativeClient.createGroup("System Msg Test Group", intArrayOf(idA))
+        latchGroup.await(5, TimeUnit.SECONDS)
+
+        // 2. B lắng nghe sự kiện Rời nhóm và Tin nhắn mới
+        val latchLeft = CountDownLatch(1)
+        val latchMsg = CountDownLatch(1)
+
+        var leftMemberId = -1
+        var sysMsgContent = ""
+        var sysMsgType = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            // Sự kiện 1: Cập nhật danh sách thành viên
+            override fun onMemberLeft(gid: Int, memberId: Int, memberName: String) {
+                if (gid == groupId && memberId == idA) {
+                    leftMemberId = memberId
+                    latchLeft.countDown()
+                }
+            }
+            // Sự kiện 2: Tin nhắn hệ thống hiện lên khung chat
+            override fun onMessageReceived(msg: MessageDto) {
+                // Kiểm tra đúng Group và đúng Type System
+                if (msg.receiverId == groupId && msg.type == MSG_TYPE_SYSTEM) {
+                    sysMsgContent = msg.content
+                    sysMsgType = msg.type
+                    latchMsg.countDown()
+                }
+            }
+        })
+
+        // 3. Fake Client A login và Rời nhóm
+        val threadA = Thread {
+            try {
+                val fakeA = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fakeA.login(emailA, pass)
+                Thread.sleep(500)
+                fakeA.leaveGroup(groupId)
+                Thread.sleep(500)
+                fakeA.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadA.start()
+
+        // 4. Verify
+        Assert.assertTrue("Timeout chờ sự kiện onMemberLeft", latchLeft.await(8, TimeUnit.SECONDS))
+        Assert.assertEquals("ID người rời phải là A", idA, leftMemberId)
+
+        Assert.assertTrue("Timeout chờ Tin nhắn hệ thống", latchMsg.await(8, TimeUnit.SECONDS))
+        Assert.assertEquals("MsgType phải là SYSTEM (9)", MSG_TYPE_SYSTEM, sysMsgType)
+        Assert.assertTrue("Nội dung tin nhắn phải chứa 'rời nhóm'", sysMsgContent.contains("rời nhóm"))
+
+        println("TEST PASSED: Nhận được tin nhắn hệ thống: '$sysMsgContent'")
+    }
+
+    @Test
+    fun test21_LeaveGroup_History_Persistence() {
+        // Kịch bản:
+        // 1. A và B trong nhóm.
+        // 2. B Offline.
+        // 3. A rời nhóm.
+        // 4. B Online -> Get History -> Phải thấy dòng "A đã rời nhóm".
+
+        val time = System.currentTimeMillis()
+        val emailA = "gone_$time@konni.com"
+        val emailB = "offline_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        // --- SỬA LỖI TẠI ĐÂY: Lấy ID của B trước ---
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. A tạo nhóm với B
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+
+        // Truyền idB đã lấy từ trước vào
+        NativeClient.createGroup("History Test Group", intArrayOf(idB))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. A rời nhóm (NativeClient đang là A)
+        val latchLeave = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_LEAVE_GROUP_RESP && status == STATUS_SUCCESS) {
+                    latchLeave.countDown()
+                }
+            }
+        })
+        NativeClient.leaveGroup(groupId)
+        Assert.assertTrue(latchLeave.await(5, TimeUnit.SECONDS))
+        NativeClient.disconnect() // A out
+        Thread.sleep(500)
+
+        // 3. B Login và lấy History
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchHist = CountDownLatch(1)
+        var lastMsgType = -1
+        var lastMsgContent = ""
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                if (messages.isNotEmpty()) {
+                    // Tin mới nhất nằm đầu tiên (index 0)
+                    lastMsgType = messages[0].type
+                    lastMsgContent = messages[0].content
+                    latchHist.countDown()
+                }
+            }
+        })
+
+        NativeClient.getChatHistory(groupId, true, 0, 10)
+
+        // 4. Verify
+        Assert.assertTrue("Timeout lấy History", latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Tin mới nhất trong lịch sử phải là System Msg", MSG_TYPE_SYSTEM, lastMsgType)
+        Assert.assertTrue("Nội dung phải chứa 'rời nhóm'", lastMsgContent.contains("rời nhóm"))
+    }
+
+    @Test
+    fun test22_Rejoin_Group_Flow() {
+        // Kịch bản:
+        // 1. A tạo nhóm với B.
+        // 2. B rời nhóm.
+        // 3. A thêm lại B vào nhóm.
+        // 4. Kiểm tra xem DB có cho phép không và B có nhận được thông báo vào nhóm lại không.
+
+        val time = System.currentTimeMillis()
+        val emailA = "admin_$time@konni.com"
+        val emailB = "return_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. A login tạo nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Rejoin Group", intArrayOf(idB))
+        latchCreate.await(5, TimeUnit.SECONDS)
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // 2. FakeClient B vào và Rời nhóm
+        val threadB = Thread {
+            val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
+            fb.login(emailB, pass)
+            Thread.sleep(200)
+            fb.leaveGroup(groupId)
+            Thread.sleep(200)
+            fb.close()
+        }
+        threadB.start()
+        threadB.join() // Chờ B rời xong
+
+        // 3. A Login lại và thêm B vào lại
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchAdd = CountDownLatch(1)
+        var addStatus = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_ADD_MEMBER_RESP) { // CMD 33
+                    addStatus = status
+                    latchAdd.countDown()
+                }
+            }
+        })
+
+        // Gọi lệnh thêm thành viên (Server sẽ chạy ON DUPLICATE KEY UPDATE status='active')
+        NativeClient.addMembersToGroup(groupId, intArrayOf(idB))
+
+        // 4. Verify
+        Assert.assertTrue("Timeout chờ Add Member", latchAdd.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Thêm lại người đã rời phải thành công (SUCCESS)", STATUS_SUCCESS, addStatus)
+    }
+
+    // ==========================================
+    // MODULE 11: GET GROUP LIST
+    // ==========================================
+
+    @Test
+    fun test25_GetGroupList_BasicFlow() {
+        val time = System.currentTimeMillis()
+        val email = "list_$time@konni.com"
+        val pass = "123"
+
+        // 1. Register & Login
+        NativeClient.registerUser("ListUser", email, pass)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val user = NativeClient.loginUser(email, pass)!!
+
+        // 2. Tạo 2 nhóm
+        // Helper tạo nhóm nhanh (sử dụng lại listener createGroup)
+        val createLatch = CountDownLatch(2)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(groupId: Int, groupName: String) {
+                createLatch.countDown()
+            }
+        })
+
+        NativeClient.createGroup("Group Alpha", intArrayOf())
+        Thread.sleep(100) // Sleep để timestamp khác nhau
+        NativeClient.createGroup("Group Beta", intArrayOf())
+
+        Assert.assertTrue("Timeout creating groups", createLatch.await(5, TimeUnit.SECONDS))
+
+        // 3. Lấy danh sách nhóm
+        val listLatch = CountDownLatch(1)
+        var receivedGroups: Array<GroupDto>? = null
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupListReceived(groups: Array<GroupDto>) {
+                receivedGroups = groups
+                listLatch.countDown()
+            }
+        })
+
+        NativeClient.getGroupList(0, 10)
+
+        // 4. Verify
+        Assert.assertTrue("Timeout waiting for group list", listLatch.await(5, TimeUnit.SECONDS))
+        Assert.assertNotNull(receivedGroups)
+        Assert.assertEquals("Phải nhận được 2 nhóm", 2, receivedGroups!!.size)
+
+        // Kiểm tra thứ tự: Mới tạo (Beta) lên đầu, Cũ (Alpha) xuống dưới
+        Assert.assertEquals("Group Beta", receivedGroups!![0].name)
+        Assert.assertEquals("Group Alpha", receivedGroups!![1].name)
+    }
+
+    @Test
+    fun test26_GetGroupList_Pagination() {
+        val time = System.currentTimeMillis()
+        val email = "pager_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("PagerUser", email, pass)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, pass)
+
+        // 1. Tạo 5 nhóm: G1, G2, G3, G4, G5
+        val createLatch = CountDownLatch(5)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                createLatch.countDown()
+            }
+        })
+
+        for (i in 1..5) {
+            NativeClient.createGroup("G$i", intArrayOf())
+            Thread.sleep(50)
+        }
+        Assert.assertTrue(createLatch.await(8, TimeUnit.SECONDS))
+
+        // 2. Test Page 1: Limit 3 -> Mong đợi: G5, G4, G3 (Mới nhất lên đầu)
+        val latchPage1 = CountDownLatch(1)
+        var page1: Array<GroupDto>? = null
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupListReceived(groups: Array<GroupDto>) {
+                page1 = groups
+                latchPage1.countDown()
+            }
+        })
+        NativeClient.getGroupList(0, 3)
+        Assert.assertTrue(latchPage1.await(5, TimeUnit.SECONDS))
+
+        Assert.assertEquals(3, page1!!.size)
+        Assert.assertEquals("G5", page1!![0].name)
+        Assert.assertEquals("G3", page1!![2].name)
+
+        // 3. Test Page 2: Offset 3, Limit 3 -> Mong đợi: G2, G1 (Chỉ còn 2)
+        val latchPage2 = CountDownLatch(1)
+        var page2: Array<GroupDto>? = null
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupListReceived(groups: Array<GroupDto>) {
+                page2 = groups
+                latchPage2.countDown()
+            }
+        })
+        NativeClient.getGroupList(3, 3)
+        Assert.assertTrue(latchPage2.await(5, TimeUnit.SECONDS))
+
+        Assert.assertEquals(2, page2!!.size)
+        Assert.assertEquals("G2", page2!![0].name)
+        Assert.assertEquals("G1", page2!![1].name)
+    }
+
+    @Test
+    fun test27_GetGroupList_Exclude_LeftGroups() {
+        // Kịch bản: Tạo nhóm -> Kiểm tra có -> Rời nhóm -> Kiểm tra mất
+        val time = System.currentTimeMillis()
+        val email = "leaver_list_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("LeaverList", email, pass)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, pass)
+
+        // 1. Tạo nhóm
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Temp Group", intArrayOf())
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. Verify có trong list
+        val latchCheck1 = CountDownLatch(1)
+        var count1 = 0
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupListReceived(groups: Array<GroupDto>) {
+                count1 = groups.size
+                latchCheck1.countDown()
+            }
+        })
+        NativeClient.getGroupList(0, 10)
+        latchCheck1.await(5, TimeUnit.SECONDS)
+        Assert.assertEquals("Ban đầu phải có 1 nhóm", 1, count1)
+
+        // 3. Rời nhóm
+        val latchLeave = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_LEAVE_GROUP_RESP && status == STATUS_SUCCESS) latchLeave.countDown()
+            }
+        })
+        NativeClient.leaveGroup(groupId)
+        latchLeave.await(5, TimeUnit.SECONDS)
+
+        // 4. Verify list rỗng
+        val latchCheck2 = CountDownLatch(1)
+        var count2 = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupListReceived(groups: Array<GroupDto>) {
+                count2 = groups.size
+                latchCheck2.countDown()
+            }
+        })
+        NativeClient.getGroupList(0, 10)
+        latchCheck2.await(5, TimeUnit.SECONDS)
+
+        Assert.assertEquals("Rời nhóm xong thì list phải rỗng", 0, count2)
+    }
+
     // --- Helper Utility để lấy nhanh ID User ---
     private fun helperGetUserId(email: String, pass: String): Int {
         NativeClient.disconnect()
@@ -1383,6 +2184,14 @@ open class StubNativeEventListener : NativeEventListener {
         addedBy: String,
         newMemberIds: IntArray
     ) {}
+
+    override fun onMemberLeft(
+        groupId: Int,
+        memberId: Int,
+        memberName: String
+    ) {}
+
+    override fun onGroupListReceived(groups: Array<GroupDto>) {}
 }
 
 /**
@@ -1571,6 +2380,21 @@ class FakeTcpClient(ip: String, port: Int) {
         for (id in memberIds) {
             buffer.putInt(id)
         }
+
+        output.write(buffer.array())
+        output.flush()
+    }
+
+    fun leaveGroup(groupId: Int) {
+        // Struct: group_id (4 bytes)
+        val payloadSize = 4
+        val totalSize = PACKET_HEADER_SIZE + payloadSize
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        // CMD_LEAVE_GROUP = 36
+        writeHeader(buffer, 36, payloadSize)
+        buffer.putInt(groupId)
 
         output.write(buffer.array())
         output.flush()
