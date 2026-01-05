@@ -12,9 +12,10 @@ import com.example.konnichat.R
 import com.example.konnichat.data.local.model.ConversationItem
 import java.text.SimpleDateFormat
 import java.util.Locale
-
+import android.widget.ImageButton // [THÊM] Import này
 class ConversationAdapter(
-    private val onItemClick: (ConversationItem) -> Unit
+    private val onItemClick: (ConversationItem) -> Unit,
+    private val onMoreClick: (ConversationItem, View) -> Unit
 ) : ListAdapter<ConversationItem, ConversationAdapter.ConversationViewHolder>(DiffCallback) {
 
     class ConversationViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
@@ -23,6 +24,7 @@ class ConversationAdapter(
         val tvLastMessage: TextView = itemView.findViewById(R.id.tvLastMessage)
         val tvTime: TextView = itemView.findViewById(R.id.tvTime)
         val viewStatusDot: View = itemView.findViewById(R.id.viewStatusDot)
+        val btnMore: ImageButton = itemView.findViewById(R.id.btnMore)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ConversationViewHolder {
@@ -74,6 +76,10 @@ class ConversationAdapter(
 
         // Click sự kiện
         holder.itemView.setOnClickListener { onItemClick(item) }
+
+        holder.btnMore.setOnClickListener { view ->
+            onMoreClick(item, view)
+        }
     }
 
     companion object DiffCallback : DiffUtil.ItemCallback<ConversationItem>() {

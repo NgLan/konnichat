@@ -13,11 +13,16 @@ import com.example.konnichat.data.remote.dto.MessageDto
 import kotlinx.coroutines.flow.Flow
 import java.util.Date
 import androidx.room.Transaction
+import com.example.konnichat.data.local.model.MessageWithSender
+import com.example.konnichat.data.local.dao.UserDao // [THÊM] Import UserDao
+import com.example.konnichat.data.local.entity.UserEntity
+
 
 class ChatRepository(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
-    private val groupDao: GroupDao
+    private val groupDao: GroupDao,
+    private val userDao: UserDao
 ) {
 
     // Hàm lấy danh sách hội thoại (Realtime Local)
@@ -26,13 +31,15 @@ class ChatRepository(
     }
 
     // [NEW] Lấy tin nhắn Realtime từ DB
-    fun getMessages(myUserId: Int, targetId: Int, chatType: String): Flow<List<MessageEntity>> {
+    fun getMessages(myUserId: Int, targetId: Int, chatType: String): Flow<List<MessageWithSender>> {
         return if (chatType == "group") {
             // Nếu là nhóm -> Gọi hàm DAO nhóm
-            messageDao.getGroupMessages(targetId)
+//            messageDao.getGroupMessages(targetId)
+            messageDao.getGroupMessagesWithSender(targetId)
         } else {
             // Nếu là private -> Gọi hàm DAO cũ
-            messageDao.getMessagesBetween(myUserId, targetId)
+//            messageDao.getMessagesBetween(myUserId, targetId)
+            messageDao.getMessagesBetweenWithSender(myUserId, targetId)
         }
     }
 
@@ -141,6 +148,23 @@ class ChatRepository(
         groupDao.insertGroup(group)
     }
 
+    @Transaction
+    suspend fun saveGroupListFromNetwork(groupDtos: Array<com.example.konnichat.data.remote.dto.GroupDto>) {
+        if (groupDtos.isEmpty()) return
+
+        val entities = groupDtos.map { dto ->
+            GroupEntity(
+                serverId = dto.id,
+                name = dto.name,
+                avatarUrl = dto.avatarUrl, // Server trả về URL avatar (nếu có)
+                notification = "active",   // Mặc định bật thông báo
+                createdAt = Date()         // Tạm lấy thời gian hiện tại
+            )
+        }
+        groupDao.insertGroups(entities)
+        Log.d("ChatRepo", "Đã lưu ${entities.size} nhóm vào Database.")
+    }
+
     // 4. Callback: Lưu danh sách thành viên vào DB
     @Transaction
     suspend fun saveGroupMembersFromNetwork(groupId: Int, memberIds: IntArray) {
@@ -176,6 +200,28 @@ class ChatRepository(
             Log.d("ChatRepo", "⚠️ Đã tạo Group tạm (ID: $groupId) để tránh lỗi crash.")
         }
 
+        memberIds.forEach { memberId ->
+            val existingUser = userDao.getUserById(memberId)
+
+            if (existingUser == null) {
+                // Tạo User tạm với email giả định dạng đặc biệt để không trùng
+                val placeholderUser = UserEntity(
+                    serverId = memberId,
+                    email = "temp_${memberId}@placeholder.konnichat", // Email giả unique
+                    name = "Người dùng $memberId", // Tên tạm
+                    age = null,
+                    status = "active",
+                    isOnline = false, // Mặc định offline
+                    avatarUrl = null,
+                    createdAt = Date(),
+                    updatedAt = Date()
+                )
+                // Insert vào DB (Nếu sau này có data thật, lệnh INSERT REPLACE sẽ tự ghi đè)
+                userDao.insertUser(placeholderUser)
+                Log.d("ChatRepo", "⚠️ Đã tạo User tạm (ID: $memberId) để thỏa mãn khóa ngoại.")
+            }
+        }
+
         // 3. Sau khi đảm bảo Group đã tồn tại, mới lưu danh sách thành viên
         saveGroupMembersFromNetwork(groupId, memberIds)
 
@@ -185,5 +231,14 @@ class ChatRepository(
     suspend fun getGroupMemberIds(groupId: Int): List<Int> {
         // Lấy list entity từ DAO và map sang list Int (memberId)
         return groupDao.getMembersByGroupId(groupId).map { it.memberId }
+    }
+
+    suspend fun runDataFixer() {
+        try {
+            messageDao.fixLegacyMessages()
+            Log.d("ChatRepo", "Đã chạy lệnh sửa lỗi dữ liệu cũ (Legacy Fix)")
+        } catch (e: Exception) {
+            Log.e("ChatRepo", "Lỗi khi chạy fix data: ${e.message}")
+        }
     }
 }

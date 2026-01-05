@@ -47,6 +47,9 @@ class ChatActivity : AppCompatActivity() {
         targetUserId = intent.getIntExtra("TARGET_ID", -1)
         val targetName = intent.getStringExtra("TARGET_NAME") ?: "Người dùng"
 
+        chatType = intent.getStringExtra("CHAT_TYPE") ?: "private"
+
+
         // Kiểm tra dữ liệu hợp lệ
         if (myUserId == -1 || targetUserId == -1) {
             Toast.makeText(this, "Lỗi xác thực người dùng", Toast.LENGTH_SHORT).show()
@@ -61,6 +64,7 @@ class ChatActivity : AppCompatActivity() {
         val factory = ChatViewModelFactory(app.chatRepository, app.userRepository)
         viewModel = ViewModelProvider(this, factory)[ChatViewModel::class.java]
 
+        viewModel.currentChatType = chatType
         setupUI(targetName)
         setupObserver()
     }

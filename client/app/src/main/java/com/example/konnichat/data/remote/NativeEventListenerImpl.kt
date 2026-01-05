@@ -245,7 +245,12 @@ object NativeEventListenerImpl : NativeEventListener {
     }
 
     override fun onGroupListReceived(groups: Array<GroupDto>) {
-        TODO("Not yet implemented")
+        Log.d(TAG, "📋 Nhận danh sách nhóm từ Server: ${groups.size} nhóm")
+        chatRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.saveGroupListFromNetwork(groups)
+            }
+        }
     }
 
     override fun onMemberRemoved(

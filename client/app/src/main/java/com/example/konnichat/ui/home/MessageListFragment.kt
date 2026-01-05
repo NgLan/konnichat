@@ -17,6 +17,8 @@ import com.example.konnichat.R
 import com.example.konnichat.ui.chat.ChatActivity
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import android.widget.PopupMenu // [THÊM]
+import com.example.konnichat.data.local.model.ConversationItem // [THÊM]
 
 class MessageListFragment : Fragment() {
 
@@ -44,14 +46,20 @@ class MessageListFragment : Fragment() {
         val tvEmpty = view.findViewById<TextView>(R.id.tvEmptyState)
 
         // Cập nhật Adapter với callback unfriend
-        adapter = ConversationAdapter { item ->
-            // Callback khi click vào item
-            val intent = Intent(requireContext(), ChatActivity::class.java)
-            intent.putExtra("TARGET_ID", item.id)       // ID User hoặc Group
-            intent.putExtra("TARGET_NAME", item.name)   // Tên
-            intent.putExtra("CHAT_TYPE", item.chatType) // [QUAN TRỌNG] "private" hoặc "group"
-            startActivity(intent)
-        }
+        adapter = ConversationAdapter(
+            onItemClick = { item ->
+                // Logic cũ: Mở màn hình chat
+                val intent = Intent(requireContext(), ChatActivity::class.java)
+                intent.putExtra("TARGET_ID", item.id)
+                intent.putExtra("TARGET_NAME", item.name)
+                intent.putExtra("CHAT_TYPE", item.chatType)
+                startActivity(intent)
+            },
+            onMoreClick = { item, view ->
+                // Logic mới: Hiển thị menu tùy chọn
+                showActionMenu(view, item)
+            }
+        )
 
         rvConversations.layoutManager = LinearLayoutManager(context)
         rvConversations.adapter = adapter
@@ -69,5 +77,34 @@ class MessageListFragment : Fragment() {
                 }
             }
         }
+    }
+
+    // [THÊM MỚI] Hàm hiển thị Menu popup
+    private fun showActionMenu(view: View, item: ConversationItem) {
+        val popup = PopupMenu(requireContext(), view)
+
+        // Kiểm tra loại chat để hiển thị menu phù hợp
+        if (item.chatType == "private") {
+            popup.menu.add("Hủy kết bạn")
+        } else if (item.chatType == "group") {
+            popup.menu.add("Rời nhóm")
+        }
+
+        popup.setOnMenuItemClickListener { menuItem ->
+            when (menuItem.title) {
+                "Hủy kết bạn" -> {
+                    // Gọi ViewModel để hủy kết bạn
+                    viewModel.unfriendUser(item.id)
+                    true
+                }
+                "Rời nhóm" -> {
+                    // Tạm thời chỉ hiện thông báo
+                    Toast.makeText(requireContext(), "Tính năng đang phát triển", Toast.LENGTH_SHORT).show()
+                    true
+                }
+                else -> false
+            }
+        }
+        popup.show()
     }
 }

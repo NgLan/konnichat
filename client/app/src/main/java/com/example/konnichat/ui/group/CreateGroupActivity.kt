@@ -43,6 +43,9 @@ class CreateGroupActivity : AppCompatActivity() {
         binding.rvFriends.layoutManager = LinearLayoutManager(this)
         binding.rvFriends.adapter = adapter
 
+        binding.btnBack.setOnClickListener {
+            finish()
+        }
         // Xử lý nút Tạo
         binding.btnCreateGroup.setOnClickListener {
             val groupName = binding.etGroupName.text.toString().trim()
@@ -63,6 +66,7 @@ class CreateGroupActivity : AppCompatActivity() {
             Toast.makeText(this, "Đã gửi yêu cầu tạo nhóm...", Toast.LENGTH_SHORT).show()
             finish() // Đóng màn hình, quay về Home
         }
+
     }
 
     private fun observeData() {

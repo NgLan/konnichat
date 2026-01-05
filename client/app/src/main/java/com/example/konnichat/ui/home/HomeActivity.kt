@@ -113,10 +113,16 @@ class HomeActivity : AppCompatActivity() {
             val targetId = intent.getIntExtra("TARGET_ID", -1)
             val targetName = intent.getStringExtra("TARGET_NAME")
 
+            val chatType = intent.getStringExtra("CHAT_TYPE") ?: "private"
+
             if (targetId != -1) {
                 val chatIntent = Intent(this, ChatActivity::class.java)
                 chatIntent.putExtra("TARGET_ID", targetId)
                 chatIntent.putExtra("TARGET_NAME", targetName ?: "Người dùng")
+
+                chatIntent.putExtra("CHAT_TYPE", chatType)
+
+
                 startActivity(chatIntent)
             }
         }

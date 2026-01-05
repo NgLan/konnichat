@@ -29,9 +29,12 @@ class HomeViewModel(
     init {
         // 1. Gọi Native lấy danh sách bạn bè mới nhất (để cập nhật Avatar/Name nếu có)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            chatRepository.runDataFixer()
+
             userRepository.resetLocalStatuses()
             try {
                 NativeClient.getFriends(0, 100)
+                NativeClient.getGroupList(0, 100)
             } catch (e: Exception) {
                 e.printStackTrace()
             }
