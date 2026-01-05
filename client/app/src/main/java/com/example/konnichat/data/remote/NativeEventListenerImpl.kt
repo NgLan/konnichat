@@ -4,6 +4,7 @@ import android.annotation.SuppressLint
 import android.content.Context
 import android.util.Log
 import com.example.konnichat.data.remote.dto.GroupDto
+import com.example.konnichat.data.remote.dto.GroupMemberDto
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
@@ -259,6 +260,13 @@ object NativeEventListenerImpl : NativeEventListener {
     }
 
     override fun onGroupDissolved(groupId: Int) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onGroupMembersReceived(
+        groupId: Int,
+        members: Array<GroupMemberDto>
+    ) {
         TODO("Not yet implemented")
     }
 

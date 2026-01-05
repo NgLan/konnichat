@@ -14,6 +14,7 @@
 #define MAX_GROUP_NAME 100
 #define MAX_GROUP_MEMBERS 20
 #define MAX_AVATAR_LEN 256
+#define MAX_ROLE_LEN 20
 
 // --- DANH SÁCH LỆNH ---
 typedef enum {
@@ -53,6 +54,9 @@ typedef enum {
     CMD_GET_GROUP_LIST      = 50,
     CMD_GET_GROUP_LIST_RESP = 51,
 
+    CMD_GET_GROUP_MEMBERS   = 52,
+    CMD_GET_GROUP_MEMBERS_RESP = 53,
+
     // 4. Friend Management
     CMD_GET_FRIEND_LIST     = 40,
     CMD_GET_FRIEND_LIST_RESP= 41,
@@ -80,8 +84,8 @@ typedef enum {
     CMD_FETCH_OFFLINE_MSGS  = 72,
     CMD_FETCH_OFFLINE_MSGS_RESP = 73,
 
-    CMD_RECALL_MESSAGE = 52,     // Thu hồi
-    CMD_REACT_MESSAGE = 53,      // Thả tim, like...
+    CMD_RECALL_MESSAGE = 74,     // Thu hồi
+    CMD_REACT_MESSAGE = 75,      // Thả tim, like...
 
     // 6. Notifications
     CMD_NOTIFY_FRIEND_REQ   = 80,   // Có lời mời kết bạn mới
@@ -328,5 +332,21 @@ typedef struct __attribute__((packed)) {
     int32_t group_id;
     char group_name[MAX_GROUP_NAME];
 } GroupDissolvedNotifyPayload;
+
+// Request
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+    int32_t offset; // Hỗ trợ phân trang nếu nhóm đông
+    int32_t limit;
+} GetGroupMembersReq;
+
+// Response Item
+typedef struct __attribute__((packed)) {
+    int32_t user_id;
+    char name[MAX_NAME_LEN];
+    char email[MAX_EMAIL_LEN];
+    int8_t is_online;           // 1: Online, 0: Offline
+    char role[MAX_ROLE_LEN];    // "admin", "member"
+} GroupMemberInfo;
 
 #endif

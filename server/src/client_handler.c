@@ -19,7 +19,6 @@
 #include <string.h>
 #include <time.h>
 
-#define MAX_GROUP_MEMBERS 20
 // --- HELPER FUNCTIONS ---
 
 /**
@@ -1166,6 +1165,63 @@ static void handle_dissolve_group(int sock, PacketHeader *reqHeader, void *paylo
     }
 }
 
+static void handle_get_group_members(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    if (reqHeader->payload_size < (int32_t)sizeof(GetGroupMembersReq))
+    {
+        send_response(sock, CMD_GET_GROUP_MEMBERS_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
+    }
+
+    GetGroupMembersReq *req = (GetGroupMembersReq *)payload;
+    int group_id = req->group_id;
+
+    // 1. Check quyền: Người lấy danh sách phải là thành viên nhóm
+    if (db_is_group_member(group_id, current_user_id) != 1)
+    {
+        send_response(sock, CMD_GET_GROUP_MEMBERS_RESP, reqHeader->request_id, STATUS_ERROR_AUTH, NULL, 0);
+        return;
+    }
+
+    // 2. Query DB
+    GroupMemberInfo *members = (GroupMemberInfo *)malloc(MAX_GROUP_MEMBERS * sizeof(GroupMemberInfo));
+    if (!members)
+    {
+        send_response(sock, CMD_GET_GROUP_MEMBERS_RESP, reqHeader->request_id, STATUS_ERROR_UNKNOWN, NULL, 0);
+        return;
+    }
+
+    // Clear bộ nhớ rác
+    memset(members, 0, MAX_GROUP_MEMBERS * sizeof(GroupMemberInfo));
+
+    int count = db_get_group_members_info(group_id, members, MAX_GROUP_MEMBERS, 0);
+
+    // --- ĐÓNG GÓI RESPONSE ---
+    // Cấu trúc: [Header Packet] + [GroupID] + [Count] + [Array Data]
+    int32_t data_size = count * sizeof(GroupMemberInfo);
+    int32_t payload_size = sizeof(int32_t) + sizeof(int32_t) + data_size;
+    void *resp_buffer = malloc(payload_size);
+    // 1. Ghi GroupID
+    memcpy(resp_buffer, &group_id, sizeof(int32_t));
+
+    // 2. Ghi Count
+    memcpy((char *)resp_buffer + sizeof(int32_t), &count, sizeof(int32_t));
+
+    // 3. Ghi Array Data
+    if (count > 0)
+    {
+        memcpy((char *)resp_buffer + sizeof(int32_t) + sizeof(int32_t), members, data_size);
+    }
+
+    // 3. Phản hồi danh sách
+    send_response(sock, CMD_GET_GROUP_MEMBERS_RESP, reqHeader->request_id, STATUS_SUCCESS,
+                  resp_buffer, payload_size);
+
+    free(members);
+    free(resp_buffer);
+    LOG_INFO("User %d fetched %d members of Group %d", current_user_id, count, group_id);
+}
+
 // --- MAIN THREAD LOOP ---
 void *handle_client(void *socket_desc)
 {
@@ -1284,6 +1340,9 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_DISSOLVE_GROUP:
             handle_dissolve_group(sock, &header, payload, current_user_id);
+            break;
+        case CMD_GET_GROUP_MEMBERS:
+            handle_get_group_members(sock, &header, payload, current_user_id);
             break;
 
         default:

@@ -4,6 +4,7 @@ import android.util.Log
 import com.example.konnichat.data.local.AppDatabase
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.remote.dto.GroupDto
+import com.example.konnichat.data.remote.dto.GroupMemberDto
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
@@ -144,6 +145,13 @@ class DataSyncManager(private val db: AppDatabase) : NativeEventListener {
     }
 
     override fun onGroupDissolved(groupId: Int) {
+        TODO("Not yet implemented")
+    }
+
+    override fun onGroupMembersReceived(
+        groupId: Int,
+        members: Array<GroupMemberDto>
+    ) {
         TODO("Not yet implemented")
     }
 }

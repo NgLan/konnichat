@@ -49,4 +49,5 @@ object NativeClient {
     external fun getGroupList(offset: Int, limit: Int)
     external fun kickMember(groupId: Int, targetId: Int)
     external fun dissolveGroup(groupId: Int)
+    external fun getGroupMembers(groupId: Int, offset: Int, limit: Int)
 }
