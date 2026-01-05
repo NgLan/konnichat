@@ -6,6 +6,23 @@
 #include <stdlib.h>
 #include <pthread.h>
 #include <arpa/inet.h>
+#include <unistd.h>
+
+static void *monitor_thread_func(void *arg)
+{
+    LOG_INFO(">>> Monitor Thread Started. Timeout: %d ms", HEARTBEAT_TIMEOUT_MS);
+    while (1)
+    {
+        sleep(5); // Cứ 5 giây dậy quét 1 lần
+
+        int kicked = disconnect_inactive_clients(HEARTBEAT_TIMEOUT_MS);
+        if (kicked > 0)
+        {
+            LOG_INFO("Monitor: Kicked %d inactive clients.", kicked);
+        }
+    }
+    return NULL;
+}
 
 void start_tcp_server()
 {
@@ -45,6 +62,17 @@ void start_tcp_server()
     }
 
     LOG_INFO(">>> TCP Server started on port %d", SERVER_PORT);
+
+    // Khởi động luồng Monitor
+    pthread_t monitor_tid;
+    if (pthread_create(&monitor_tid, NULL, monitor_thread_func, NULL) != 0)
+    {
+        LOG_ERROR("Failed to create Monitor Thread");
+    }
+    else
+    {
+        pthread_detach(monitor_tid);
+    }
 
     // 5. Accept Loop
     while (1)

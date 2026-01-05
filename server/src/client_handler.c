@@ -1251,6 +1251,12 @@ void *handle_client(void *socket_desc)
         if (status <= 0)
             break;
 
+        // User còn sống -> Cập nhật Heartbeat
+        if (current_user_id != -1)
+        {
+            update_client_activity(current_user_id);
+        }
+
         // 2. KIỂM TRA STATUS CODE TRONG HEADER
         // Nếu Header báo lỗi, ta KHÔNG xử lý payload, nhưng PHẢI đọc bỏ payload để dọn socket
         if (header.status_code != STATUS_SUCCESS)
@@ -1301,6 +1307,10 @@ void *handle_client(void *socket_desc)
 
         switch (header.command_type)
         {
+        case CMD_HEARTBEAT:
+        {
+            continue;
+        }
         case CMD_REGISTER:
             handle_register(sock, &header, payload);
             break;

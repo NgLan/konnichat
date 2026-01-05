@@ -15,6 +15,7 @@
 static int g_socket = -1;
 static int g_req_id = 0;
 static int g_is_running = 0;
+static pthread_t g_hb_thread = 0;
 static pthread_t g_read_thread = 0;
 static pthread_mutex_t g_send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_client_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -188,6 +189,10 @@ void client_close()
         shutdown(g_socket, SHUT_RDWR);
         close(g_socket);
         g_socket = -1;
+    }
+    if (g_hb_thread != 0) {
+        pthread_join(g_hb_thread, NULL);
+        g_hb_thread = 0;
     }
     if (g_read_thread != 0)
     {
@@ -1002,6 +1007,35 @@ static void *read_thread_func(void *arg)
     return NULL;
 }
 
+static void *heartbeat_thread_func(void *arg) {
+    while (g_is_running) {
+        // Ngủ trước khi gửi (Interval)
+        sleep(HEARTBEAT_INTERVAL_SEC);
+
+        if (!g_is_running || g_socket == -1) break;
+
+        // Gửi Ping (Gói tin rỗng, chỉ có Header CMD_HEARTBEAT)
+        // Dùng mutex để tránh đánh nhau với luồng chính
+        pthread_mutex_lock(&g_send_mutex);
+
+        PacketHeader header;
+        memset(&header, 0, sizeof(header));
+        header.version = SERVER_PROTOCOL_VERSION;
+        header.command_type = CMD_HEARTBEAT;
+        header.timestamp = get_timestamp();
+
+        int res = send(g_socket, &header, sizeof(PacketHeader), 0);
+
+        pthread_mutex_unlock(&g_send_mutex);
+
+        if (res < 0) {
+            LOGE("Heartbeat send failed. Connection likely dead.");
+            break;
+        }
+    }
+    return NULL;
+}
+
 void start_reader_thread(NativeCallbacks callbacks)
 {
     g_callbacks = callbacks;
@@ -1018,5 +1052,9 @@ void start_reader_thread(NativeCallbacks callbacks)
         g_read_thread = 0;
         LOGI("=== READ THREAD EXITED ===");
         return;
+    }
+
+    if (pthread_create(&g_hb_thread, NULL, heartbeat_thread_func, NULL) != 0) {
+        LOGE("Failed to create heartbeat thread");
     }
 }

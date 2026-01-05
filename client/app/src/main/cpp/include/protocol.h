@@ -7,6 +7,12 @@
 #define SERVER_PORT 8080
 #define SERVER_PROTOCOL_VERSION 1
 
+// Client gửi Ping mỗi 15s
+#define HEARTBEAT_INTERVAL_SEC 15
+
+// Server đợi tối đa 45s (3 lần miss ping)
+#define HEARTBEAT_TIMEOUT_MS 45000
+
 #define MAX_EMAIL_LEN 256
 #define MAX_PASS_LEN 128
 #define MAX_NAME_LEN 64
