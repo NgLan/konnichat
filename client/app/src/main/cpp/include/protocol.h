@@ -91,6 +91,7 @@ typedef enum {
 
     CMD_NOTIFY_GROUP_CREATED = 86,
     CMD_NOTIFY_MEMBERS_ADDED = 87,
+    CMD_NOTIFY_MEMBER_LEFT   = 88,
 
     // 99. Error
     CMD_ERROR_UNKNOWN       = 999
@@ -107,7 +108,8 @@ typedef enum {
     STATUS_ERROR_ALREADY_EXIST = 6,
     STATUS_ERROR_ALREADY_FRIEND = 7,  // Đã là bạn rồi
     STATUS_ERROR_REQ_PENDING = 8,      // Đã gửi rồi, đừng spam
-    STATUS_ERROR_GROUP_FULL = 9       // Nhóm đã đầy
+    STATUS_ERROR_GROUP_FULL = 9,       // Nhóm đã đầy
+    STATUS_ERROR_USER_NOT_IN_GROUP = 10  // Người dùng không thuộc nhóm
 } StatusCode;
 
 // --- ĐỊNH NGHĨA TRẠNG THÁI QUAN HỆ ---
@@ -115,6 +117,12 @@ typedef enum {
 #define RELATION_FRIEND 1       // Bạn bè
 #define RELATION_SENT 2         // Mình đã gửi lời mời (chờ duyệt)
 #define RELATION_RECEIVED 3     // Họ đã gửi lời mời cho mình (chờ duyệt)
+
+// --- ĐỊNH NGHĨA LOẠI TIN NHẮN ---
+#define MSG_TYPE_TEXT 1
+#define MSG_TYPE_IMAGE 2
+#define MSG_TYPE_FILE 3
+#define MSG_TYPE_SYSTEM 9
 
 // --- HEADER ---
 // Tổng kích thước: 4*5 + 8 = 28 bytes
@@ -234,6 +242,7 @@ typedef struct __attribute__((packed)) {
     int32_t target_id;      // FriendID hoặc GroupID
     int32_t offset;         // Vị trí bắt đầu lấy (Phân trang)
     int32_t limit;          // Số lượng lấy
+    int32_t is_group;       // 0: Private Chat, 1: Group Chat
 } GetHistoryPayload;
 
 // 9. Status Notification
@@ -262,5 +271,17 @@ typedef struct __attribute__((packed)) {
     int32_t added_by_user;  // Server điền ID người thêm (Client gửi lên để 0 cũng được)
     char added_by_name[MAX_NAME_LEN]; // Server điền tên người thêm
 } AddGroupMemberPayload;
+
+// Request rời nhóm (Client -> Server)
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+} LeaveGroupReqPayload;
+
+// Notify: Server báo cho người khác biết có thành viên rời nhóm
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+    int32_t member_id;              // ID người rời
+    char member_name[MAX_NAME_LEN]; // Tên người rời
+} MemberLeftNotifyPayload;
 
 #endif

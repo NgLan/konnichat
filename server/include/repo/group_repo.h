@@ -44,7 +44,7 @@ int db_get_group_member_ids(int32_t group_id, int32_t* out_member_ids, int max_c
 int db_is_group_member(int32_t group_id, int32_t user_id);
 
 /**
- * @brief Xóa (hoặc rời) khỏi nhóm.
+ * @brief Rời khỏi nhóm.
  * 
  * @param group_id ID nhóm.
  * @param user_id ID người rời nhóm.

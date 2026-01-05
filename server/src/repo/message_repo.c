@@ -9,7 +9,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <time.h> 
+#include <time.h>
 #include <stdint.h>
 
 static uint64_t parse_mysql_time(const char *str);
@@ -102,7 +102,7 @@ int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
         MYSQL_ROW row;
         while ((row = mysql_fetch_row(result)) && count < limit)
         {
-            memset(&messages_out[count], 0, sizeof(ChatPayload)); 
+            memset(&messages_out[count], 0, sizeof(ChatPayload));
             messages_out[count].message_id = atoi(row[0]);
             messages_out[count].sender_id = atoi(row[1]);
             messages_out[count].receiver_id = atoi(row[2]);
@@ -131,19 +131,32 @@ int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
 /**
  * @brief Retrieves chat history between two users.
  */
-int db_get_chat_history(int user1, int user2, ChatPayload *messages_out, int limit, int offset)
+int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPayload *messages_out, int limit, int offset)
 {
     char query[1024];
 
-    // Query lấy tin nhắn giữa 2 người (2 chiều)
-    // Sắp xếp DESC để lấy tin mới nhất trước (VD: Offset 0 lấy 20 tin mới nhất)
-    snprintf(query, sizeof(query),
-             "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type "
-             "FROM messages "
-             "WHERE ((sender_id = %d AND receiver_id = %d) "
-             "   OR (sender_id = %d AND receiver_id = %d)) "
-             "ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d", 
-             user1, user2, user2, user1, limit, offset);
+    if (is_group)
+    {
+        // LOGIC GROUP: Lấy tất cả tin nhắn gửi vào Group này
+        snprintf(query, sizeof(query),
+                 "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type "
+                 "FROM messages "
+                 "WHERE receiver_id = %d AND chat_type = 'group' "
+                 "ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d",
+                 target_id, limit, offset);
+    }
+    else
+    {
+        // LOGIC PRIVATE: 2 chiều A->B và B->A
+        snprintf(query, sizeof(query),
+                 "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type "
+                 "FROM messages "
+                 "WHERE ((sender_id = %d AND receiver_id = %d) "
+                 "   OR (sender_id = %d AND receiver_id = %d)) "
+                 "AND chat_type = 'private' "
+                 "ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d",
+                 current_user_id, target_id, target_id, current_user_id, limit, offset);
+    }
 
     MYSQL *conn = db_get_conn();
     if (!conn)

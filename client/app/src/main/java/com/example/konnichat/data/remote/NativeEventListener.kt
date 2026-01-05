@@ -35,4 +35,5 @@ interface NativeEventListener {
     fun onConnectionClosed(reason: String)
     fun onGroupCreated(groupId: Int, groupName: String)
     fun onGroupMembersAdded(groupId: Int, addedBy: String, newMemberIds: IntArray)
+    fun onMemberLeft(groupId: Int, memberId: Int, memberName: String)
 }

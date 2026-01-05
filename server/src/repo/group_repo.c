@@ -158,9 +158,9 @@ static int internal_insert_member(MYSQL *conn, int32_t group_id, int32_t user_id
 {
     char query[256];
     snprintf(query, sizeof(query),
-             "INSERT INTO group_members (group_id, member_id, role, status) "
-             "VALUES (%d, %d, 'member', 'active') "
-             "ON DUPLICATE KEY UPDATE status = 'active'",
+             "INSERT INTO group_members (group_id, member_id, role, status, joined_at) "
+             "VALUES (%d, %d, 'member', 'active', NOW()) "
+             "ON DUPLICATE KEY UPDATE status = 'active', joined_at = NOW()",
              group_id, user_id);
 
     if (mysql_query(conn, query))
@@ -189,7 +189,7 @@ int db_add_group_members(int32_t group_id, const int32_t *user_ids, int count)
         return -1;
     }
 
-    // 2. CHECK SIZE HIỆN TẠI 
+    // 2. CHECK SIZE HIỆN TẠI
     // Dùng FOR UPDATE để lock, không cho transaction khác sửa danh sách thành viên lúc này
     char query_count[256];
     snprintf(query_count, sizeof(query_count),
@@ -261,7 +261,7 @@ int db_leave_group(int32_t group_id, int32_t user_id)
         return 0;
 
     char query[256];
-    // Không DELETE vật lý để giữ history tin nhắn, chỉ chuyển trạng thái
+    // LOGIC: Chỉ update status thành 'left', không xóa bản ghi
     snprintf(query, sizeof(query),
              "UPDATE group_members SET status = 'left' WHERE group_id = %d AND member_id = %d",
              group_id, user_id);
@@ -273,7 +273,11 @@ int db_leave_group(int32_t group_id, int32_t user_id)
     }
     else
     {
-        success = (mysql_affected_rows(conn) > 0);
+        // Kiểm tra xem có dòng nào được update không (nếu user chưa vào nhóm thì row=0)
+        if (mysql_affected_rows(conn) > 0)
+        {
+            success = 1;
+        }
     }
 
     db_release_conn(conn);
