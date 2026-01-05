@@ -79,7 +79,8 @@ int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
     // Sắp xếp: ASC (Cũ nhất gửi trước -> Mới nhất gửi sau)
     snprintf(query, sizeof(query),
              "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type "
-             "FROM messages WHERE receiver_id = %d AND status = 'sent' "
+             "FROM messages "
+             "WHERE receiver_id = %d AND status = 'sent' AND chat_type = 'private' "
              "ORDER BY created_at ASC, id ASC LIMIT %d",
              user_id, limit);
 
@@ -108,7 +109,7 @@ int db_get_offline_messages(int user_id, ChatPayload *messages_out, int limit)
             messages_out[count].receiver_id = atoi(row[2]);
             strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);
             messages_out[count].created_at = row[4] ? parse_mysql_time(row[4]) : 0;
-            // memset(messages_out[count].chat_type, 0, 16);
+
             if (row[5])
             {
                 strncpy(messages_out[count].chat_type, row[5], 15);
