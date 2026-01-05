@@ -33,7 +33,7 @@ class App : Application() {
         UserRepository(db.userDao(), prefs)
     }
 
-    val chatRepository by lazy { ChatRepository(db.conversationDao(), db.messageDao()) }
+    val chatRepository by lazy { ChatRepository(db.conversationDao(), db.messageDao(), db.groupDao()) }
 
     val authRepository by lazy {
         AuthRepository(db.userDao(), db)

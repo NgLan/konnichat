@@ -3,6 +3,9 @@ package com.example.konnichat.data.repository
 import android.util.Log
 import com.example.konnichat.data.local.dao.ConversationDao
 import com.example.konnichat.data.local.dao.MessageDao // [NEW] Thêm DAO
+import com.example.konnichat.data.local.dao.GroupDao
+import com.example.konnichat.data.local.entity.GroupEntity // [MỚI] Import
+import com.example.konnichat.data.local.entity.GroupMemberEntity
 import com.example.konnichat.data.local.entity.MessageEntity
 import com.example.konnichat.data.local.model.ConversationItem
 import com.example.konnichat.data.remote.NativeClient
@@ -13,7 +16,8 @@ import androidx.room.Transaction
 
 class ChatRepository(
     private val conversationDao: ConversationDao,
-    private val messageDao: MessageDao // [MODIFIED] Inject MessageDao
+    private val messageDao: MessageDao,
+    private val groupDao: GroupDao
 ) {
 
     // Hàm lấy danh sách hội thoại (Realtime Local)
@@ -22,12 +26,18 @@ class ChatRepository(
     }
 
     // [NEW] Lấy tin nhắn Realtime từ DB
-    fun getMessages(myUserId: Int, friendId: Int): Flow<List<MessageEntity>> {
-        return messageDao.getMessagesBetween(myUserId, friendId)
+    fun getMessages(myUserId: Int, targetId: Int, chatType: String): Flow<List<MessageEntity>> {
+        return if (chatType == "group") {
+            // Nếu là nhóm -> Gọi hàm DAO nhóm
+            messageDao.getGroupMessages(targetId)
+        } else {
+            // Nếu là private -> Gọi hàm DAO cũ
+            messageDao.getMessagesBetween(myUserId, targetId)
+        }
     }
 
     // [NEW] Gửi tin nhắn
-    suspend fun sendMessage(myUserId: Int, receiverId: Int, content: String) {
+    suspend fun sendMessage(myUserId: Int, receiverId: Int, content: String, chatType: String) {
         // Tạo tempId dương để gửi qua Socket (C chỉ nhận int)
         val tempId = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
 
@@ -38,7 +48,7 @@ class ChatRepository(
             serverId = localId, // ID ÂM
             senderId = myUserId,
             receiverId = receiverId,
-            chatType = "private",
+            chatType = chatType,
             content = content,
             status = "sending",
             createdAt = Date()
@@ -47,7 +57,7 @@ class ChatRepository(
 
         try {
             // Gửi tempId dương xuống Native
-            NativeClient.sendMessage(receiverId, content, tempId, "private")
+            NativeClient.sendMessage(receiverId, content, tempId, chatType)
         } catch (e: Exception) {
             Log.e("ChatRepo", "Send failed: ${e.message}")
             // Nếu lỗi, update trạng thái thành failed
@@ -107,5 +117,44 @@ class ChatRepository(
             createdAt = Date(dto.timestamp)
         )
         messageDao.insertMessage(entity)
+    }
+
+    fun createGroup(name: String, memberIds: IntArray) {
+        // Gọi xuống C -> Server xử lý -> Trả về qua callback onGroupCreated
+        NativeClient.createGroup(name, memberIds)
+    }
+
+    // 2. Gọi Native để thêm thành viên
+    fun addMembersToGroup(groupId: Int, userIds: IntArray) {
+        NativeClient.addMembersToGroup(groupId, userIds)
+    }
+
+    // 3. Callback: Lưu thông tin nhóm vào DB khi tạo thành công
+    suspend fun saveGroupFromNetwork(groupId: Int, groupName: String) {
+        val group = GroupEntity(
+            serverId = groupId,
+            name = groupName,
+            avatarUrl = null,
+            notification = "active", // Mặc định bật thông báo
+            createdAt = Date()
+        )
+        groupDao.insertGroup(group)
+    }
+
+    // 4. Callback: Lưu danh sách thành viên vào DB
+    @Transaction
+    suspend fun saveGroupMembersFromNetwork(groupId: Int, memberIds: IntArray) {
+        val members = memberIds.map { memberId ->
+            GroupMemberEntity(
+                serverId = 0, // Local generate hoặc server trả về (ở đây tạm để 0 vì logic chưa có ID riêng cho row này)
+                groupId = groupId,
+                memberId = memberId,
+                status = "active",
+                role = "member", // Mặc định là member
+                joinedAt = Date()
+            )
+        }
+        groupDao.insertMembers(members)
+        Log.d("ChatRepo", "Saved ${members.size} members for Group $groupId")
     }
 }

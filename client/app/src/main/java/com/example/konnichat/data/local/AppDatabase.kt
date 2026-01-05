@@ -7,6 +7,7 @@ import com.example.konnichat.data.local.converter.DateConverter
 import com.example.konnichat.data.local.dao.ConversationDao
 import com.example.konnichat.data.local.dao.MessageDao
 import com.example.konnichat.data.local.dao.UserDao
+import com.example.konnichat.data.local.dao.GroupDao
 import com.example.konnichat.data.local.entity.FriendEntity
 import com.example.konnichat.data.local.entity.FriendRequestEntity
 import com.example.konnichat.data.local.entity.GroupEntity
@@ -36,4 +37,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun messageDao(): MessageDao
 
     abstract fun conversationDao(): ConversationDao
+
+    abstract fun groupDao(): GroupDao
 }

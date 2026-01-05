@@ -3,6 +3,8 @@ package com.example.konnichat.ui.home
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 // Đã xóa import TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -16,6 +18,7 @@ import com.example.konnichat.data.remote.NativeEventListenerImpl
 import com.example.konnichat.data.repository.UserRepository
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.example.konnichat.ui.chat.ChatActivity
+import com.example.konnichat.ui.group.CreateGroupActivity
 
 class HomeActivity : AppCompatActivity() {
 
@@ -75,6 +78,23 @@ class HomeActivity : AppCompatActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleNavigationIntent(intent)
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.home_top_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_create_group -> {
+                // Mở màn hình tạo nhóm
+                val intent = Intent(this, CreateGroupActivity::class.java)
+                startActivity(intent)
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
     }
 
     private fun handleNavigationIntent(intent: Intent) {

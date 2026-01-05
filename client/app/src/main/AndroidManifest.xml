@@ -31,6 +31,13 @@
 
         <activity android:name=".ui.chat.ChatActivity" />
 
+        <activity android:name=".ui.group.CreateGroupActivity"
+            android:exported="false"
+            android:label="Tạo nhóm mới"
+            android:windowSoftInputMode="adjustResize"
+            />
+
+        <activity android:name=".ui.group.AddMemberActivity" android:label="Thêm thành viên" />
     </application>
 
 </manifest>
