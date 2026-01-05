@@ -1229,8 +1229,64 @@ class NativeClientTest {
     }
 
     @Test
+    fun test14_b_CreateGroup_Persistence() {
+        // Kịch bản:
+        // 1. A tạo nhóm.
+        // 2. Ngay sau đó A lấy lịch sử chat của nhóm này.
+        // 3. Phải thấy dòng "đã tạo nhóm" nằm trong lịch sử.
+
+        val time = System.currentTimeMillis()
+        val emailA = "cre_persist_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        // 1. Tạo nhóm
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+
+        NativeClient.createGroup("Persistence Group", intArrayOf()) // Nhóm 1 mình cũng được
+        Assert.assertTrue(latchCreate.await(5, TimeUnit.SECONDS))
+
+        // 2. Lấy lịch sử nhóm ngay lập tức
+        val latchHist = CountDownLatch(1)
+        var msgType = -1
+        var msgContent = ""
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                if (messages.isNotEmpty()) {
+                    // Lấy tin đầu tiên (mới nhất)
+                    msgType = messages[0].type
+                    msgContent = messages[0].content
+                    latchHist.countDown()
+                }
+            }
+        })
+
+        // Gọi getChatHistory cho Group (isGroup = true)
+        NativeClient.getChatHistory(groupId, true, 0, 10)
+
+        // 3. Verify
+        Assert.assertTrue("Timeout lấy History sau khi tạo nhóm", latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Tin nhắn đầu tiên phải là System Message", MSG_TYPE_SYSTEM, msgType)
+        Assert.assertTrue("Nội dung phải chứa 'tạo nhóm'", msgContent.contains("tạo nhóm"))
+    }
+
+    @Test
     fun test15_CreateGroup_Broadcast_Realtime() {
-        // Kịch bản: B tạo nhóm có A. A đang Online phải nhận được thông báo ngay lập tức.
+        // Kịch bản: B tạo nhóm có A. A đang Online phải nhận được:
+        // 1. Thông báo có nhóm mới (onGroupCreated)
+        // 2. Tin nhắn hệ thống "đã tạo nhóm" (onMessageReceived)
+
         val time = System.currentTimeMillis()
         val emailA = "onlineA_$time@konni.com"
         val emailB = "creatorB_$time@konni.com"
@@ -1245,13 +1301,29 @@ class NativeClientTest {
         val idA = userA.id
 
         val latchNotify = CountDownLatch(1)
+        val latchMsg = CountDownLatch(1) // <--- MỚI: Chờ tin nhắn
+
         var notifyGroupName = ""
+        var sysMsgContent = ""
+        var sysMsgType = -1
 
         val listener = object : StubNativeEventListener() {
+            // 1. Bắt sự kiện tạo nhóm
             override fun onGroupCreated(groupId: Int, groupName: String) {
                 println("TEST: A nhận được broadcast nhóm mới: $groupName")
                 notifyGroupName = groupName
                 latchNotify.countDown()
+            }
+
+            // 2. Bắt tin nhắn hệ thống (MỚI)
+            override fun onMessageReceived(msg: MessageDto) {
+                println("TEST: A nhận được tin nhắn: ${msg.content}, type: ${msg.type}")
+                // Server gửi msgType 9 cho system
+                if (msg.type == MSG_TYPE_SYSTEM) {
+                    sysMsgContent = msg.content
+                    sysMsgType = msg.type
+                    latchMsg.countDown()
+                }
             }
         }
         NativeClient.startListening(listener)
@@ -1271,10 +1343,14 @@ class NativeClientTest {
         }
         threadB.start()
 
-        // 3. Kiểm tra A nhận được gói CMD_NOTIFY_GROUP_CREATED
-        val success = latchNotify.await(7, TimeUnit.SECONDS)
-        Assert.assertTrue("User A không nhận được Broadcast tạo nhóm khi đang Online", success)
+        // 3. Verify
+        Assert.assertTrue("User A không nhận được Broadcast tạo nhóm", latchNotify.await(7, TimeUnit.SECONDS))
         Assert.assertEquals(groupName, notifyGroupName)
+
+        // Verify System Message (MỚI)
+        Assert.assertTrue("User A không nhận được System Message 'đã tạo nhóm'", latchMsg.await(7, TimeUnit.SECONDS))
+        Assert.assertEquals(MSG_TYPE_SYSTEM, sysMsgType)
+        Assert.assertTrue(sysMsgContent.contains("tạo nhóm"))
     }
 
     @Test
