@@ -475,6 +475,18 @@ int client_leave_group(int group_id) {
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
+int client_get_group_list(int offset, int limit) {
+    GetGroupListReq req;
+    req.offset = offset;
+    req.limit = limit;
+
+    pthread_mutex_lock(&g_send_mutex);
+    int res = send_request(CMD_GET_GROUP_LIST, &req, sizeof(req));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header)
 {
@@ -789,6 +801,36 @@ static void handle_incoming_packet(PacketHeader *header)
             bytes_processed += sizeof(notify);
             if (g_callbacks.on_member_left) {
                 g_callbacks.on_member_left(notify.group_id, notify.member_id, notify.member_name);
+            }
+        }
+    }
+
+    else if (header->command_type == CMD_GET_GROUP_LIST_RESP)
+    {
+        int32_t count = 0;
+        if (recv_all(g_socket, &count, sizeof(int32_t)) > 0)
+        {
+            bytes_processed += sizeof(int32_t);
+            if (count > 0)
+            {
+                int data_size = count * sizeof(GroupInfoPayload);
+                // Check overflow
+                if (data_size <= header->payload_size - bytes_processed)
+                {
+                    GroupInfoPayload *groups = (GroupInfoPayload *)malloc(data_size);
+                    if (recv_all(g_socket, groups, data_size) > 0)
+                    {
+                        bytes_processed += data_size;
+                        if (g_callbacks.on_group_list)
+                            g_callbacks.on_group_list(count, groups);
+                    }
+                    free(groups);
+                }
+            }
+            else
+            {
+                if (g_callbacks.on_group_list)
+                    g_callbacks.on_group_list(0, NULL);
             }
         }
     }

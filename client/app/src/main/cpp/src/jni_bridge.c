@@ -25,6 +25,7 @@ static jmethodID m_onGroupMembersAdded;
 static jmethodID m_onHistoryReceived;
 static jmethodID m_onGroupCreated;
 static jmethodID m_onMemberLeft;
+static jmethodID m_onGroupList;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -34,6 +35,8 @@ static jclass c_MessageDto;
 static jmethodID m_MessageDtoInit;
 static jclass c_PendingRequestDto;
 static jmethodID m_PendingRequestDtoInit;
+static jclass c_GroupDto;
+static jmethodID m_GroupDtoInit;
 
 // Các class Exception
 static jclass g_AuthException;
@@ -330,6 +333,31 @@ void jni_on_member_left(int group_id, int member_id, const char* member_name) {
     (*env)->DeleteLocalRef(env, jName);
 }
 
+void jni_on_group_list(int count, GroupInfoPayload* groups) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    jobjectArray jArray = (*env)->NewObjectArray(env, count, c_GroupDto, NULL);
+
+    for (int i = 0; i < count; i++) {
+        jstring jName = (*env)->NewStringUTF(env, groups[i].group_name);
+        jstring jAvatar = (*env)->NewStringUTF(env, groups[i].avatar_url);
+
+        // Constructor GroupDto(id, name, avatar)
+        jobject jObj = (*env)->NewObject(env, c_GroupDto, m_GroupDtoInit,
+                                         groups[i].group_id, jName, jAvatar);
+
+        (*env)->SetObjectArrayElement(env, jArray, i, jObj);
+
+        (*env)->DeleteLocalRef(env, jName);
+        (*env)->DeleteLocalRef(env, jAvatar);
+        (*env)->DeleteLocalRef(env, jObj);
+    }
+
+    (*env)->CallVoidMethod(env, g_listener, m_onGroupList, jArray);
+    (*env)->DeleteLocalRef(env, jArray);
+}
+
 // --- Helper ném lỗi ---
 void throw_unified_error(JNIEnv *env, int result_code) {
     jclass exClass = g_UnknownException;
@@ -420,6 +448,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onGroupCreated = (*env)->GetMethodID(env, lClass, "onGroupCreated", "(ILjava/lang/String;)V");
     m_onGroupMembersAdded = (*env)->GetMethodID(env, lClass, "onGroupMembersAdded", "(ILjava/lang/String;[I)V");
     m_onMemberLeft = (*env)->GetMethodID(env, lClass, "onMemberLeft", "(IILjava/lang/String;)V");
+    m_onGroupList = (*env)->GetMethodID(env, lClass, "onGroupListReceived", "([Lcom/example/konnichat/data/remote/dto/GroupDto;)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
     // Cache UserDto
@@ -439,6 +468,10 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     jclass pClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/PendingRequestDto");
     c_PendingRequestDto = (jclass) (*env)->NewGlobalRef(env, pClass);
     m_PendingRequestDtoInit = (*env)->GetMethodID(env, c_PendingRequestDto, "<init>", "(IILjava/lang/String;)V");
+
+    jclass gClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/GroupDto");
+    c_GroupDto = (jclass)(*env)->NewGlobalRef(env, gClass);
+    m_GroupDtoInit = (*env)->GetMethodID(env, c_GroupDto, "<init>", "(ILjava/lang/String;Ljava/lang/String;)V");
 
     // Cache Callback
     m_onPendingList = (*env)->GetMethodID(env, lClass, "onPendingRequestsReceived", "([Lcom/example/konnichat/data/remote/dto/PendingRequestDto;)V");
@@ -495,6 +528,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_pending_list = jni_on_pending_list;
     cbs.on_group_members_added = jni_on_group_members_added;
     cbs.on_member_left = jni_on_member_left;
+    cbs.on_group_list = jni_on_group_list;
     cbs.on_disconnect = jni_on_disconnect;
     // 3. Start C Thread
     start_reader_thread(cbs);
@@ -698,4 +732,9 @@ Java_com_example_konnichat_data_remote_NativeClient_leaveGroup(JNIEnv *env, jobj
     if (status != CLIENT_OK) {
         throw_unified_error(env, status);
     }
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_getGroupList(JNIEnv *env, jobject thiz, jint offset, jint limit) {
+    client_get_group_list(offset, limit);
 }

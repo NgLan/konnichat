@@ -46,4 +46,5 @@ object NativeClient {
     external fun addMembersToGroup(groupId: Int, userIds: IntArray)
 
     external fun leaveGroup(groupId: Int)
+    external fun getGroupList(offset: Int, limit: Int)
 }

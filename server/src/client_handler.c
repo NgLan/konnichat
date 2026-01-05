@@ -699,9 +699,9 @@ static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload
     {
         // --- TẠO SYSTEM MESSAGE LƯU VÀO DB ---
         uint64_t now = get_current_timestamp_ms();
-        
+
         // Lưu tin nhắn: "đã tạo nhóm"
-        // msg_type = MSG_TYPE_SYSTEM 
+        // msg_type = MSG_TYPE_SYSTEM
         // chat_type = "group"
         int msg_id = db_save_message(current_user_id, group_id, "đã tạo nhóm", now, MSG_TYPE_SYSTEM, "group");
 
@@ -737,19 +737,20 @@ static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload
                 LOG_INFO("Notified User %d about new group '%s' (ID: %d)", target_id, resp.group_name, group_id);
 
                 // B. Gửi tin nhắn hệ thống (Để hiện lên khung chat)
-                if (msg_id > 0) {
+                if (msg_id > 0)
+                {
                     ChatPayload sysMsg;
                     memset(&sysMsg, 0, sizeof(ChatPayload));
-                    
+
                     sysMsg.message_id = msg_id;
                     sysMsg.sender_id = current_user_id;
                     sysMsg.receiver_id = group_id; // Chat Group
-                    sysMsg.msg_type = MSG_TYPE_SYSTEM; 
+                    sysMsg.msg_type = MSG_TYPE_SYSTEM;
                     strcpy(sysMsg.chat_type, "group");
                     strcpy(sysMsg.content, "đã tạo nhóm");
                     sysMsg.created_at = now;
 
-                    send_response(target_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS, 
+                    send_response(target_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS,
                                   &sysMsg, sizeof(ChatPayload));
                 }
             }
@@ -801,7 +802,34 @@ static void handle_add_members(int sock, PacketHeader *reqHeader, void *payload,
         // --- A. Phản hồi cho người gửi (Success) ---
         send_response(sock, CMD_ADD_MEMBER_RESP, reqHeader->request_id, STATUS_SUCCESS, NULL, 0);
 
-        // --- B. Broadcast Notification (CMD_NOTIFY_MEMBERS_ADDED) ---
+        // --- B. TẠO SYSTEM MESSAGE ---
+
+        // B1. Tạo nội dung: "đã thêm UserA, UserB"
+        char sys_content[MAX_CONTENT_LEN] = "đã thêm ";
+        char temp_name[MAX_NAME_LEN];
+
+        for (int i = 0; i < req->count; i++)
+        {
+            // Lấy tên người được thêm
+            get_user_name_by_id(target_ids[i], temp_name, sizeof(temp_name));
+
+            // Nối chuỗi (kiểm tra tràn bộ nhớ)
+            if (strlen(sys_content) + strlen(temp_name) + 2 < MAX_CONTENT_LEN)
+            {
+                strcat(sys_content, temp_name);
+                if (i < req->count - 1)
+                {
+                    strcat(sys_content, ", ");
+                }
+            }
+        }
+
+        // B2. Lưu vào DB
+        uint64_t now = get_current_timestamp_ms();
+        int msg_id = db_save_message(current_user_id, req->group_id, sys_content,
+                                     now, MSG_TYPE_SYSTEM, "group");
+
+        // --- C. BROADCAST ---
         // Chuẩn bị gói tin notify
         // Tái sử dụng struct req, nhưng điền thêm thông tin người add
         req->added_by_user = current_user_id;
@@ -823,9 +851,27 @@ static void handle_add_members(int sock, PacketHeader *reqHeader, void *payload,
             int target_sock = get_socket_by_user_id(mem_id);
             if (target_sock != -1)
             {
-                // Gửi toàn bộ cục payload (Header struct + Array IDs)
+                // 1. Gửi Notify (Cập nhật danh sách thành viên)
                 send_response(target_sock, CMD_NOTIFY_MEMBERS_ADDED, 0, STATUS_SUCCESS,
                               payload, expected_size);
+
+                // 2. Gửi Tin nhắn hệ thống (Cập nhật khung chat)
+                if (msg_id > 0)
+                {
+                    ChatPayload sysMsg;
+                    memset(&sysMsg, 0, sizeof(ChatPayload));
+
+                    sysMsg.message_id = msg_id;
+                    sysMsg.sender_id = current_user_id; // Người thực hiện thêm
+                    sysMsg.receiver_id = req->group_id;
+                    sysMsg.msg_type = MSG_TYPE_SYSTEM;
+                    strcpy(sysMsg.chat_type, "group");
+                    strncpy(sysMsg.content, sys_content, MAX_CONTENT_LEN - 1);
+                    sysMsg.created_at = now;
+
+                    send_response(target_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS,
+                                  &sysMsg, sizeof(ChatPayload));
+                }
             }
         }
         LOG_INFO("User %d added %d members to Group %d. Notified %d users.",
@@ -833,7 +879,7 @@ static void handle_add_members(int sock, PacketHeader *reqHeader, void *payload,
     }
     else if (added_count == -2)
     {
-        // Trả về lỗi Full
+        // Trả về lỗi Full thành viên
         send_response(sock, CMD_ADD_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_GROUP_FULL, NULL, 0);
     }
     else
@@ -921,6 +967,47 @@ static void handle_leave_group(int sock, PacketHeader *reqHeader, void *payload,
     {
         send_response(sock, CMD_LEAVE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_USER_NOT_IN_GROUP, NULL, 0);
     }
+}
+
+static void handle_get_group_list(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    GetGroupListReq *req = (GetGroupListReq *)payload;
+
+    int limit = 20;
+    int offset = 0;
+
+    // Validate input nếu payload có dữ liệu
+    if (reqHeader->payload_size >= (int32_t)sizeof(GetGroupListReq))
+    {
+        limit = req->limit;
+        offset = req->offset;
+        if (limit <= 0 || limit > 100)
+            limit = 20;
+        if (offset < 0)
+            offset = 0;
+    }
+
+    LOG_INFO("User %d requesting group list (Off: %d, Lim: %d)", current_user_id, offset, limit);
+
+    // Cấp phát bộ nhớ
+    GroupInfoPayload *groups = (GroupInfoPayload *)malloc(limit * sizeof(GroupInfoPayload));
+    if (!groups)
+    {
+        send_response(sock, CMD_GET_GROUP_LIST_RESP, reqHeader->request_id, STATUS_ERROR_UNKNOWN, NULL, 0);
+        return;
+    }
+
+    // Clean memory
+    memset(groups, 0, limit * sizeof(GroupInfoPayload));
+
+    // Gọi Repo
+    int count = db_get_joined_groups(current_user_id, groups, limit, offset);
+
+    // Gửi phản hồi
+    send_list_response(sock, CMD_GET_GROUP_LIST_RESP, reqHeader->request_id, STATUS_SUCCESS,
+                       count, groups, sizeof(GroupInfoPayload));
+
+    free(groups);
 }
 
 // --- MAIN THREAD LOOP ---
@@ -1032,6 +1119,9 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_LEAVE_GROUP:
             handle_leave_group(sock, &header, payload, current_user_id);
+            break;
+        case CMD_GET_GROUP_LIST:
+            handle_get_group_list(sock, &header, payload, current_user_id);
             break;
 
         default:

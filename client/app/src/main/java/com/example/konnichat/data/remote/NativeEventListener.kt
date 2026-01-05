@@ -1,5 +1,6 @@
 package com.example.konnichat.data.remote
 
+import com.example.konnichat.data.remote.dto.GroupDto
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
@@ -36,4 +37,5 @@ interface NativeEventListener {
     fun onGroupCreated(groupId: Int, groupName: String)
     fun onGroupMembersAdded(groupId: Int, addedBy: String, newMemberIds: IntArray)
     fun onMemberLeft(groupId: Int, memberId: Int, memberName: String)
+    fun onGroupListReceived(groups: Array<GroupDto>)
 }

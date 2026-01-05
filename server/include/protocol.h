@@ -13,6 +13,7 @@
 #define MAX_CONTENT_LEN 1024
 #define MAX_GROUP_NAME 100
 #define MAX_GROUP_MEMBERS 20
+#define MAX_AVATAR_LEN 256 
 
 // --- DANH SÁCH LỆNH ---
 typedef enum {
@@ -50,6 +51,9 @@ typedef enum {
     CMD_SEND_GROUP_MSG_RESP = 39,
 
     CMD_RECEIVE_GROUP_MSG   = 300, // Event push 
+
+    CMD_GET_GROUP_LIST      = 50,
+    CMD_GET_GROUP_LIST_RESP = 51,
 
     // 4. Friend Management 
     CMD_GET_FRIEND_LIST     = 40,
@@ -283,5 +287,18 @@ typedef struct __attribute__((packed)) {
     int32_t member_id;              // ID người rời
     char member_name[MAX_NAME_LEN]; // Tên người rời 
 } MemberLeftNotifyPayload;
+
+// Request (Client -> Server)
+typedef struct __attribute__((packed)) {
+    int32_t offset; // Bắt đầu từ 0
+    int32_t limit;  // Mặc định 20 - 100
+} GetGroupListReq;
+
+// Response Item (Server -> Client)
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+    char group_name[MAX_GROUP_NAME]; 
+    char avatar_url[MAX_AVATAR_LEN]; 
+} GroupInfoPayload;
 
 #endif
