@@ -119,7 +119,8 @@ typedef enum {
     STATUS_ERROR_GROUP_FULL = 9,       // Nhóm đã đầy
     STATUS_ERROR_USER_NOT_IN_GROUP = 10,  // Người dùng không thuộc nhóm
     STATUS_ERROR_NOT_GROUP_ADMIN = 11,   // Người dùng không phải admin nhóm
-    STATUS_ERROR_CANNOT_REMOVE_SELF = 12  // Không thể tự kick chính mình khỏi nhóm
+    STATUS_ERROR_CANNOT_REMOVE_SELF = 12,  // Không thể tự kick chính mình khỏi nhóm
+    STATUS_ERROR_NOT_ALLOWED = 13  // Hành động không được phép
 } StatusCode;
 
 // --- ĐỊNH NGHĨA TRẠNG THÁI QUAN HỆ ---

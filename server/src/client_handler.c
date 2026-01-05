@@ -894,7 +894,20 @@ static void handle_leave_group(int sock, PacketHeader *reqHeader, void *payload,
 
     LOG_INFO("User %d requesting to LEAVE group %d", current_user_id, group_id);
 
-    // 1. Gọi DB update
+    // 1. Kiểm tra Role trước
+    char *role = db_get_member_role(req->group_id, current_user_id);
+    int is_admin = (role != NULL && strcmp(role, "admin") == 0);
+    if (role)
+        free(role);
+
+    // 2. NẾU LÀ ADMIN -> KHÔNG CHO RỜI KIỂU NÀY (Bắt buộc phải dùng lệnh Dissolve hoặc chuyển quyền)
+    if (is_admin)
+    {
+        send_response(sock, CMD_LEAVE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_NOT_ALLOWED, NULL, 0);
+        return;
+    }
+
+    // 3. Nếu là Member -> Xử lý rời nhóm bình thường
     int success = db_leave_group(group_id, current_user_id);
 
     if (success)
