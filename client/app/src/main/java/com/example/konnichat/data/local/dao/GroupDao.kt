@@ -15,7 +15,7 @@ interface GroupDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertGroup(group: GroupEntity)
 
-    @Query("SELECT * FROM groups WHERE server_id = :groupId")
+    @Query("SELECT * FROM `groups` WHERE server_id = :groupId")
     suspend fun getGroupById(groupId: Int): GroupEntity?
 
     // --- MEMBERS ---

@@ -157,4 +157,33 @@ class ChatRepository(
         groupDao.insertMembers(members)
         Log.d("ChatRepo", "Saved ${members.size} members for Group $groupId")
     }
+
+    suspend fun syncGroupMembers(groupId: Int, addedBy: String, memberIds: IntArray) {
+        // 1. Kiểm tra xem Group này đã có trong DB máy mình chưa
+        val existingGroup = groupDao.getGroupById(groupId)
+
+        if (existingGroup == null) {
+            // 2. Nếu chưa có -> Tạo một "Group Tạm" để thỏa mãn khóa ngoại
+            // Tên nhóm tạm thời là "Nhóm <ID>", sau này có thể update sau
+            val placeholderGroup = GroupEntity(
+                serverId = groupId,
+                name = "Nhóm $groupId",
+                avatarUrl = null,
+                notification = "active",
+                createdAt = Date()
+            )
+            groupDao.insertGroup(placeholderGroup)
+            Log.d("ChatRepo", "⚠️ Đã tạo Group tạm (ID: $groupId) để tránh lỗi crash.")
+        }
+
+        // 3. Sau khi đảm bảo Group đã tồn tại, mới lưu danh sách thành viên
+        saveGroupMembersFromNetwork(groupId, memberIds)
+
+        // (Optional) Tạo tin nhắn hệ thống báo "A đã thêm B vào nhóm" nếu muốn
+    }
+
+    suspend fun getGroupMemberIds(groupId: Int): List<Int> {
+        // Lấy list entity từ DAO và map sang list Int (memberId)
+        return groupDao.getMembersByGroupId(groupId).map { it.memberId }
+    }
 }

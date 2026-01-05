@@ -219,21 +219,23 @@ object NativeEventListenerImpl : NativeEventListener {
         }
     }
 
+    // [SỬA] Implement logic nhận sự kiện thêm thành viên
     override fun onGroupMembersAdded(
         groupId: Int,
         addedBy: String,
         newMemberIds: IntArray
     ) {
-        Log.d(TAG, "👥 Members added to Group $groupId by $addedBy. Count: ${newMemberIds.size}")
+        Log.d(TAG, "👥 Có thành viên mới vào Group $groupId (Thêm bởi $addedBy). Số lượng: ${newMemberIds.size}")
+
         chatRepository?.let { repo ->
             CoroutineScope(Dispatchers.IO).launch {
-                // Lưu thành viên mới vào DB
-                repo.saveGroupMembersFromNetwork(groupId, newMemberIds)
-
-                // Optional: Tạo tin nhắn hệ thống báo "A đã thêm B vào nhóm" (Làm sau)
+                // Gọi hàm xử lý an toàn trong Repository
+                repo.syncGroupMembers(groupId, addedBy, newMemberIds)
             }
         }
     }
+
+    // ... (Các hàm khác giữ nguyên)
 
     override fun onConnectionClosed(reason: String) {
         Log.e(TAG, "Mất kết nối: $reason")

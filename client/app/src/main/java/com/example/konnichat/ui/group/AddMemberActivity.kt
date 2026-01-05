@@ -32,6 +32,9 @@ class AddMemberActivity : AppCompatActivity() {
         }
 
         setupViewModel()
+
+        viewModel.loadData(groupId)
+
         setupUI()
     }
 

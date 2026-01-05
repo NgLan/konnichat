@@ -15,6 +15,7 @@ import com.example.konnichat.App
 import com.example.konnichat.R
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListenerImpl
+import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.example.konnichat.ui.chat.ChatActivity
@@ -23,7 +24,11 @@ import com.example.konnichat.ui.group.CreateGroupActivity
 class HomeActivity : AppCompatActivity() {
 
     private val viewModel: HomeViewModel by viewModels {
-        HomeViewModelFactory((application as App).userRepository)
+        HomeViewModelFactory(
+            (application as App).userRepository,
+            (application as App).chatRepository, // Thêm cái này
+            getSharedPreferences("konnichat_prefs", android.content.Context.MODE_PRIVATE) // Thêm cái này
+        )
     }
 
     private lateinit var bottomNav: BottomNavigationView
@@ -124,11 +129,15 @@ class HomeActivity : AppCompatActivity() {
     }
 }
 
-class HomeViewModelFactory(private val userRepository: UserRepository) : ViewModelProvider.Factory {
+class HomeViewModelFactory(
+    private val userRepo: UserRepository,
+    private val chatRepo: ChatRepository,
+    private val prefs: android.content.SharedPreferences
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return HomeViewModel(userRepository) as T
+            return HomeViewModel(userRepo, chatRepo, prefs) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }
