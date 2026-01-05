@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import android.widget.PopupMenu // [THÊM]
 import com.example.konnichat.data.local.model.ConversationItem // [THÊM]
+import com.example.konnichat.utils.DialogUtils
 
 class MessageListFragment : Fragment() {
 
@@ -99,12 +100,41 @@ class MessageListFragment : Fragment() {
                 }
                 "Rời nhóm" -> {
                     // Tạm thời chỉ hiện thông báo
-                    Toast.makeText(requireContext(), "Tính năng đang phát triển", Toast.LENGTH_SHORT).show()
+                    handleGroupActionClick(item)
                     true
                 }
                 else -> false
             }
         }
         popup.show()
+    }
+
+    private fun handleGroupActionClick(item: ConversationItem) {
+        // Dùng lifecycleScope để chạy coroutine kiểm tra DB
+        lifecycleScope.launch {
+            val role = viewModel.getGroupRole(item.id)
+
+            android.util.Log.d("CheckRole", "Group: ${item.id}, User Role: $role")
+
+            if (role != null && role.equals("admin", ignoreCase = true)) {
+                DialogUtils.showConfirmationDialog(
+                    requireContext(),
+                    "Giải tán nhóm?",
+                    "Bạn là trưởng nhóm. Hành động này sẽ xóa nhóm vĩnh viễn.",
+                    positiveLabel = "Giải tán"
+                ) {
+                    viewModel.dissolveGroup(item.id)
+                }
+            } else {
+                DialogUtils.showConfirmationDialog(
+                    requireContext(),
+                    "Rời nhóm?",
+                    "Bạn có chắc chắn muốn rời nhóm?",
+                    positiveLabel = "Rời nhóm"
+                ) {
+                    viewModel.leaveGroup(item.id)
+                }
+            }
+        }
     }
 }
