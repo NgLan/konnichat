@@ -212,15 +212,28 @@ object NativeEventListenerImpl : NativeEventListener {
     }
 
     override fun onGroupCreated(groupId: Int, groupName: String) {
-        TODO("Not yet implemented")
+        Log.d(TAG, "🎉 Group Created: $groupName (ID: $groupId)")
+        chatRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.saveGroupFromNetwork(groupId, groupName)
+            }
+        }
     }
 
+    // [SỬA] Implement logic nhận sự kiện thêm thành viên
     override fun onGroupMembersAdded(
         groupId: Int,
         addedBy: String,
         newMemberIds: IntArray
     ) {
-        TODO("Not yet implemented")
+        Log.d(TAG, "👥 Có thành viên mới vào Group $groupId (Thêm bởi $addedBy). Số lượng: ${newMemberIds.size}")
+
+        chatRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                // Gọi hàm xử lý an toàn trong Repository
+                repo.syncGroupMembers(groupId, addedBy, newMemberIds)
+            }
+        }
     }
 
     override fun onMemberLeft(

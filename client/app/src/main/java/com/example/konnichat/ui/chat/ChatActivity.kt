@@ -1,6 +1,7 @@
 package com.example.konnichat.ui.chat
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.view.View
 import android.widget.Toast
@@ -13,7 +14,10 @@ import com.example.konnichat.App
 import com.example.konnichat.databinding.ActivityChatBinding
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
-
+import android.view.Menu
+import android.view.MenuItem
+import com.example.konnichat.R
+import com.example.konnichat.ui.group.AddMemberActivity
 class ChatActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityChatBinding
@@ -22,6 +26,8 @@ class ChatActivity : AppCompatActivity() {
 
     private var myUserId: Int = -1
     private var targetUserId: Int = -1
+
+    private var chatType: String = "private"
 
     // Biến static để NativeEventListener kiểm tra trạng thái (chặn thông báo khi đang chat)
     companion object {
@@ -47,6 +53,8 @@ class ChatActivity : AppCompatActivity() {
             finish()
             return
         }
+
+        chatType = intent.getStringExtra("CHAT_TYPE") ?: "private"
 
         // 3. Khởi tạo ViewModel (Manual DI injection)
         val app = application as App
@@ -112,7 +120,7 @@ class ChatActivity : AppCompatActivity() {
 
     private fun setupObserver() {
         // Quan sát danh sách tin nhắn từ DB (Reactive)
-        viewModel.getMessages(myUserId, targetUserId).observe(this) { msgs ->
+        viewModel.getMessages(myUserId, targetUserId, chatType).observe(this) { msgs ->
             adapter.submitList(msgs) {
                 // Khi list update xong, cuộn xuống dưới cùng nếu đang ở gần đáy
                 // (Logic đơn giản: cứ có tin mới là cuộn xuống)
@@ -172,8 +180,30 @@ class ChatActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Rời màn hình chat -> Reset ID để cho phép hiện thông báo lại
+        // Rời mà         n hình chat -> Reset ID để cho phép hiện thông báo lại
         sCurrentTargetId = -1
+    }
+
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        // Chỉ hiện menu thêm người nếu là Group
+        if (chatType == "group") {
+            menuInflater.inflate( R.menu.chat_group_menu, menu)
+            return true
+        }
+        return super.onCreateOptionsMenu(menu)
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_add_member -> {
+                // Mở màn hình thêm thành viên, truyền GroupID (targetUserId chính là GroupId trong chat nhóm)
+                val intent = Intent(this, AddMemberActivity::class.java)
+                intent.putExtra("GROUP_ID", targetUserId)
+                startActivity(intent)
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
     }
 }
 

@@ -1,22 +1,33 @@
 package com.example.konnichat.ui.home
 
+import android.content.SharedPreferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.remote.NativeClient
+import com.example.konnichat.data.local.model.ConversationItem
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.ui.search.UserSearchUiModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
-class HomeViewModel(private val userRepository: UserRepository) : ViewModel() {
+class HomeViewModel(
+    private val userRepository: UserRepository,
+    private val chatRepository: ChatRepository, // [THÊM] Inject ChatRepository
+    private val prefs: SharedPreferences
+) : ViewModel() {
+
+    private val _conversations = MutableStateFlow<List<ConversationItem>>(emptyList())
+    val conversations: StateFlow<List<ConversationItem>> = _conversations
 
     private val _friends = MutableStateFlow<List<UserEntity>>(emptyList())
     val friends: StateFlow<List<UserEntity>> = _friends
 
     init {
+        // 1. Gọi Native lấy danh sách bạn bè mới nhất (để cập nhật Avatar/Name nếu có)
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             userRepository.resetLocalStatuses()
             try {
@@ -25,7 +36,21 @@ class HomeViewModel(private val userRepository: UserRepository) : ViewModel() {
                 e.printStackTrace()
             }
         }
-        loadFriends()
+
+        // 2. Bắt đầu lắng nghe thay đổi từ DB
+        loadConversations()
+    }
+
+    private fun loadConversations() {
+        val myId = prefs.getInt("USER_ID", -1)
+        if (myId == -1) return
+
+        viewModelScope.launch {
+            // Gọi hàm mới trong ChatRepository (đã gọi xuống ConversationDao)
+            chatRepository.getConversationList(myId).collectLatest { list ->
+                _conversations.value = list
+            }
+        }
     }
 
     private fun loadFriends() {

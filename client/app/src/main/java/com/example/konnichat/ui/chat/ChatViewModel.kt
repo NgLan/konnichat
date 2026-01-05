@@ -16,6 +16,7 @@ class ChatViewModel(
     private val userRepository: UserRepository
 ) : ViewModel() {
 
+    var currentChatType: String = "private"
     private var isLoadingHistory = false
     // Trạng thái quan hệ bạn bè (True: Hiện chat, False: Hiện nút kết bạn)
     private val _isFriend = MutableLiveData<Boolean>(false)
@@ -28,17 +29,27 @@ class ChatViewModel(
     private val _isMuted = MutableLiveData<Boolean>(false)
     val isMuted: LiveData<Boolean> = _isMuted
     // Load tin nhắn (Reactive Flow -> LiveData)
-    fun getMessages(myId: Int, friendId: Int): LiveData<List<MessageEntity>> {
+    fun getMessages(myId: Int, friendId: Int, chatType: String): LiveData<List<MessageEntity>> {
         // 1. Kiểm tra quan hệ bạn bè ngay khi vào màn hình
         checkFriendStatus(friendId)
 
         checkMuteStatus(friendId)
 
+        this.currentChatType = chatType
+
         // 2. Load sẵn history mới nhất từ server (Offset 0, Limit 20)
         chatRepository.loadHistory(friendId, 0, 20)
 
+        if (chatType == "private") {
+            checkFriendStatus(friendId)
+            checkMuteStatus(friendId)
+        } else {
+            // Nếu là Group, mặc định là hiện khung chat (isFriend = true)
+            _isFriend.postValue(true)
+            // Group cũng có thể mute (logic tương tự, tạm bỏ qua hoặc làm sau)
+        }
         // 3. Trả về LiveData từ DB Local (tự động update khi DB thay đổi)
-        return chatRepository.getMessages(myId, friendId).asLiveData()
+        return chatRepository.getMessages(myId, friendId, chatType).asLiveData()
     }
 
     private fun checkMuteStatus(targetId: Int) {
@@ -64,7 +75,7 @@ class ChatViewModel(
         if (content.isBlank()) return
         viewModelScope.launch {
             // Logic gửi tin (Lưu DB local -> Gửi Socket) nằm trong Repository
-            chatRepository.sendMessage(myId, receiverId, content)
+            chatRepository.sendMessage(myId, receiverId, content, currentChatType)
         }
     }
 

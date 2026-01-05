@@ -3,6 +3,8 @@ package com.example.konnichat.ui.home
 
 import android.content.Intent
 import android.os.Bundle
+import android.view.Menu
+import android.view.MenuItem
 // Đã xóa import TextView
 import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
@@ -13,14 +15,20 @@ import com.example.konnichat.App
 import com.example.konnichat.R
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListenerImpl
+import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.example.konnichat.ui.chat.ChatActivity
+import com.example.konnichat.ui.group.CreateGroupActivity
 
 class HomeActivity : AppCompatActivity() {
 
     private val viewModel: HomeViewModel by viewModels {
-        HomeViewModelFactory((application as App).userRepository)
+        HomeViewModelFactory(
+            (application as App).userRepository,
+            (application as App).chatRepository, // Thêm cái này
+            getSharedPreferences("konnichat_prefs", android.content.Context.MODE_PRIVATE) // Thêm cái này
+        )
     }
 
     private lateinit var bottomNav: BottomNavigationView
@@ -77,6 +85,23 @@ class HomeActivity : AppCompatActivity() {
         handleNavigationIntent(intent)
     }
 
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.home_top_menu, menu)
+        return true
+    }
+
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_create_group -> {
+                // Mở màn hình tạo nhóm
+                val intent = Intent(this, CreateGroupActivity::class.java)
+                startActivity(intent)
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
     private fun handleNavigationIntent(intent: Intent) {
         val type = intent.getStringExtra("NAVIGATE_TO")
         if (type == "FRIEND_REQ") {
@@ -104,11 +129,15 @@ class HomeActivity : AppCompatActivity() {
     }
 }
 
-class HomeViewModelFactory(private val userRepository: UserRepository) : ViewModelProvider.Factory {
+class HomeViewModelFactory(
+    private val userRepo: UserRepository,
+    private val chatRepo: ChatRepository,
+    private val prefs: android.content.SharedPreferences
+) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return HomeViewModel(userRepository) as T
+            return HomeViewModel(userRepo, chatRepo, prefs) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

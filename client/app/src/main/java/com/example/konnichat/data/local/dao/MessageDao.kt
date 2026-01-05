@@ -31,4 +31,7 @@ interface MessageDao {
     // 2. Cập nhật trạng thái (Dùng khi nhận sự kiện delivered)
     @Query("UPDATE messages SET status = :status WHERE server_id = :id")
     suspend fun updateMessageStatus(id: Int, status: String)
+//    Hàm lấy tin nhắn nhóm (Lấy tất cả tin có receiver_id là GroupID và type là 'group')
+    @Query("SELECT * FROM messages WHERE receiver_id = :groupId AND chat_type = 'group' ORDER BY created_at ASC")
+    fun getGroupMessages(groupId: Int): Flow<List<MessageEntity>>
 }

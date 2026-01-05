@@ -21,10 +21,14 @@ import kotlinx.coroutines.launch
 class MessageListFragment : Fragment() {
 
     private val viewModel: HomeViewModel by activityViewModels {
-        HomeViewModelFactory((requireActivity().application as App).userRepository)
+        HomeViewModelFactory(
+            (requireActivity().application as App).userRepository,
+            (requireActivity().application as App).chatRepository,
+            requireContext().getSharedPreferences("konnichat_prefs", android.content.Context.MODE_PRIVATE)
+        )
     }
 
-    private lateinit var adapter: FriendAdapter
+    private lateinit var adapter: ConversationAdapter
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
@@ -40,29 +44,24 @@ class MessageListFragment : Fragment() {
         val tvEmpty = view.findViewById<TextView>(R.id.tvEmptyState)
 
         // Cập nhật Adapter với callback unfriend
-        adapter = FriendAdapter(
-            onItemClick = { user ->
-                val intent = Intent(requireContext(), ChatActivity::class.java)
-                intent.putExtra("TARGET_ID", user.serverId)
-                intent.putExtra("TARGET_NAME", user.name)
-                startActivity(intent)
-            },
-            onUnfriendClick = { user ->
-                // Gọi ViewModel để hủy kết bạn
-                viewModel.unfriendUser(user.serverId)
-                Toast.makeText(requireContext(), "Đã hủy kết bạn với ${user.name}", Toast.LENGTH_SHORT).show()
-            }
-        )
+        adapter = ConversationAdapter { item ->
+            // Callback khi click vào item
+            val intent = Intent(requireContext(), ChatActivity::class.java)
+            intent.putExtra("TARGET_ID", item.id)       // ID User hoặc Group
+            intent.putExtra("TARGET_NAME", item.name)   // Tên
+            intent.putExtra("CHAT_TYPE", item.chatType) // [QUAN TRỌNG] "private" hoặc "group"
+            startActivity(intent)
+        }
 
         rvConversations.layoutManager = LinearLayoutManager(context)
         rvConversations.adapter = adapter
 
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.friends.collectLatest { list ->
+            viewModel.conversations.collectLatest { list ->
                 if (list.isEmpty()) {
                     tvEmpty.visibility = View.VISIBLE
                     rvConversations.visibility = View.GONE
-                    tvEmpty.text = "Chưa có bạn bè nào.\nHãy kết bạn thêm nhé!"
+                    tvEmpty.text = "Chưa có cuộc trò chuyện nào."
                 } else {
                     tvEmpty.visibility = View.GONE
                     rvConversations.visibility = View.VISIBLE
