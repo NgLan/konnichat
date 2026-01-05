@@ -32,17 +32,17 @@ typedef struct {
     void (*on_msg_sent)(int temp_req_id, int server_msg_id, uint64_t server_time);
     void (*on_msg_delivered)(int server_msg_id);
     void (*on_status_change)(int friend_id, int is_online);
-    void (*on_disconnect)(const char* reason);
     void (*on_friend_req)(int req_id, int sender_id, const char* sender_name);
     void (*on_req_response)(int cmd, int status);
     void (*on_request_accepted)(UserInfoPayload* user);
     void (*on_unfriended)(int ex_friend_id);
     void (*on_search_result)(int count, UserSearchInfo *results);
-
     void (*on_pending_list)(int count, PendingReqInfo* list);
     void (*on_history_received)(int count, ChatPayload *messages);
     void (*on_group_created)(int group_id, const char* name);
     void (*on_group_members_added)(int group_id, const char* added_by, int count, int* new_member_ids);
+    void (*on_member_left)(int group_id, int member_id, const char* member_name);
+    void (*on_disconnect)(const char* reason);
 } NativeCallbacks;
 
 // --- 2. CÁC HÀM QUẢN LÝ ---
@@ -79,12 +79,14 @@ int client_send_message(int receiver_id, const char *content, int request_id, co
 
 int client_fetch_offline_msgs();
 
-int client_get_history(int target_id, int offset, int limit);
+int client_get_history(int target_id, int is_group, int offset, int limit);
 
 int client_get_pending_requests();
 
 int client_create_group(const char* name, int32_t* members, int member_count);
 
 int client_add_group_members(int group_id, int32_t* member_ids, int count);
+
+int client_leave_group(int group_id);
 
 #endif // NATIVE_CORE_H

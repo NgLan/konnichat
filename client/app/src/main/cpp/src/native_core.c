@@ -396,10 +396,11 @@ int client_fetch_offline_msgs()
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
-int client_get_history(int target_id, int offset, int limit)
+int client_get_history(int target_id, int is_group, int offset, int limit)
 {
     GetHistoryPayload payload;
     payload.target_id = target_id;
+    payload.is_group = is_group;
     payload.offset = offset;
     payload.limit = limit;
 
@@ -459,6 +460,17 @@ int client_add_group_members(int group_id, int32_t* member_ids, int count)
     pthread_mutex_unlock(&g_send_mutex);
 
     free(buffer);
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
+int client_leave_group(int group_id) {
+    LeaveGroupReqPayload payload;
+    payload.group_id = group_id;
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_LEAVE_GROUP, &payload, sizeof(payload));
+    pthread_mutex_unlock(&g_send_mutex);
+
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
@@ -658,7 +670,8 @@ static void handle_incoming_packet(PacketHeader *header)
     else if (header->command_type == CMD_SEND_FRIEND_REQ_RESP ||
              header->command_type == CMD_RESPOND_FRIEND_REQ_RESP ||
              header->command_type == CMD_UNFRIEND_RESP ||
-             header->command_type == CMD_ADD_MEMBER_RESP)
+             header->command_type == CMD_ADD_MEMBER_RESP ||
+             header->command_type == CMD_LEAVE_GROUP_RESP)
     {
         if (g_callbacks.on_req_response)
             g_callbacks.on_req_response(header->command_type, header->status_code);
@@ -765,6 +778,16 @@ static void handle_incoming_packet(PacketHeader *header)
                         free(new_ids);
                     }
                 }
+            }
+        }
+    }
+
+    else if (header->command_type == CMD_NOTIFY_MEMBER_LEFT) {
+        MemberLeftNotifyPayload notify;
+        if (recv_all(g_socket, &notify, sizeof(notify)) > 0) {
+            bytes_processed += sizeof(notify);
+            if (g_callbacks.on_member_left) {
+                g_callbacks.on_member_left(notify.group_id, notify.member_id, notify.member_name);
             }
         }
     }

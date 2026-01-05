@@ -40,8 +40,10 @@ object NativeClient {
     external fun getPendingRequests()
     external fun sendMessage(receiverId: Int, content: String, tempId: Int, chatType: String)
     external fun fetchOfflineMessages()
-    external fun getChatHistory(targetId: Int, offset: Int, limit: Int)
+    // Thêm tham số isGroup
+    external fun getChatHistory(targetId: Int, isGroup: Boolean, offset: Int, limit: Int)
     external fun createGroup(name: String, memberIds: IntArray)
-
     external fun addMembersToGroup(groupId: Int, userIds: IntArray)
+
+    external fun leaveGroup(groupId: Int)
 }
