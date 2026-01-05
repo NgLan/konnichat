@@ -206,6 +206,13 @@ class ChatActivity : AppCompatActivity() {
                 startActivity(intent)
                 true
             }
+            R.id.action_view_members -> {
+                val intent = Intent(this, com.example.konnichat.ui.group.GroupInfoActivity::class.java)
+                intent.putExtra("GROUP_ID", targetUserId) // targetUserId là GroupID khi chat nhóm
+                intent.putExtra("GROUP_NAME", intent.getStringExtra("TARGET_NAME"))
+                startActivity(intent)
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }
