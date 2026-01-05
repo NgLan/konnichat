@@ -121,7 +121,6 @@ int db_send_friend_request(int sender_id, int target_id)
         return -3;
     }
 
-    // [LOCK] Bắt đầu Transaction
     MYSQL *conn = db_get_conn();
     if (!conn)
     {
@@ -176,8 +175,11 @@ int db_send_friend_request(int sender_id, int target_id)
     }
 
     // 4. Insert Request mới
+    // Nếu trùng key (do đã từng kết bạn/hủy kết bạn): Update status thành waiting và cập nhật thời gian.
     snprintf(query, sizeof(query),
-             "INSERT INTO friend_requests (sender_id, receiver_id, status) VALUES (%d, %d, 'waiting')",
+             "INSERT INTO friend_requests (sender_id, receiver_id, status, created_at) "
+             "VALUES (%d, %d, 'waiting', NOW()) "
+             "ON DUPLICATE KEY UPDATE status = 'waiting', created_at = NOW(), id = LAST_INSERT_ID(id)",
              sender_id, target_id);
 
     if (mysql_query(conn, query))

@@ -231,6 +231,118 @@ class NativeClientTest {
             STATUS_ERR_INVALID_PARAM, responses[3].second)
     }
 
+    @Test
+    fun test03_b_SendFriendRequest_Resend_Flow() {
+        // Kịch bản (Test logic fix lỗi Duplicate Key):
+        // 1. A gửi kết bạn cho B -> Success.
+        // 2. B chấp nhận A -> Thành bạn bè.
+        // 3. A hủy kết bạn B -> Hết bạn bè.
+        // 4. A gửi lại kết bạn cho B -> PHẢI SUCCESS (Server phải update bản ghi cũ thay vì insert lỗi).
+
+        val time = System.currentTimeMillis()
+        val emailA = "resendA_$time@konni.com"
+        val emailB = "resendB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // --- BƯỚC 1: A Gửi lời mời ---
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchSend1 = CountDownLatch(1)
+        var statusSend1 = -1
+
+        // Listener bắt phản hồi gửi
+        val listenerA = object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_SEND_FRIEND_REQ_RESP) {
+                    statusSend1 = status
+                    latchSend1.countDown()
+                }
+            }
+        }
+        NativeClient.startListening(listenerA)
+
+        NativeClient.sendFriendRequest(idB)
+        Assert.assertTrue(latchSend1.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Lần đầu gửi phải OK", STATUS_SUCCESS, statusSend1)
+
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // --- BƯỚC 2: B Chấp nhận ---
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        // Cần lấy RequestID. Để đơn giản trong test, ta dùng flow: B nhận notif -> lấy ID -> accept.
+        // Hoặc nếu Server hỗ trợ, ta "cheat" bằng cách gọi getPendingRequests.
+        // Ở đây giả lập B nhận được notify realtime (vì A vừa gửi xong).
+        // Tuy nhiên, A gửi lúc B offline. B login vào phải gọi getPendingRequests mới thấy.
+
+        val latchGetReq = CountDownLatch(1)
+        var reqId = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onPendingRequestsReceived(requests: Array<PendingRequestDto>) {
+                val req = requests.find { it.senderId == idA }
+                if (req != null) {
+                    reqId = req.requestId
+                    latchGetReq.countDown()
+                }
+            }
+        })
+        NativeClient.getPendingRequests()
+        Assert.assertTrue("B không thấy lời mời từ A", latchGetReq.await(5, TimeUnit.SECONDS))
+
+        // B Accept
+        NativeClient.respondFriendRequest(reqId, true)
+        Thread.sleep(200) // Chờ DB update
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // --- BƯỚC 3: A Hủy kết bạn ---
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchUnfriend = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_UNFRIEND_RESP && status == STATUS_SUCCESS) latchUnfriend.countDown()
+            }
+        })
+        NativeClient.unfriendUser(idB)
+        Assert.assertTrue("Unfriend thất bại", latchUnfriend.await(5, TimeUnit.SECONDS))
+
+        // --- BƯỚC 4: A Gửi lại lời mời (KEY TEST POINT) ---
+        // Lúc này trong DB vẫn còn bản ghi ở bảng friend_requests (status có thể là approved/waiting cũ).
+        // Logic mới phải Update nó thành waiting và trả về Success.
+
+        val latchResend = CountDownLatch(1)
+        var statusResend = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_SEND_FRIEND_REQ_RESP) {
+                    statusResend = status
+                    latchResend.countDown()
+                }
+            }
+        })
+
+        NativeClient.sendFriendRequest(idB)
+
+        Assert.assertTrue("Timeout chờ phản hồi gửi lại", latchResend.await(5, TimeUnit.SECONDS))
+
+        // NẾU CODE CŨ: Sẽ trả về lỗi (do duplicate key)
+        // NẾU CODE MỚI (ON DUPLICATE KEY UPDATE): Sẽ trả về SUCCESS (0)
+        Assert.assertEquals("Gửi lại sau khi unfriend phải thành công", STATUS_SUCCESS, statusResend)
+    }
+
     // ==========================================
     // MODULE 3: REAL-TIME NOTIFICATION (FAKE CLIENT)
     // ==========================================
