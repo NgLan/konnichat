@@ -523,6 +523,20 @@ int client_get_group_members(int group_id, int offset, int limit) {
     return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
+void client_logout()
+{
+    if (g_socket != -1) {
+        // 1. Gửi gói tin thông báo cho Server biết
+        // Không cần chờ phản hồi, gửi xong là cắt luôn
+        pthread_mutex_lock(&g_send_mutex);
+        send_request(CMD_LOGOUT, NULL, 0);
+        pthread_mutex_unlock(&g_send_mutex);
+    }
+
+    // 2. Đóng kết nối và dọn dẹp tài nguyên Client
+    client_close();
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header)
 {

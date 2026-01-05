@@ -823,3 +823,8 @@ JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_getGroupMembers(JNIEnv *env, jobject thiz, jint groupId, jint offset, jint limit) {
     client_get_group_members(groupId, offset, limit);
 }
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_logoutUser(JNIEnv *env, jobject thiz) {
+    client_logout();
+}

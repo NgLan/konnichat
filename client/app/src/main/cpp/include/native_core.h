@@ -101,4 +101,6 @@ int client_dissolve_group(int group_id);
 
 int client_get_group_members(int group_id, int offset, int limit);
 
+void client_logout();
+
 #endif // NATIVE_CORE_H
