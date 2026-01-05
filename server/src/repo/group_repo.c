@@ -422,7 +422,7 @@ int db_get_group_name(int32_t group_id, char *group_name)
         if (row && row[0])
         {
             strncpy(group_name, row[0], MAX_GROUP_NAME - 1);
-            group_name[MAX_GROUP_NAME - 1] = '\0'; 
+            group_name[MAX_GROUP_NAME - 1] = '\0';
             found = 1;
         }
         mysql_free_result(res);
@@ -495,4 +495,64 @@ int db_dissolve_group(int32_t group_id, int32_t requester_id)
 
     db_release_conn(conn);
     return 1;
+}
+
+int db_get_group_members_info(int group_id, GroupMemberInfo *members_out, int limit, int offset)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    char query[1024];
+    // Join để lấy thông tin User + Role trong Group
+    // Sắp xếp: Admin lên đầu, sau đó đến tên A-Z
+    snprintf(query, sizeof(query),
+             "SELECT u.id, u.name, u.email, u.is_online, gm.role "
+             "FROM group_members gm "
+             "JOIN users u ON gm.member_id = u.id "
+             "WHERE gm.group_id = %d AND gm.status = 'active' "
+             "ORDER BY CASE WHEN gm.role = 'admin' THEN 0 ELSE 1 END, u.name ASC "
+             "LIMIT %d OFFSET %d",
+             group_id, limit, offset);
+
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("Get Group Members Error: %s", mysql_error(conn));
+        db_release_conn(conn);
+        return 0;
+    }
+
+    MYSQL_RES *res = mysql_store_result(conn);
+    int count = 0;
+    if (res)
+    {
+        MYSQL_ROW row;
+        while ((row = mysql_fetch_row(res)) && count < limit)
+        {
+            members_out[count].user_id = atoi(row[0]);
+
+            if (row[1])
+                strncpy(members_out[count].name, row[1], MAX_NAME_LEN - 1);
+            else
+                strcpy(members_out[count].name, "Unknown");
+
+            if (row[2])
+                strncpy(members_out[count].email, row[2], MAX_EMAIL_LEN - 1);
+            else
+                strcpy(members_out[count].email, "");
+
+            members_out[count].is_online = row[3] ? (int8_t)atoi(row[3]) : 0;
+
+            if (row[4])
+                strncpy(members_out[count].role, row[4], MAX_ROLE_LEN - 1);
+            else
+                strcpy(members_out[count].role, "member");
+
+            count++;
+        }
+        mysql_free_result(res);
+    }
+
+    db_release_conn(conn);
+    return count;
 }

@@ -510,6 +510,19 @@ int client_dissolve_group(int group_id) {
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
+int client_get_group_members(int group_id, int offset, int limit) {
+    GetGroupMembersReq req;
+    req.group_id = group_id;
+    req.offset = offset;
+    req.limit = limit;
+
+    pthread_mutex_lock(&g_send_mutex);
+    int res = send_request(CMD_GET_GROUP_MEMBERS, &req, sizeof(req));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header)
 {
@@ -877,6 +890,54 @@ static void handle_incoming_packet(PacketHeader *header)
             bytes_processed += sizeof(notify);
             if (g_callbacks.on_group_dissolved) {
                 g_callbacks.on_group_dissolved(notify.group_id);
+            }
+        }
+    }
+
+    else if (header->command_type == CMD_GET_GROUP_MEMBERS_RESP) {
+        // 1. Nếu Server trả về lỗi (Status != 0) -> Gọi callback báo lỗi
+        if (header->status_code != STATUS_SUCCESS)
+        {
+            if (g_callbacks.on_req_response)
+                g_callbacks.on_req_response(header->command_type, header->status_code);
+        }
+
+        // 2. Nếu Success -> Parse dữ liệu
+        // Cấu trúc mong đợi: [GroupID (4)] + [Count (4)] + [Data...]
+        int min_size = sizeof(int32_t) + sizeof(int32_t);
+
+        if (header->payload_size >= min_size) {
+            int32_t resp_group_id = 0;
+            int32_t count = 0;
+
+            // 1. Đọc Group ID
+            recv_all(g_socket, &resp_group_id, sizeof(int32_t));
+            bytes_processed += sizeof(int32_t);
+
+            // 2. Đọc Count
+            recv_all(g_socket, &count, sizeof(int32_t));
+            bytes_processed += sizeof(int32_t);
+
+            if (count > 0) {
+                int data_size = count * sizeof(GroupMemberInfo);
+                // Check overflow
+                if (data_size <= header->payload_size - bytes_processed) {
+                    GroupMemberInfo *members = (GroupMemberInfo *)malloc(data_size);
+                    if (recv_all(g_socket, members, data_size) > 0) {
+                        bytes_processed += data_size;
+
+                        if (g_callbacks.on_group_members_received) {
+                            // Truyền resp_group_id lấy từ server lên UI
+                            g_callbacks.on_group_members_received(resp_group_id, count, members);
+                        }
+                    }
+                    free(members);
+                }
+            } else {
+                // Group rỗng hoặc lỗi
+                if (g_callbacks.on_group_members_received) {
+                    g_callbacks.on_group_members_received(resp_group_id, 0, NULL);
+                }
             }
         }
     }

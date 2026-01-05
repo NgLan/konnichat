@@ -103,4 +103,13 @@ int db_dissolve_group(int32_t group_id, int32_t requester_id);
  */
 int db_get_group_name(int32_t group_id, char* group_name);
 
+/**
+ * @brief Lấy danh sách thành viên của một nhóm (kèm thông tin user).
+ * Chỉ lấy những người có status = 'active'.
+ * 
+ * @param members_out Mảng output
+ * @return int Số lượng thành viên lấy được
+ */
+int db_get_group_members_info(int group_id, GroupMemberInfo* members_out, int limit, int offset);
+
 #endif // GROUP_REPO_H

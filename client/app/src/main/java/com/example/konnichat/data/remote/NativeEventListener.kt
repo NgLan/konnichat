@@ -1,6 +1,7 @@
 package com.example.konnichat.data.remote
 
 import com.example.konnichat.data.remote.dto.GroupDto
+import com.example.konnichat.data.remote.dto.GroupMemberDto
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
@@ -45,4 +46,5 @@ interface NativeEventListener {
     // 3. Xóa data trong Room DB local.
     // 4. Hiện Toast: "Nhóm đã bị giải tán".
     fun onGroupDissolved(groupId: Int)
+    fun onGroupMembersReceived(groupId: Int, members: Array<GroupMemberDto>)
 }

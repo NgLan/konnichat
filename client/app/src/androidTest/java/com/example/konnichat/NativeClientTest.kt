@@ -6,6 +6,7 @@ import com.example.konnichat.core.exception.UserAlreadyExistsException
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListener
 import com.example.konnichat.data.remote.dto.GroupDto
+import com.example.konnichat.data.remote.dto.GroupMemberDto
 import com.example.konnichat.data.remote.dto.MessageDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.data.remote.dto.UserDto
@@ -59,6 +60,8 @@ class NativeClientTest {
 
         const val CMD_GET_GROUP_LIST = 50
         const val CMD_GET_GROUP_LIST_RESP = 51
+        const val CMD_GET_GROUP_MEMBERS = 52
+        const val CMD_GET_GROUP_MEMBERS_RESP = 53
 
         const val CMD_SEND_FRIEND_REQ = 42
         const val CMD_SEND_FRIEND_REQ_RESP = 43
@@ -2633,6 +2636,232 @@ class NativeClientTest {
         Assert.assertEquals("Tin nhắn nhóm phải bị xóa sạch sau khi giải tán", 0, msgCount)
     }
 
+    // ==========================================
+    // MODULE 14: GET GROUP MEMBERS
+    // ==========================================
+
+    @Test
+    fun test36_GetGroupMembers_HappyPath_Roles() {
+        // Kịch bản:
+        // 1. Admin tạo nhóm, thêm Member.
+        // 2. Admin lấy danh sách thành viên.
+        // 3. Verify: Có 2 người. Admin có role="admin", Member có role="member".
+
+        val time = System.currentTimeMillis()
+        val emailAdmin = "admin_m_$time@konni.com"
+        val emailMem = "mem_m_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("AdminM", emailAdmin, pass)
+        NativeClient.registerUser("MemberM", emailMem, pass)
+        val idMem = helperGetUserId(emailMem, pass)
+
+        // 1. Admin login & Create Group
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailAdmin, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Members Test Group", intArrayOf(idMem))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. Get Members
+        val latchList = CountDownLatch(1)
+        var receivedGid = -1
+        var memberList: Array<GroupMemberDto>? = null
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupMembersReceived(gid: Int, members: Array<GroupMemberDto>) {
+                receivedGid = gid
+                memberList = members
+                latchList.countDown()
+            }
+        })
+
+        NativeClient.getGroupMembers(groupId, 0, 100)
+
+        // 3. Verify
+        Assert.assertTrue("Timeout waiting for members list", latchList.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("GroupID trả về không khớp", groupId, receivedGid)
+        Assert.assertNotNull(memberList)
+        Assert.assertEquals("Phải có 2 thành viên", 2, memberList!!.size)
+
+        // Tìm Admin và Member để check Role
+        val adminUser = memberList!!.find { it.email == emailAdmin }
+        val normalUser = memberList!!.find { it.email == emailMem }
+
+        Assert.assertNotNull(adminUser)
+        Assert.assertEquals("Role của người tạo phải là admin", "admin", adminUser!!.role)
+
+        Assert.assertNotNull(normalUser)
+        Assert.assertEquals("Role của người được thêm phải là member", "member", normalUser!!.role)
+    }
+
+    @Test
+    fun test37_GetGroupMembers_OnlineStatus() {
+        // Kịch bản:
+        // 1. A tạo nhóm với B.
+        // 2. B Offline.
+        // 3. A lấy danh sách -> B phải có isOnline = false.
+        // 4. B Online.
+        // 5. A lấy danh sách -> B phải có isOnline = true.
+
+        val time = System.currentTimeMillis()
+        val emailA = "viewer_$time@konni.com"
+        val emailB = "status_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("Viewer", emailA, pass)
+        NativeClient.registerUser("StatusUser", emailB, pass)
+        val idB = helperGetUserId(emailB, pass) // B login rồi logout -> Offline
+
+        // 1. A login & Create Group
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Status Test Group", intArrayOf(idB))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. Check 1: B đang Offline
+        var latchList = CountDownLatch(1)
+        var bIsOnline = true
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupMembersReceived(gid: Int, members: Array<GroupMemberDto>) {
+                val b = members.find { it.userId == idB }
+                if (b != null) {
+                    bIsOnline = b.isOnline
+                    latchList.countDown()
+                }
+            }
+        })
+        NativeClient.getGroupMembers(groupId, 0, 100)
+        latchList.await(5, TimeUnit.SECONDS)
+        Assert.assertFalse("B đang offline thì isOnline phải là false", bIsOnline)
+
+        // 3. Fake Client B login (để B thành Online)
+        val threadB = Thread {
+            val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
+            fb.login(emailB, pass)
+            Thread.sleep(2000) // Giữ kết nối 2s để A kịp query
+            fb.close()
+        }
+        threadB.start()
+        Thread.sleep(500) // Chờ B login xong
+
+        // 4. Check 2: B đang Online
+        latchList = CountDownLatch(1)
+        NativeClient.getGroupMembers(groupId, 0, 100)
+        latchList.await(5, TimeUnit.SECONDS)
+
+        Assert.assertTrue("B đang online thì isOnline phải là true", bIsOnline)
+    }
+
+    @Test
+    fun test38_GetGroupMembers_Security_NotMember() {
+        // Kịch bản: Người lạ (Hacker) cố lấy danh sách thành viên của nhóm mình không tham gia.
+        // Server phải trả về Lỗi Auth.
+
+        val time = System.currentTimeMillis()
+        val emailOwner = "owner_s_$time@konni.com"
+        val emailHacker = "hacker_m_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("Owner", emailOwner, pass)
+        NativeClient.registerUser("Hacker", emailHacker, pass)
+
+        // 1. Owner tạo nhóm (Chỉ có 1 mình Owner)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailOwner, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Secret Group", intArrayOf())
+        latchCreate.await(5, TimeUnit.SECONDS)
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // 2. Hacker Login
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailHacker, pass)
+
+        val latchError = CountDownLatch(1)
+        var errorStatus = -1
+
+        // Nếu server trả về lỗi (header status != 0), NativeCore sẽ gọi onRequestResponse
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_GET_GROUP_MEMBERS_RESP) {
+                    errorStatus = status
+                    latchError.countDown()
+                }
+            }
+            // Nếu thành công (sai logic) thì nó vào đây
+            override fun onGroupMembersReceived(gid: Int, members: Array<GroupMemberDto>) {
+                errorStatus = STATUS_SUCCESS
+                latchError.countDown()
+            }
+        })
+
+        // Hacker request
+        NativeClient.getGroupMembers(groupId, 0, 100)
+
+        // 3. Verify
+        Assert.assertTrue("Timeout chờ phản hồi Server", latchError.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Người lạ lấy danh sách phải bị lỗi AUTH", STATUS_ERR_AUTH, errorStatus)
+    }
+
+    @Test
+    fun test39_GetGroupMembers_InvalidGroup() {
+        // Kịch bản: Lấy danh sách của nhóm ID không tồn tại.
+        // Server sẽ trả về AUTH (vì check quyền không thấy user trong nhóm đó) hoặc INVALID_PARAM.
+
+        val time = System.currentTimeMillis()
+        val email = "invalid_$time@konni.com"
+        val pass = "123"
+        NativeClient.registerUser("User", email, pass)
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, pass)
+
+        val latch = CountDownLatch(1)
+        var status = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, s: Int) {
+                if (cmd == CMD_GET_GROUP_MEMBERS_RESP) {
+                    status = s
+                    latch.countDown()
+                }
+            }
+        })
+
+        NativeClient.getGroupMembers(999999, 0, 100) // Fake ID
+
+        Assert.assertTrue(latch.await(5, TimeUnit.SECONDS))
+        Assert.assertNotEquals("Không được trả về SUCCESS", STATUS_SUCCESS, status)
+    }
+
     // --- Helper Utility để lấy nhanh ID User ---
     private fun helperGetUserId(email: String, pass: String): Int {
         NativeClient.disconnect()
@@ -2688,6 +2917,10 @@ open class StubNativeEventListener : NativeEventListener {
     ) {}
 
     override fun onGroupDissolved(groupId: Int) {}
+    override fun onGroupMembersReceived(
+        groupId: Int,
+        members: Array<GroupMemberDto>
+    ) {}
 }
 
 /**

@@ -28,6 +28,7 @@ static jmethodID m_onMemberLeft;
 static jmethodID m_onGroupList;
 static jmethodID m_onMemberRemoved;
 static jmethodID m_onGroupDissolved;
+static jmethodID m_onGroupMembers;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -39,6 +40,8 @@ static jclass c_PendingRequestDto;
 static jmethodID m_PendingRequestDtoInit;
 static jclass c_GroupDto;
 static jmethodID m_GroupDtoInit;
+static jclass c_GroupMemberDto;
+static jmethodID m_GroupMemberDtoInit;
 
 // Các class Exception
 static jclass g_AuthException;
@@ -380,6 +383,34 @@ void jni_on_group_dissolved(int group_id) {
     (*env)->CallVoidMethod(env, g_listener, m_onGroupDissolved, (jint)group_id);
 }
 
+void jni_on_group_members_received(int group_id, int count, GroupMemberInfo* members) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    jobjectArray jArray = (*env)->NewObjectArray(env, count, c_GroupMemberDto, NULL);
+
+    for (int i = 0; i < count; i++) {
+        jstring jName = (*env)->NewStringUTF(env, members[i].name);
+        jstring jEmail = (*env)->NewStringUTF(env, members[i].email);
+        jstring jRole = (*env)->NewStringUTF(env, members[i].role);
+        jboolean jOnline = (members[i].is_online == 1);
+
+        // Constructor GroupMemberDto(id, name, email, isOnline, role)
+        jobject jObj = (*env)->NewObject(env, c_GroupMemberDto, m_GroupMemberDtoInit,
+                                         members[i].user_id, jName, jEmail, jOnline, jRole);
+
+        (*env)->SetObjectArrayElement(env, jArray, i, jObj);
+
+        (*env)->DeleteLocalRef(env, jName);
+        (*env)->DeleteLocalRef(env, jEmail);
+        (*env)->DeleteLocalRef(env, jRole);
+        (*env)->DeleteLocalRef(env, jObj);
+    }
+
+    (*env)->CallVoidMethod(env, g_listener, m_onGroupMembers, (jint)group_id, jArray);
+    (*env)->DeleteLocalRef(env, jArray);
+}
+
 // --- Helper ném lỗi ---
 void throw_unified_error(JNIEnv *env, int result_code) {
     jclass exClass = g_UnknownException;
@@ -473,6 +504,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onGroupList = (*env)->GetMethodID(env, lClass, "onGroupListReceived", "([Lcom/example/konnichat/data/remote/dto/GroupDto;)V");
     m_onMemberRemoved = (*env)->GetMethodID(env, lClass, "onMemberRemoved", "(IILjava/lang/String;ILjava/lang/String;)V");
     m_onGroupDissolved = (*env)->GetMethodID(env, lClass, "onGroupDissolved", "(I)V");
+    m_onGroupMembers = (*env)->GetMethodID(env, lClass, "onGroupMembersReceived", "(I[Lcom/example/konnichat/data/remote/dto/GroupMemberDto;)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
     // Cache UserDto
@@ -496,6 +528,10 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     jclass gClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/GroupDto");
     c_GroupDto = (jclass)(*env)->NewGlobalRef(env, gClass);
     m_GroupDtoInit = (*env)->GetMethodID(env, c_GroupDto, "<init>", "(ILjava/lang/String;Ljava/lang/String;)V");
+
+    jclass gmClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/GroupMemberDto");
+    c_GroupMemberDto = (jclass)(*env)->NewGlobalRef(env, gmClass);
+    m_GroupMemberDtoInit = (*env)->GetMethodID(env, c_GroupMemberDto, "<init>", "(ILjava/lang/String;Ljava/lang/String;ZLjava/lang/String;)V");
 
     // Cache Callback
     m_onPendingList = (*env)->GetMethodID(env, lClass, "onPendingRequestsReceived", "([Lcom/example/konnichat/data/remote/dto/PendingRequestDto;)V");
@@ -555,6 +591,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_group_list = jni_on_group_list;
     cbs.on_member_removed = jni_on_member_removed;
     cbs.on_group_dissolved = jni_on_group_dissolved;
+    cbs.on_group_members_received = jni_on_group_members_received;
     cbs.on_disconnect = jni_on_disconnect;
     // 3. Start C Thread
     start_reader_thread(cbs);
@@ -775,4 +812,9 @@ JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_dissolveGroup(JNIEnv *env, jobject thiz, jint groupId) {
     int status = client_dissolve_group(groupId);
     if (status != CLIENT_OK) throw_unified_error(env, status);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_getGroupMembers(JNIEnv *env, jobject thiz, jint groupId, jint offset, jint limit) {
+    client_get_group_members(groupId, offset, limit);
 }
