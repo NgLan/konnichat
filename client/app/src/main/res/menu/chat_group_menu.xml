@@ -5,4 +5,8 @@
         android:id="@+id/action_add_member"
         android:title="Thêm thành viên"
         app:showAsAction="never" />
+    <item
+        android:id="@+id/action_view_members"
+        android:title="Xem thành viên"
+        app:showAsAction="never" />
 </menu>

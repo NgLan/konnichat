@@ -10,12 +10,14 @@ import com.example.konnichat.data.local.entity.MessageEntity
 import com.example.konnichat.data.local.model.ConversationItem
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.dto.MessageDto
+import com.example.konnichat.data.remote.dto.GroupMemberDto
 import kotlinx.coroutines.flow.Flow
 import java.util.Date
 import androidx.room.Transaction
 import com.example.konnichat.data.local.model.MessageWithSender
 import com.example.konnichat.data.local.dao.UserDao // [THÊM] Import UserDao
 import com.example.konnichat.data.local.entity.UserEntity
+import com.example.konnichat.data.local.model.GroupMemberWithUser
 
 
 class ChatRepository(
@@ -286,5 +288,47 @@ class ChatRepository(
         // Xóa toàn bộ nhóm khỏi DB
         groupDao.deleteGroup(groupId)
         Log.d("ChatRepo", "Nhóm $groupId đã bị giải tán bởi Admin, đã xóa khỏi máy.")
+    }
+
+    @Transaction
+    suspend fun saveGroupMembersList(groupId: Int, members: Array<GroupMemberDto>) {
+        if (members.isEmpty()) return
+
+        // 1. Update bảng Users trước (để đảm bảo khóa ngoại không bị lỗi)
+        // Lưu ý: Chỉ điền các trường Server trả về, các trường khác để null
+        val userEntities = members.map { dto ->
+            UserEntity(
+                serverId = dto.userId,
+                email = dto.email,
+                name = dto.name,
+                isOnline = dto.isOnline,
+                status = "active",
+                // Các trường này API GetGroupMembers chưa trả về -> để null
+                age = null,
+                avatarUrl = null,
+                createdAt = Date(),
+                updatedAt = Date()
+            )
+        }
+        // Insert hoặc Update user
+        userDao.insertUsers(userEntities)
+
+        // 2. Update bảng GroupMembers
+        val memberEntities = members.map { dto ->
+            GroupMemberEntity(
+                serverId = 0, // Local mapping, không quan trọng ID này lắm
+                groupId = groupId,
+                memberId = dto.userId,
+                role = dto.role,
+                status = "active",
+                joinedAt = Date()
+            )
+        }
+        groupDao.insertMembers(memberEntities)
+        Log.d("ChatRepo", "Đã lưu ${members.size} thành viên cho nhóm $groupId")
+    }
+
+    fun getGroupMembersFlow(groupId: Int): Flow<List<GroupMemberWithUser>> {
+        return groupDao.getMembersWithUserInfo(groupId)
     }
 }

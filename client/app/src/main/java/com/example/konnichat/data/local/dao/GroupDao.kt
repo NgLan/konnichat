@@ -7,6 +7,8 @@ import androidx.room.Query
 import androidx.room.Transaction
 import com.example.konnichat.data.local.entity.GroupEntity
 import com.example.konnichat.data.local.entity.GroupMemberEntity
+import com.example.konnichat.data.local.model.GroupMemberWithUser
+import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface GroupDao {
@@ -39,4 +41,15 @@ interface GroupDao {
     // Lưu ý: Các bảng Message và Member nếu đã setup Foreign Key CASCADE thì sẽ tự xóa theo.
     @Query("DELETE FROM `groups` WHERE server_id = :groupId")
     suspend fun deleteGroup(groupId: Int)
+
+    @Query("""
+        SELECT u.*, gm.role 
+        FROM group_members gm
+        INNER JOIN users u ON gm.member_id = u.server_id
+        WHERE gm.group_id = :groupId
+        ORDER BY 
+            CASE WHEN gm.role = 'admin' THEN 0 ELSE 1 END,
+            u.name ASC
+    """)
+    fun getMembersWithUserInfo(groupId: Int): Flow<List<GroupMemberWithUser>>
 }

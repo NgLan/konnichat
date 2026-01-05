@@ -37,6 +37,7 @@
             android:windowSoftInputMode="adjustResize"
             />
 
+        <activity android:name=".ui.group.GroupInfoActivity" android:label="Xem thành viên" />
         <activity android:name=".ui.group.AddMemberActivity" android:label="Thêm thành viên" />
     </application>
 

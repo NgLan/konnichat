@@ -282,7 +282,12 @@ object NativeEventListenerImpl : NativeEventListener {
         groupId: Int,
         members: Array<GroupMemberDto>
     ) {
-        TODO("Not yet implemented")
+        Log.d(TAG, "📋 Nhận danh sách thành viên nhóm $groupId: ${members.size} người")
+        chatRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.saveGroupMembersList(groupId, members)
+            }
+        }
     }
 
     override fun onConnectionClosed(reason: String) {

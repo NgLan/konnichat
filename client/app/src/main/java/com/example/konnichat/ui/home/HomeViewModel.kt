@@ -81,6 +81,7 @@ class HomeViewModel(
 
     suspend fun getGroupRole(groupId: Int): String? {
         val myId = prefs.getInt("USER_ID", -1)
+        // Gọi xuống Repository -> gọi xuống DAO
         return chatRepository.getGroupRole(groupId, myId)
     }
 
