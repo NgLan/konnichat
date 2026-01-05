@@ -697,10 +697,18 @@ static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload
 
     if (group_id > 0)
     {
+        // --- TẠO SYSTEM MESSAGE LƯU VÀO DB ---
+        uint64_t now = get_current_timestamp_ms();
+        
+        // Lưu tin nhắn: "đã tạo nhóm"
+        // msg_type = MSG_TYPE_SYSTEM 
+        // chat_type = "group"
+        int msg_id = db_save_message(current_user_id, group_id, "đã tạo nhóm", now, MSG_TYPE_SYSTEM, "group");
+
+        // Chuẩn bị Payload phản hồi
         CreateGroupRespPayload resp;
         memset(&resp, 0, sizeof(CreateGroupRespPayload));
         resp.group_id = group_id;
-
         strncpy(resp.group_name, req->group_name, MAX_GROUP_NAME - 1);
         resp.group_name[MAX_GROUP_NAME - 1] = '\0';
 
@@ -709,6 +717,10 @@ static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload
 
         // 6. BROADCAST cho các thành viên khác đang Online
         LOG_INFO("Broadcasting new group %d to members...", group_id);
+
+        char creator_name[MAX_NAME_LEN];
+        get_user_name_by_id(current_user_id, creator_name, sizeof(creator_name));
+
         for (int i = 0; i < req->member_count; i++)
         {
             int target_id = member_ids[i];
@@ -720,9 +732,26 @@ static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload
             int target_sock = get_socket_by_user_id(target_id);
             if (target_sock != -1)
             {
-                // Sử dụng cùng gói resp để tiết kiệm tài nguyên
+                // A. Gửi thông báo có nhóm mới (Để cập nhật danh sách nhóm)
                 send_response(target_sock, CMD_NOTIFY_GROUP_CREATED, 0, STATUS_SUCCESS, &resp, sizeof(resp));
                 LOG_INFO("Notified User %d about new group '%s' (ID: %d)", target_id, resp.group_name, group_id);
+
+                // B. Gửi tin nhắn hệ thống (Để hiện lên khung chat)
+                if (msg_id > 0) {
+                    ChatPayload sysMsg;
+                    memset(&sysMsg, 0, sizeof(ChatPayload));
+                    
+                    sysMsg.message_id = msg_id;
+                    sysMsg.sender_id = current_user_id;
+                    sysMsg.receiver_id = group_id; // Chat Group
+                    sysMsg.msg_type = MSG_TYPE_SYSTEM; 
+                    strcpy(sysMsg.chat_type, "group");
+                    strcpy(sysMsg.content, "đã tạo nhóm");
+                    sysMsg.created_at = now;
+
+                    send_response(target_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS, 
+                                  &sysMsg, sizeof(ChatPayload));
+                }
             }
         }
     }
