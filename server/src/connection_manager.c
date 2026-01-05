@@ -1,8 +1,12 @@
+#define _POSIX_C_SOURCE 200809L
+
 #include "../include/connection_manager.h"
 #include <pthread.h>
 #include <stdlib.h>
 #include <sys/socket.h>
 #include <time.h>
+#include <stdio.h>
+#include <unistd.h>
 #include "../include/uthash.h"
 
 struct UserSocketMap

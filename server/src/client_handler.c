@@ -1309,6 +1309,7 @@ void *handle_client(void *socket_desc)
         {
         case CMD_HEARTBEAT:
         {
+            LOG_INFO("Received HEARTBEAT from User %d", current_user_id);
             continue;
         }
         case CMD_REGISTER:

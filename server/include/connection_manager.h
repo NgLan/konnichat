@@ -1,3 +1,5 @@
+#include <stdint.h>
+
 #ifndef CONNECTION_MANAGER_H
 #define CONNECTION_MANAGER_H
 

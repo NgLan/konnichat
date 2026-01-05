@@ -2,6 +2,7 @@
 #include "../include/tcp_server.h"
 #include "../include/client_handler.h"
 #include "../include/utils/logger.h"
+#include "../include/connection_manager.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <pthread.h>
