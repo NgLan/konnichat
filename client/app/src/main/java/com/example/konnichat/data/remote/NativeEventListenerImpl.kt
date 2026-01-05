@@ -242,7 +242,12 @@ object NativeEventListenerImpl : NativeEventListener {
         memberId: Int,
         memberName: String
     ) {
-        TODO("Not yet implemented")
+        Log.d(TAG, "🏃 Member Left: $memberName (ID: $memberId) from Group $groupId")
+        chatRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.handleMemberLeft(groupId, memberId, memberName)
+            }
+        }
     }
 
     override fun onGroupListReceived(groups: Array<GroupDto>) {
@@ -265,7 +270,12 @@ object NativeEventListenerImpl : NativeEventListener {
     }
 
     override fun onGroupDissolved(groupId: Int) {
-        TODO("Not yet implemented")
+        Log.d(TAG, "🚫 Group Dissolved: $groupId")
+        chatRepository?.let { repo ->
+            CoroutineScope(Dispatchers.IO).launch {
+                repo.handleGroupDissolved(groupId)
+            }
+        }
     }
 
     override fun onGroupMembersReceived(

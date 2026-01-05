@@ -241,4 +241,50 @@ class ChatRepository(
             Log.e("ChatRepo", "Lỗi khi chạy fix data: ${e.message}")
         }
     }
+
+    suspend fun getGroupRole(groupId: Int, userId: Int): String? {
+        return groupDao.getMemberRole(groupId, userId)
+    }
+
+    suspend fun leaveGroup(groupId: Int) {
+        // 1. Gửi lệnh lên Server (Nếu lỗi mạng sẽ throw Exception)
+        NativeClient.leaveGroup(groupId)
+        // 2. Nếu thành công -> Xóa dữ liệu local
+        groupDao.deleteGroup(groupId)
+        Log.d("ChatRepo", "Đã rời và xóa nhóm $groupId")
+    }
+
+    suspend fun dissolveGroup(groupId: Int) {
+        // 1. Gửi lệnh giải tán
+        NativeClient.dissolveGroup(groupId)
+        // 2. Xóa dữ liệu local
+        groupDao.deleteGroup(groupId)
+        Log.d("ChatRepo", "Đã giải tán nhóm $groupId")
+    }
+
+    suspend fun handleMemberLeft(groupId: Int, memberId: Int, memberName: String) {
+        // 1. Xóa thành viên khỏi bảng group_members
+        groupDao.deleteMember(groupId, memberId)
+
+        // 2. Chèn tin nhắn hệ thống: "Nguyễn Văn A đã rời nhóm"
+        // Server ID cho tin hệ thống tự sinh này có thể dùng số âm hoặc hash để tránh trùng
+        val systemMsg = MessageEntity(
+            serverId = -System.currentTimeMillis().toInt(), // ID tạm
+            senderId = memberId, // Người rời là người gửi tin này
+            receiverId = groupId,
+            chatType = "group",
+            msgType = 9, // TYPE_SYSTEM
+            content = "đã rời nhóm",
+            status = "sent",
+            createdAt = Date()
+        )
+        messageDao.insertMessage(systemMsg)
+    }
+
+    // [THÊM MỚI] Xử lý khi nhóm bị giải tán
+    suspend fun handleGroupDissolved(groupId: Int) {
+        // Xóa toàn bộ nhóm khỏi DB
+        groupDao.deleteGroup(groupId)
+        Log.d("ChatRepo", "Nhóm $groupId đã bị giải tán bởi Admin, đã xóa khỏi máy.")
+    }
 }

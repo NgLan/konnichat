@@ -109,7 +109,12 @@ void jni_on_status_change(int friend_id, int is_online) {
     if (!env || !g_listener)
         return;
 
-    (*env)->CallVoidMethod(env, g_listener, m_onStatus, friend_id, (jboolean) (is_online == 1));
+    jint jFriendId = (jint) friend_id;
+
+// 2. Tính toán boolean bên ngoài và gán vào biến jboolean
+    jboolean jIsOnline = (is_online == 1) ? JNI_TRUE : JNI_FALSE;
+
+    (*env)->CallVoidMethod(env, g_listener, m_onStatus, friend_id, jIsOnline);
 }
 
 void jni_on_friend_req(int req_id, int sender_id, const char *sender_name) {

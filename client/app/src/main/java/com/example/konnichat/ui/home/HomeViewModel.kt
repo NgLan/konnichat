@@ -78,4 +78,30 @@ class HomeViewModel(
             userRepository.updateSearchStatusToNone(userId)
         }
     }
+
+    suspend fun getGroupRole(groupId: Int): String? {
+        val myId = prefs.getInt("USER_ID", -1)
+        return chatRepository.getGroupRole(groupId, myId)
+    }
+
+    fun leaveGroup(groupId: Int) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                chatRepository.leaveGroup(groupId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                // Có thể post error message ra LiveData nếu cần
+            }
+        }
+    }
+
+    fun dissolveGroup(groupId: Int) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                chatRepository.dissolveGroup(groupId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 }
