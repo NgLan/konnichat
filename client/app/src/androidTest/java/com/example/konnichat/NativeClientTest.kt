@@ -870,6 +870,88 @@ class NativeClientTest {
         Assert.assertEquals(offlineContent, msgContent)
     }
 
+    @Test
+    fun test11_b_Offline_Ignore_Group_Messages() {
+        val time = System.currentTimeMillis()
+        val emailA = "ignA_$time@konni.com"
+        val emailB = "ignB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. Tạo nhóm có A và B
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchGroup = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchGroup.countDown()
+            }
+        })
+        NativeClient.createGroup("Ignore Group", intArrayOf(idB))
+        latchGroup.await(5, TimeUnit.SECONDS)
+
+        // 2. A gửi tin khi B đang OFFLINE (Vì B chưa login sau khi A connect lại)
+        val latchSent = CountDownLatch(2)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
+                latchSent.countDown()
+            }
+        })
+
+        // Gửi 1 tin Private (Mong đợi: Sẽ nhận được khi fetch offline)
+        NativeClient.sendMessage(idA, idB, "PRIVATE_MSG", 1, "private")
+
+        // Gửi 1 tin Group (Mong đợi: KHÔNG nhận được khi fetch offline)
+        NativeClient.sendMessage(idA, groupId, "GROUP_MSG", 2, "group")
+
+        Assert.assertTrue(latchSent.await(5, TimeUnit.SECONDS))
+        NativeClient.disconnect()
+        Thread.sleep(500)
+
+        // 3. B Online và Fetch Offline
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchRecv = CountDownLatch(1)
+        val receivedMsgs = mutableListOf<String>()
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageReceived(msg: MessageDto) {
+                synchronized(receivedMsgs) {
+                    receivedMsgs.add(msg.content)
+                }
+                // Chỉ đếm xuống khi nhận tin PRIVATE
+                if (msg.chatType == "private") {
+                    latchRecv.countDown()
+                }
+            }
+        })
+
+        // Gọi lệnh lấy tin offline
+        NativeClient.fetchOfflineMessages()
+
+        // 4. Verify
+        // Chờ tin Private về
+        Assert.assertTrue("Không nhận được tin Private Offline", latchRecv.await(5, TimeUnit.SECONDS))
+
+        // Chờ thêm 1 chút để chắc chắn không có tin rác nào khác về
+        Thread.sleep(500)
+
+        synchronized(receivedMsgs) {
+            // Kiểm tra danh sách tin nhận được
+            Assert.assertTrue("Phải nhận được tin Private", receivedMsgs.contains("PRIVATE_MSG"))
+            Assert.assertFalse("Không được nhận tin Group qua fetchOffline", receivedMsgs.contains("GROUP_MSG"))
+        }
+    }
+
     // ==========================================
     // MODULE 7: CHAT HISTORY (COMPREHENSIVE)
     // ==========================================
