@@ -487,6 +487,18 @@ int client_get_group_list(int offset, int limit) {
     return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
+int client_kick_member(int group_id, int target_id) {
+    RemoveMemberReqPayload payload;
+    payload.group_id = group_id;
+    payload.target_user_id = target_id;
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_REMOVE_MEMBER, &payload, sizeof(payload));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header)
 {
@@ -684,7 +696,8 @@ static void handle_incoming_packet(PacketHeader *header)
              header->command_type == CMD_RESPOND_FRIEND_REQ_RESP ||
              header->command_type == CMD_UNFRIEND_RESP ||
              header->command_type == CMD_ADD_MEMBER_RESP ||
-             header->command_type == CMD_LEAVE_GROUP_RESP)
+             header->command_type == CMD_LEAVE_GROUP_RESP ||
+             header->command_type == CMD_REMOVE_MEMBER_RESP)
     {
         if (g_callbacks.on_req_response)
             g_callbacks.on_req_response(header->command_type, header->status_code);
@@ -831,6 +844,17 @@ static void handle_incoming_packet(PacketHeader *header)
             {
                 if (g_callbacks.on_group_list)
                     g_callbacks.on_group_list(0, NULL);
+            }
+        }
+    }
+
+    else if (header->command_type == CMD_NOTIFY_MEMBER_REMOVED) {
+        MemberRemovedNotifyPayload notify;
+        if (recv_all(g_socket, &notify, sizeof(notify)) > 0) {
+            bytes_processed += sizeof(notify);
+            if (g_callbacks.on_member_removed) {
+                g_callbacks.on_member_removed(notify.group_id, notify.member_id, notify.member_name,
+                                              notify.admin_id, notify.admin_name);
             }
         }
     }

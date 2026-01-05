@@ -50,7 +50,8 @@ class NativeClientTest {
         const val CMD_CREATE_GROUP_RESP = 31
         const val CMD_ADD_MEMBER = 32
         const val CMD_ADD_MEMBER_RESP = 33
-
+        const val CMD_REMOVE_MEMBER = 34
+        const val CMD_REMOVE_MEMBER_RESP = 35
         const val CMD_LEAVE_GROUP = 36
         const val CMD_LEAVE_GROUP_RESP = 37
         const val CMD_GET_GROUP_LIST = 50
@@ -72,6 +73,7 @@ class NativeClientTest {
         const val CMD_NOTIFY_GROUP_CREATED = 86
         const val CMD_NOTIFY_MEMBERS_ADDED = 87
         const val CMD_NOTIFY_MEMBER_LEFT = 88
+        const val CMD_NOTIFY_MEMBER_REMOVED = 89
 
         // --- Status Codes ---
         const val STATUS_SUCCESS = 0
@@ -81,7 +83,8 @@ class NativeClientTest {
         const val STATUS_ERR_ALREADY_EXIST = 6
         const val STATUS_ERR_ALREADY_FRIEND = 7
         const val STATUS_ERR_REQ_PENDING = 8
-
+        const val STATUS_ERROR_NOT_GROUP_ADMIN = 11
+        const val STATUS_ERROR_CANNOT_REMOVE_SELF = 12
         // sizes
         const val MAX_GROUP_NAME = 100
 
@@ -2146,6 +2149,262 @@ class NativeClientTest {
         Assert.assertEquals("Rời nhóm xong thì list phải rỗng", 0, count2)
     }
 
+    // ==========================================
+    // MODULE 12: KICK MEMBER (REMOVE)
+    // ==========================================
+
+    @Test
+    fun test28_KickMember_Success_Realtime() {
+        // Kịch bản:
+        // 1. Admin tạo nhóm có Victim và Observer.
+        // 2. Observer (Online) lắng nghe.
+        // 3. Admin thực hiện Kick Victim.
+        // 4. Observer phải nhận được:
+        //    - onMemberRemoved (để update list)
+        //    - onMessageReceived (msgType=9: "Admin đã mời Victim...")
+
+        val time = System.currentTimeMillis()
+        val emailAdmin = "admin_k_$time@konni.com"
+        val emailVictim = "victim_$time@konni.com"
+        val emailObs = "observer_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("Admin", emailAdmin, pass)
+        NativeClient.registerUser("Victim", emailVictim, pass)
+        NativeClient.registerUser("Observer", emailObs, pass)
+
+        val idVictim = helperGetUserId(emailVictim, pass)
+        val idObs = helperGetUserId(emailObs, pass)
+
+        // 1. Admin Login và Tạo nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailAdmin, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Kick Test Group", intArrayOf(idVictim, idObs))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        NativeClient.disconnect() // Admin out để Observer login (giả lập 2 máy)
+        Thread.sleep(500)
+
+        // 2. Observer Login và Lắng nghe
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailObs, pass)
+
+        val latchNotify = CountDownLatch(1)
+        val latchMsg = CountDownLatch(1)
+
+        var removedId = -1
+        var sysMsgContent = ""
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMemberRemoved(gid: Int, memberId: Int, memberName: String, adminId: Int, adminName: String) {
+                if (gid == groupId && memberId == idVictim) {
+                    removedId = memberId
+                    latchNotify.countDown()
+                }
+            }
+            override fun onMessageReceived(msg: MessageDto) {
+                if (msg.receiverId == groupId && msg.type == MSG_TYPE_SYSTEM) {
+                    sysMsgContent = msg.content
+                    latchMsg.countDown()
+                }
+            }
+        })
+
+        // 3. Admin (Dùng FakeClient để gửi lệnh Kick từ thread khác mà không cần Observer logout)
+        val threadAdmin = Thread {
+            try {
+                val fakeAdmin = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fakeAdmin.login(emailAdmin, pass)
+                Thread.sleep(500)
+                fakeAdmin.kickMember(groupId, idVictim)
+                Thread.sleep(500)
+                fakeAdmin.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadAdmin.start()
+
+        // 4. Verify Observer nhận được thông tin
+        Assert.assertTrue("Observer không nhận được Notify Member Removed", latchNotify.await(8, TimeUnit.SECONDS))
+        Assert.assertEquals("ID người bị kick không đúng", idVictim, removedId)
+
+        Assert.assertTrue("Observer không nhận được System Message", latchMsg.await(8, TimeUnit.SECONDS))
+        Assert.assertTrue("Nội dung tin nhắn sai", sysMsgContent.contains("mời Victim ra khỏi nhóm"))
+    }
+
+    @Test
+    fun test29_KickMember_Failure_Permissions() {
+        val time = System.currentTimeMillis()
+        val emailAdmin = "boss_$time@konni.com"
+        val emailHacker = "hacker_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("Boss", emailAdmin, pass)
+        NativeClient.registerUser("Hacker", emailHacker, pass)
+
+        // --- SỬA LỖI: Lấy ID trước ---
+        val idHacker = helperGetUserId(emailHacker, pass)
+        val idAdmin = helperGetUserId(emailAdmin, pass)
+
+        // 1. Admin tạo nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailAdmin, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+
+        // Truyền idHacker đã lấy
+        NativeClient.createGroup("Secure Group", intArrayOf(idHacker))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // 2. Hacker Login
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailHacker, pass)
+
+        val latchFail = CountDownLatch(1)
+        var failStatus = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_REMOVE_MEMBER_RESP) {
+                    failStatus = status
+                    latchFail.countDown()
+                }
+            }
+        })
+
+        // 3. Hacker cố kick Admin
+        NativeClient.kickMember(groupId, idAdmin)
+
+        // 4. Verify
+        // Lưu ý: Hacker gửi lệnh lên, Server sẽ trả về CMD_REMOVE_MEMBER_RESP kèm status lỗi.
+        // Nên latchFail sẽ đếm xuống. Dòng AssertTrue ở đây là đúng logic.
+        Assert.assertTrue("Không nhận được phản hồi Kick", latchFail.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Member thường kick Admin phải trả về lỗi AUTH", STATUS_ERROR_NOT_GROUP_ADMIN, failStatus)
+    }
+
+    @Test
+    fun test30_KickMember_Failure_SelfKick() {
+        // Kịch bản: Admin tự kick chính mình -> Phải lỗi INVALID_PARAM
+        val time = System.currentTimeMillis()
+        val email = "selfie_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("Selfie", email, pass)
+        val idSelf = helperGetUserId(email, pass)
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Self Kick Group", intArrayOf())
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        val latchFail = CountDownLatch(1)
+        var status = -1
+
+        // Reset listener
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, statusIn: Int) {
+                if (cmd == CMD_REMOVE_MEMBER_RESP) {
+                    status = statusIn
+                    latchFail.countDown()
+                }
+            }
+        })
+
+        // Admin tự kick mình
+        NativeClient.kickMember(groupId, idSelf)
+
+        Assert.assertTrue(latchFail.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Tự kick mình phải trả về INVALID_PARAM", STATUS_ERROR_CANNOT_REMOVE_SELF, status)
+    }
+
+    @Test
+    fun test31_KickMember_Persistence() {
+        // Kịch bản: Admin kick B. Sau đó Admin lấy lại lịch sử chat -> Phải thấy dòng thông báo.
+        val time = System.currentTimeMillis()
+        val emailA = "admin_p_$time@konni.com"
+        val emailB = "target_p_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("AdminP", emailA, pass)
+        NativeClient.registerUser("TargetP", emailB, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. Login A tạo nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Persist Kick Group", intArrayOf(idB))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. Kick B
+        val latchKick = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_REMOVE_MEMBER_RESP && status == STATUS_SUCCESS) latchKick.countDown()
+            }
+        })
+        NativeClient.kickMember(groupId, idB)
+        latchKick.await(5, TimeUnit.SECONDS)
+
+        // 3. Lấy lịch sử
+        val latchHist = CountDownLatch(1)
+        var msgContent = ""
+        var msgType = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                if (messages.isNotEmpty()) {
+                    // Tin mới nhất (index 0)
+                    msgContent = messages[0].content
+                    msgType = messages[0].type
+                    latchHist.countDown()
+                }
+            }
+        })
+
+        NativeClient.getChatHistory(groupId, true, 0, 10)
+
+        // 4. Verify
+        Assert.assertTrue("Timeout lấy History", latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Type phải là System (9)", MSG_TYPE_SYSTEM, msgType)
+        Assert.assertTrue("Content phải chứa 'đã mời'", msgContent.contains("đã mời"))
+    }
+
     // --- Helper Utility để lấy nhanh ID User ---
     private fun helperGetUserId(email: String, pass: String): Int {
         NativeClient.disconnect()
@@ -2192,6 +2451,13 @@ open class StubNativeEventListener : NativeEventListener {
     ) {}
 
     override fun onGroupListReceived(groups: Array<GroupDto>) {}
+    override fun onMemberRemoved(
+        groupId: Int,
+        memberId: Int,
+        memberName: String,
+        adminId: Int,
+        adminName: String
+    ) {}
 }
 
 /**
@@ -2395,6 +2661,23 @@ class FakeTcpClient(ip: String, port: Int) {
         // CMD_LEAVE_GROUP = 36
         writeHeader(buffer, 36, payloadSize)
         buffer.putInt(groupId)
+
+        output.write(buffer.array())
+        output.flush()
+    }
+
+    fun kickMember(groupId: Int, targetId: Int) {
+        // RemoveMemberReqPayload: group_id (4) + target_id (4) = 8 bytes
+        val payloadSize = 8
+        val totalSize = 28 + payloadSize // Header + Payload
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        // CMD_REMOVE_MEMBER = 34
+        writeHeader(buffer, 34, payloadSize)
+
+        buffer.putInt(groupId)
+        buffer.putInt(targetId)
 
         output.write(buffer.array())
         output.flush()

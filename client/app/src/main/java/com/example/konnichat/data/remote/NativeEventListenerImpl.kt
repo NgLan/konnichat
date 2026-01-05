@@ -235,6 +235,16 @@ object NativeEventListenerImpl : NativeEventListener {
         TODO("Not yet implemented")
     }
 
+    override fun onMemberRemoved(
+        groupId: Int,
+        memberId: Int,
+        memberName: String,
+        adminId: Int,
+        adminName: String
+    ) {
+        TODO("Not yet implemented")
+    }
+
     override fun onConnectionClosed(reason: String) {
         Log.e(TAG, "Mất kết nối: $reason")
     }

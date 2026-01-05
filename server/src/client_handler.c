@@ -1010,6 +1010,112 @@ static void handle_get_group_list(int sock, PacketHeader *reqHeader, void *paylo
     free(groups);
 }
 
+static void handle_remove_member(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    RemoveMemberReqPayload *req = (RemoveMemberReqPayload *)payload;
+    int group_id = req->group_id;
+    int target_id = req->target_user_id;
+
+    LOG_INFO("User %d requesting to KICK User %d from Group %d", current_user_id, target_id, group_id);
+
+    // 1. Validate: Không được tự kick chính mình
+    if (current_user_id == target_id)
+    {
+        send_response(sock, CMD_REMOVE_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_CANNOT_REMOVE_SELF, NULL, 0);
+        return;
+    }
+
+    // 2. Validate: Người thực hiện phải là ADMIN
+    char *role = db_get_member_role(group_id, current_user_id);
+    int is_admin = (role != NULL && strcmp(role, "admin") == 0);
+    if (role)
+        free(role);
+
+    if (!is_admin)
+    {
+        LOG_WARN("User %d is NOT admin of group %d. Kick denied.", current_user_id, group_id);
+        send_response(sock, CMD_REMOVE_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_NOT_GROUP_ADMIN, NULL, 0);
+        return;
+    }
+
+    // 3. Thực hiện Kick
+    int success = db_kick_member(group_id, target_id);
+
+    if (success)
+    {
+        // A. Phản hồi cho Admin (Success)
+        send_response(sock, CMD_REMOVE_MEMBER_RESP, reqHeader->request_id, STATUS_SUCCESS, NULL, 0);
+
+        // B. Tạo System Message
+        char admin_name[MAX_NAME_LEN];
+        char target_name[MAX_NAME_LEN];
+        get_user_name_by_id(current_user_id, admin_name, sizeof(admin_name));
+        get_user_name_by_id(target_id, target_name, sizeof(target_name));
+
+        char sys_content[MAX_CONTENT_LEN];
+        // Nội dung: "Admin đã mời Target ra khỏi nhóm"
+        snprintf(sys_content, sizeof(sys_content), "đã mời %s ra khỏi nhóm", target_name);
+
+        uint64_t now = get_current_timestamp_ms();
+        int msg_id = db_save_message(current_user_id, group_id, sys_content, now, MSG_TYPE_SYSTEM, "group");
+
+        // C. Broadcast (Gửi cho Admin, Người bị kick, và các thành viên khác)
+        // Lưu ý: Người bị kick đã thành 'kicked' trong DB nên db_get_group_member_ids chỉ lấy 'active'.
+        // Ta cần gửi riêng cho người bị kick để họ cập nhật UI.
+
+        int member_ids[500];
+        int count = db_get_group_member_ids(group_id, member_ids, 500);
+
+        // Chuẩn bị payload Notify
+        MemberRemovedNotifyPayload notify;
+        notify.group_id = group_id;
+        notify.member_id = target_id;
+        strcpy(notify.member_name, target_name);
+        notify.admin_id = current_user_id;
+        strcpy(notify.admin_name, admin_name);
+
+        // C1. Gửi cho các thành viên còn lại (Active)
+        for (int i = 0; i < count; i++)
+        {
+            int mem_sock = get_socket_by_user_id(member_ids[i]);
+            if (mem_sock != -1)
+            {
+                // Notify List
+                send_response(mem_sock, CMD_NOTIFY_MEMBER_REMOVED, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+
+                // System Chat Message
+                if (msg_id > 0)
+                {
+                    ChatPayload sysMsg;
+                    memset(&sysMsg, 0, sizeof(ChatPayload));
+                    sysMsg.message_id = msg_id;
+                    sysMsg.sender_id = current_user_id;
+                    sysMsg.receiver_id = group_id;
+                    sysMsg.msg_type = MSG_TYPE_SYSTEM;
+                    strcpy(sysMsg.chat_type, "group");
+                    strcpy(sysMsg.content, sys_content);
+                    sysMsg.created_at = now;
+                    
+                    send_response(mem_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS, &sysMsg, sizeof(sysMsg));
+                }
+            }
+        }
+
+        // C2. Gửi riêng cho người bị kick (Nếu đang online)
+        int kicked_sock = get_socket_by_user_id(target_id);
+        if (kicked_sock != -1)
+        {
+            // Gửi notify để client biết mình bị kick -> Chuyển màn hình hoặc disable chat
+            send_response(kicked_sock, CMD_NOTIFY_MEMBER_REMOVED, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+        }
+    }
+    else
+    {
+        // Lỗi DB hoặc User không tồn tại
+        send_response(sock, CMD_REMOVE_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
+    }
+}
+
 // --- MAIN THREAD LOOP ---
 void *handle_client(void *socket_desc)
 {
@@ -1122,6 +1228,9 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_GET_GROUP_LIST:
             handle_get_group_list(sock, &header, payload, current_user_id);
+            break;
+        case CMD_REMOVE_MEMBER:
+            handle_remove_member(sock, &header, payload, current_user_id);
             break;
 
         default:

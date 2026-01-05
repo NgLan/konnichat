@@ -38,4 +38,5 @@ interface NativeEventListener {
     fun onGroupMembersAdded(groupId: Int, addedBy: String, newMemberIds: IntArray)
     fun onMemberLeft(groupId: Int, memberId: Int, memberName: String)
     fun onGroupListReceived(groups: Array<GroupDto>)
+    fun onMemberRemoved(groupId: Int, memberId: Int, memberName: String, adminId: Int, adminName: String)
 }

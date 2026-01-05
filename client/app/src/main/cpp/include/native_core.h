@@ -43,6 +43,7 @@ typedef struct {
     void (*on_group_members_added)(int group_id, const char* added_by, int count, int* new_member_ids);
     void (*on_member_left)(int group_id, int member_id, const char* member_name);
     void (*on_group_list)(int count, GroupInfoPayload* groups);
+    void (*on_member_removed)(int group_id, int member_id, const char* member_name, int admin_id, const char* admin_name);
     void (*on_disconnect)(const char* reason);
 } NativeCallbacks;
 
@@ -91,5 +92,7 @@ int client_add_group_members(int group_id, int32_t* member_ids, int count);
 int client_leave_group(int group_id);
 
 int client_get_group_list(int offset, int limit);
+
+int client_kick_member(int group_id, int target_id);
 
 #endif // NATIVE_CORE_H

@@ -26,6 +26,7 @@ static jmethodID m_onHistoryReceived;
 static jmethodID m_onGroupCreated;
 static jmethodID m_onMemberLeft;
 static jmethodID m_onGroupList;
+static jmethodID m_onMemberRemoved;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -358,6 +359,20 @@ void jni_on_group_list(int count, GroupInfoPayload* groups) {
     (*env)->DeleteLocalRef(env, jArray);
 }
 
+void jni_on_member_removed(int group_id, int member_id, const char* member_name, int admin_id, const char* admin_name) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    jstring jMemName = (*env)->NewStringUTF(env, member_name);
+    jstring jAdminName = (*env)->NewStringUTF(env, admin_name);
+
+    (*env)->CallVoidMethod(env, g_listener, m_onMemberRemoved,
+                           (jint)group_id, (jint)member_id, jMemName, (jint)admin_id, jAdminName);
+
+    (*env)->DeleteLocalRef(env, jMemName);
+    (*env)->DeleteLocalRef(env, jAdminName);
+}
+
 // --- Helper ném lỗi ---
 void throw_unified_error(JNIEnv *env, int result_code) {
     jclass exClass = g_UnknownException;
@@ -449,6 +464,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onGroupMembersAdded = (*env)->GetMethodID(env, lClass, "onGroupMembersAdded", "(ILjava/lang/String;[I)V");
     m_onMemberLeft = (*env)->GetMethodID(env, lClass, "onMemberLeft", "(IILjava/lang/String;)V");
     m_onGroupList = (*env)->GetMethodID(env, lClass, "onGroupListReceived", "([Lcom/example/konnichat/data/remote/dto/GroupDto;)V");
+    m_onMemberRemoved = (*env)->GetMethodID(env, lClass, "onMemberRemoved", "(IILjava/lang/String;ILjava/lang/String;)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
     // Cache UserDto
@@ -529,6 +545,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_group_members_added = jni_on_group_members_added;
     cbs.on_member_left = jni_on_member_left;
     cbs.on_group_list = jni_on_group_list;
+    cbs.on_member_removed = jni_on_member_removed;
     cbs.on_disconnect = jni_on_disconnect;
     // 3. Start C Thread
     start_reader_thread(cbs);
@@ -737,4 +754,10 @@ Java_com_example_konnichat_data_remote_NativeClient_leaveGroup(JNIEnv *env, jobj
 JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_getGroupList(JNIEnv *env, jobject thiz, jint offset, jint limit) {
     client_get_group_list(offset, limit);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_kickMember(JNIEnv *env, jobject thiz, jint groupId, jint targetId) {
+    int status = client_kick_member(groupId, targetId);
+    if (status != CLIENT_OK) throw_unified_error(env, status);
 }
