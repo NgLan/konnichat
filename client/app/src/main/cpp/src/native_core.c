@@ -340,10 +340,11 @@ int client_search_users(const char *keyword, int offset, int limit)
     return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
 }
 
-int client_send_message(int receiver_id, const char *content, int request_id, const char *chat_type)
+int client_send_message(int sender_id, int receiver_id, const char *content, int request_id, const char *chat_type)
 {
     ChatPayload payload;
     memset(&payload, 0, sizeof(payload));
+    payload.sender_id = sender_id;
     payload.receiver_id = receiver_id;
     payload.msg_type = 1;
     if (chat_type)

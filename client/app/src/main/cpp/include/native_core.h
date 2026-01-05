@@ -75,7 +75,7 @@ int client_unfriend(int target_id);
 
 int client_search_users(const char *keyword, int offset, int limit);
 
-int client_send_message(int receiver_id, const char *content, int request_id, const char* chat_type);
+int client_send_message(int sender_id, int receiver_id, const char *content, int request_id, const char* chat_type);
 
 int client_fetch_offline_msgs();
 

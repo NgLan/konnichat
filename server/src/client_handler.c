@@ -372,11 +372,17 @@ static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload
         msg->sender_id = current_user_id;
     }
 
-    // 2. Lấy thời gian thực của Server (Server Time)
+    // 2. Validate Chat Type
+    msg->chat_type[15] = '\0';
+    if (strlen(msg->chat_type) == 0)
+    {
+        strcpy(msg->chat_type, "private");
+    }
+
     uint64_t server_time = get_current_timestamp_ms();
 
     // 3. Lưu vào DB (Trạng thái mặc định là 'sent')
-    int new_msg_id = db_save_message(current_user_id, msg->receiver_id, msg->content, server_time, msg->msg_type, "private");
+    int new_msg_id = db_save_message(current_user_id, msg->receiver_id, msg->content, server_time, msg->msg_type, msg->chat_type);
 
     if (new_msg_id <= 0)
     {
@@ -396,36 +402,62 @@ static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload
     send_response(sock, CMD_SEND_MESSAGE_RESP, reqHeader->request_id, STATUS_SUCCESS,
                   &respPayload, sizeof(ChatPayload));
 
-    // 5. Kiểm tra người nhận (B) có Online không?
-    int receiver_sock = get_socket_by_user_id(msg->receiver_id);
-
-    if (receiver_sock != -1)
+    // 5. Forward tin nhắn
+    // Nếu là Private -> Gửi cho 1 người
+    if (strcmp(msg->chat_type, "private") == 0)
     {
-        // --- TRƯỜNG HỢP ONLINE ---
+        // Kiểm tra người nhận (B) có Online không?
+        int receiver_sock = get_socket_by_user_id(msg->receiver_id);
 
-        // 5.1 Gửi tin nhắn cho B (Real-time)
-        // Request ID gửi cho B là 0 hoặc số mới, không liên quan đến Request ID của A
-        send_response(receiver_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS,
-                      &respPayload, sizeof(ChatPayload));
+        if (receiver_sock != -1)
+        {
+            // --- TRƯỜNG HỢP ONLINE ---
 
-        LOG_INFO("Forwarded Msg %d to User %d (Online)", new_msg_id, msg->receiver_id);
+            // 5.1 Gửi tin nhắn cho B (Real-time)
+            // Request ID gửi cho B là 0 hoặc số mới, không liên quan đến Request ID của A
+            send_response(receiver_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS,
+                          &respPayload, sizeof(ChatPayload));
 
-        // 5.2 Cập nhật trạng thái 'delivered' trong DB Server
-        db_mark_message_delivered(new_msg_id);
+            LOG_INFO("Forwarded Msg %d to User %d (Online)", new_msg_id, msg->receiver_id);
 
-        // 5.3 [Optional] Báo ngược lại cho A biết là B đã nhận
-        MsgDeliveredPayload delivPayload;
-        delivPayload.message_id = new_msg_id;
-        delivPayload.receiver_id = msg->receiver_id;
+            // 5.2 Cập nhật trạng thái 'delivered' trong DB Server
+            db_mark_message_delivered(new_msg_id);
 
-        send_response(sock, CMD_NOTIFY_MSG_DELIVERED, 0, STATUS_SUCCESS,
-                      &delivPayload, sizeof(MsgDeliveredPayload));
+            // 5.3 [Optional] Báo ngược lại cho A biết là B đã nhận
+            MsgDeliveredPayload delivPayload;
+            delivPayload.message_id = new_msg_id;
+            delivPayload.receiver_id = msg->receiver_id;
+
+            send_response(sock, CMD_NOTIFY_MSG_DELIVERED, 0, STATUS_SUCCESS,
+                          &delivPayload, sizeof(MsgDeliveredPayload));
+        }
+        else
+        {
+            // --- TRƯỜNG HỢP OFFLINE ---
+            LOG_INFO("User %d is Offline. Msg %d saved as 'sent'.", msg->receiver_id, new_msg_id);
+            // Tin nhắn vẫn nằm trong DB với status 'sent', chờ user B login gọi API fetch_offline
+        }
     }
-    else
+    // Nếu là Group -> Gửi cho tất cả thành viên (trừ người gửi)
+    else if (strcmp(msg->chat_type, "group") == 0)
     {
-        // --- TRƯỜNG HỢP OFFLINE ---
-        LOG_INFO("User %d is Offline. Msg %d saved as 'sent'.", msg->receiver_id, new_msg_id);
-        // Tin nhắn vẫn nằm trong DB với status 'sent', chờ user B login gọi API fetch_offline
+        int group_id = msg->receiver_id;
+        int members[MAX_GROUP_MEMBERS];
+        int count = db_get_group_member_ids(group_id, members, MAX_GROUP_MEMBERS);
+
+        for (int i = 0; i < count; i++)
+        {
+            if (members[i] == current_user_id)
+                continue; // Không gửi lại cho chính mình
+
+            int target_sock = get_socket_by_user_id(members[i]);
+            if (target_sock != -1)
+            {
+                send_response(target_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS,
+                              &respPayload, sizeof(ChatPayload));
+            }
+        }
+        // Chat nhóm không cần mark delivered từng người
     }
 }
 
@@ -590,7 +622,8 @@ static void handle_get_history(int sock, PacketHeader *reqHeader, void *payload,
 {
     GetHistoryPayload *req = (GetHistoryPayload *)payload;
 
-    if (reqHeader->payload_size < sizeof(GetHistoryPayload)) {
+    if (reqHeader->payload_size < sizeof(GetHistoryPayload))
+    {
         LOG_WARN("User %d sent invalid get history payload size", current_user_id);
         send_response(sock, CMD_GET_HISTORY_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
         return;
@@ -844,12 +877,12 @@ static void handle_leave_group(int sock, PacketHeader *reqHeader, void *payload,
                     sysMsg.message_id = msg_id;
                     sysMsg.sender_id = current_user_id;
                     sysMsg.receiver_id = group_id;
-                    sysMsg.msg_type = MSG_TYPE_SYSTEM; 
+                    sysMsg.msg_type = MSG_TYPE_SYSTEM;
                     strcpy(sysMsg.chat_type, "group");
                     strcpy(sysMsg.content, "đã rời nhóm");
                     sysMsg.created_at = now;
 
-                    send_response(target_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS, 
+                    send_response(target_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS,
                                   &sysMsg, sizeof(ChatPayload));
                 }
             }

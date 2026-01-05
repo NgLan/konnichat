@@ -626,12 +626,12 @@ Java_com_example_konnichat_data_remote_NativeClient_searchUsers(JNIEnv *env, job
 }
 
 JNIEXPORT void JNICALL
-Java_com_example_konnichat_data_remote_NativeClient_sendMessage(JNIEnv *env, jobject thiz,
+Java_com_example_konnichat_data_remote_NativeClient_sendMessage(JNIEnv *env, jobject thiz, jint senderId,
                                                                 jint receiverId, jstring content, jint tempId, jstring chatType) {
     const char *n_content = (*env)->GetStringUTFChars(env, content, 0);
     const char *n_chatType = (*env)->GetStringUTFChars(env, chatType, 0);
 
-    client_send_message(receiverId, n_content, tempId, n_chatType);
+    client_send_message(senderId, receiverId, n_content, tempId, n_chatType);
 
     (*env)->ReleaseStringUTFChars(env, content, n_content);
     (*env)->ReleaseStringUTFChars(env, chatType, n_chatType);
