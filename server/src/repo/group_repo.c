@@ -398,3 +398,101 @@ int db_kick_member(int32_t group_id, int32_t target_id)
     db_release_conn(conn);
     return success;
 }
+
+int db_get_group_name(int32_t group_id, char *group_name)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    char query[256];
+    snprintf(query, sizeof(query), "SELECT name FROM `groups` WHERE id = %d", group_id);
+
+    if (mysql_query(conn, query))
+    {
+        db_release_conn(conn);
+        return 0;
+    }
+
+    int found = 0;
+    MYSQL_RES *res = mysql_store_result(conn);
+    if (res)
+    {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row && row[0])
+        {
+            strncpy(group_name, row[0], MAX_GROUP_NAME - 1);
+            group_name[MAX_GROUP_NAME - 1] = '\0'; 
+            found = 1;
+        }
+        mysql_free_result(res);
+    }
+
+    db_release_conn(conn);
+    return found;
+}
+
+int db_dissolve_group(int32_t group_id, int32_t requester_id)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    // 1. Check quyền Admin
+    char *role = db_get_member_role(group_id, requester_id);
+    int is_admin = (role != NULL && strcmp(role, "admin") == 0);
+    if (role)
+        free(role);
+
+    if (!is_admin)
+    {
+        LOG_WARN("User %d is NOT admin of group %d. Dissolve denied.", requester_id, group_id);
+        db_release_conn(conn);
+        return -1; // Không có quyền
+    }
+
+    // 2. Start Transaction xóa dữ liệu
+    if (mysql_query(conn, "START TRANSACTION"))
+    {
+        db_release_conn(conn);
+        return 0;
+    }
+
+    char query_del_msg[256];
+    char query_del_group[256];
+
+    // A. Xóa tin nhắn trước
+    snprintf(query_del_msg, sizeof(query_del_msg),
+             "DELETE FROM messages WHERE receiver_id = %d AND chat_type = 'group'", group_id);
+
+    if (mysql_query(conn, query_del_msg))
+    {
+        LOG_ERROR("Delete Msgs Failed: %s", mysql_error(conn));
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return 0;
+    }
+
+    // B. Xóa nhóm (Cascade sẽ tự xóa trong group_members)
+    snprintf(query_del_group, sizeof(query_del_group),
+             "DELETE FROM `groups` WHERE id = %d", group_id);
+
+    if (mysql_query(conn, query_del_group))
+    {
+        LOG_ERROR("Delete Group Failed: %s", mysql_error(conn));
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return 0;
+    }
+
+    // C. Commit
+    if (mysql_query(conn, "COMMIT"))
+    {
+        mysql_query(conn, "ROLLBACK");
+        db_release_conn(conn);
+        return 0;
+    }
+
+    db_release_conn(conn);
+    return 1;
+}

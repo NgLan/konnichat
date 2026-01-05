@@ -54,6 +54,9 @@ class NativeClientTest {
         const val CMD_REMOVE_MEMBER_RESP = 35
         const val CMD_LEAVE_GROUP = 36
         const val CMD_LEAVE_GROUP_RESP = 37
+        const val CMD_DISSOLVE_GROUP = 38
+        const val CMD_DISSOLVE_GROUP_RESP = 39
+
         const val CMD_GET_GROUP_LIST = 50
         const val CMD_GET_GROUP_LIST_RESP = 51
 
@@ -74,6 +77,7 @@ class NativeClientTest {
         const val CMD_NOTIFY_MEMBERS_ADDED = 87
         const val CMD_NOTIFY_MEMBER_LEFT = 88
         const val CMD_NOTIFY_MEMBER_REMOVED = 89
+        const val CMD_NOTIFY_GROUP_DISSOLVED = 90
 
         // --- Status Codes ---
         const val STATUS_SUCCESS = 0
@@ -2405,6 +2409,230 @@ class NativeClientTest {
         Assert.assertTrue("Content phải chứa 'đã mời'", msgContent.contains("đã mời"))
     }
 
+    // ==========================================
+    // MODULE 13: DISSOLVE GROUP (DELETE)
+    // ==========================================
+
+    @Test
+    fun test32_DissolveGroup_Success_Realtime() {
+        // Kịch bản:
+        // 1. Admin tạo nhóm có Member.
+        // 2. Member (Online) lắng nghe sự kiện.
+        // 3. Admin giải tán nhóm.
+        // 4. Member nhận được onGroupDissolved.
+
+        val time = System.currentTimeMillis()
+        val emailAdmin = "boss_d_$time@konni.com"
+        val emailMem = "mem_d_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("BossD", emailAdmin, pass)
+        NativeClient.registerUser("MemD", emailMem, pass)
+        val idMem = helperGetUserId(emailMem, pass)
+
+        // 1. Admin tạo nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailAdmin, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Dissolve Test Group", intArrayOf(idMem))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        NativeClient.disconnect() // Admin out
+        Thread.sleep(200)
+
+        // 2. Member Login lắng nghe
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailMem, pass)
+
+        val latchDissolve = CountDownLatch(1)
+        var dissolvedGid = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupDissolved(gid: Int) {
+                if (gid == groupId) {
+                    dissolvedGid = gid
+                    latchDissolve.countDown()
+                }
+            }
+        })
+
+        // 3. Admin (FakeClient) gửi lệnh Giải tán
+        val threadAdmin = Thread {
+            try {
+                val fakeAdmin = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fakeAdmin.login(emailAdmin, pass)
+                Thread.sleep(300)
+                fakeAdmin.dissolveGroup(groupId)
+                Thread.sleep(300)
+                fakeAdmin.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadAdmin.start()
+
+        // 4. Verify
+        Assert.assertTrue("Member không nhận được thông báo giải tán", latchDissolve.await(8, TimeUnit.SECONDS))
+        Assert.assertEquals("ID nhóm giải tán không khớp", groupId, dissolvedGid)
+    }
+
+    @Test
+    fun test33_DissolveGroup_Failure_Permission() {
+        // Kịch bản: Member thường cố tình giải tán nhóm -> Lỗi Auth
+        val time = System.currentTimeMillis()
+        val emailAdmin = "admin_sec_$time@konni.com"
+        val emailHacker = "hacker_d_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("AdminSec", emailAdmin, pass)
+        NativeClient.registerUser("HackerD", emailHacker, pass)
+
+        val idHacker = helperGetUserId(emailHacker, pass)
+
+        // 1. Admin tạo nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailAdmin, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Secure Group D", intArrayOf(idHacker))
+        latchCreate.await(5, TimeUnit.SECONDS)
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // 2. Hacker Login
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailHacker, pass)
+
+        val latchFail = CountDownLatch(1)
+        var failStatus = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_DISSOLVE_GROUP_RESP) { // 309
+                    failStatus = status
+                    latchFail.countDown()
+                }
+            }
+        })
+
+        // 3. Hacker gửi lệnh giải tán
+        NativeClient.dissolveGroup(groupId)
+
+        // 4. Verify
+        Assert.assertTrue("Không nhận được phản hồi Dissolve", latchFail.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Member thường giải tán nhóm phải bị lỗi AUTH", STATUS_ERROR_NOT_GROUP_ADMIN, failStatus)
+    }
+
+    @Test
+    fun test34_DissolveGroup_Failure_InvalidGroup() {
+        // Kịch bản: Admin giải tán một nhóm không tồn tại (ID = 999999) -> Lỗi Auth hoặc DB
+        // (Server sẽ check role trong DB, không thấy -> return -1 -> Auth Error)
+
+        val time = System.currentTimeMillis()
+        val email = "fail_d_$time@konni.com"
+        val pass = "123"
+        NativeClient.registerUser("FailD", email, pass)
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, pass)
+
+        val latchFail = CountDownLatch(1)
+        var status = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, s: Int) {
+                if (cmd == CMD_DISSOLVE_GROUP_RESP) {
+                    status = s
+                    latchFail.countDown()
+                }
+            }
+        })
+
+        NativeClient.dissolveGroup(999999) // ID fake
+
+        Assert.assertTrue(latchFail.await(5, TimeUnit.SECONDS))
+        Assert.assertNotEquals("Không được trả về SUCCESS", STATUS_SUCCESS, status)
+    }
+
+    @Test
+    fun test35_DissolveGroup_DataCleanup() {
+        // Kịch bản quan trọng:
+        // 1. Tạo nhóm, gửi tin nhắn vào nhóm.
+        // 2. Giải tán nhóm.
+        // 3. Cố gắng lấy lịch sử chat của nhóm đó -> Phải trả về rỗng (0 tin).
+        // (Điều này chứng minh DB đã xóa sạch tin nhắn của nhóm).
+
+        val time = System.currentTimeMillis()
+        val email = "clean_$time@konni.com"
+        val pass = "123"
+        NativeClient.registerUser("Cleaner", email, pass)
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        val user = NativeClient.loginUser(email, pass)!!
+        val myId = user.id
+
+        // 1. Tạo nhóm
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Cleanup Group", intArrayOf())
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. Gửi tin nhắn (để tạo rác trong DB)
+        val latchMsg = CountDownLatch(2)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, ts: Long) {
+                latchMsg.countDown()
+            }
+        })
+        NativeClient.sendMessage(myId, groupId, "Msg 1 to delete", 1, "group")
+        NativeClient.sendMessage(myId, groupId, "Msg 2 to delete", 2, "group")
+        latchMsg.await(5, TimeUnit.SECONDS)
+
+        // 3. Giải tán nhóm
+        val latchDissolve = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_DISSOLVE_GROUP_RESP && status == STATUS_SUCCESS) latchDissolve.countDown()
+            }
+        })
+        NativeClient.dissolveGroup(groupId)
+        latchDissolve.await(5, TimeUnit.SECONDS)
+
+        // 4. Kiểm tra sạch sẽ: Get History của nhóm vừa xóa
+        // Mong đợi: Server trả về 0 tin nhắn (vì đã bị DELETE CASCADE hoặc DELETE thủ công)
+        val latchHist = CountDownLatch(1)
+        var msgCount = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                msgCount = messages.size
+                latchHist.countDown()
+            }
+        })
+
+        NativeClient.getChatHistory(groupId, true, 0, 10) // isGroup=true
+        latchHist.await(5, TimeUnit.SECONDS)
+
+        Assert.assertEquals("Tin nhắn nhóm phải bị xóa sạch sau khi giải tán", 0, msgCount)
+    }
+
     // --- Helper Utility để lấy nhanh ID User ---
     private fun helperGetUserId(email: String, pass: String): Int {
         NativeClient.disconnect()
@@ -2458,6 +2686,8 @@ open class StubNativeEventListener : NativeEventListener {
         adminId: Int,
         adminName: String
     ) {}
+
+    override fun onGroupDissolved(groupId: Int) {}
 }
 
 /**
@@ -2475,6 +2705,7 @@ class FakeTcpClient(ip: String, port: Int) {
     private val CMD_LOGIN = 12
 
     private val CMD_SEND_MESSAGE = 20
+    private val CMD_DISSOLVE_GROUP = 38
     private val CMD_SEND_FRIEND_REQ = 42
 
     private val CMD_RESPOND_FRIEND_REQ = 44
@@ -2678,6 +2909,20 @@ class FakeTcpClient(ip: String, port: Int) {
 
         buffer.putInt(groupId)
         buffer.putInt(targetId)
+
+        output.write(buffer.array())
+        output.flush()
+    }
+
+    fun dissolveGroup(groupId: Int) {
+        // Payload: group_id (4 bytes)
+        val payloadSize = 4
+        val totalSize = 28 + payloadSize
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        writeHeader(buffer, CMD_DISSOLVE_GROUP, payloadSize)
+        buffer.putInt(groupId)
 
         output.write(buffer.array())
         output.flush()

@@ -27,6 +27,7 @@ static jmethodID m_onGroupCreated;
 static jmethodID m_onMemberLeft;
 static jmethodID m_onGroupList;
 static jmethodID m_onMemberRemoved;
+static jmethodID m_onGroupDissolved;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -373,6 +374,12 @@ void jni_on_member_removed(int group_id, int member_id, const char* member_name,
     (*env)->DeleteLocalRef(env, jAdminName);
 }
 
+void jni_on_group_dissolved(int group_id) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+    (*env)->CallVoidMethod(env, g_listener, m_onGroupDissolved, (jint)group_id);
+}
+
 // --- Helper ném lỗi ---
 void throw_unified_error(JNIEnv *env, int result_code) {
     jclass exClass = g_UnknownException;
@@ -465,6 +472,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onMemberLeft = (*env)->GetMethodID(env, lClass, "onMemberLeft", "(IILjava/lang/String;)V");
     m_onGroupList = (*env)->GetMethodID(env, lClass, "onGroupListReceived", "([Lcom/example/konnichat/data/remote/dto/GroupDto;)V");
     m_onMemberRemoved = (*env)->GetMethodID(env, lClass, "onMemberRemoved", "(IILjava/lang/String;ILjava/lang/String;)V");
+    m_onGroupDissolved = (*env)->GetMethodID(env, lClass, "onGroupDissolved", "(I)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
     // Cache UserDto
@@ -546,6 +554,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_member_left = jni_on_member_left;
     cbs.on_group_list = jni_on_group_list;
     cbs.on_member_removed = jni_on_member_removed;
+    cbs.on_group_dissolved = jni_on_group_dissolved;
     cbs.on_disconnect = jni_on_disconnect;
     // 3. Start C Thread
     start_reader_thread(cbs);
@@ -759,5 +768,11 @@ Java_com_example_konnichat_data_remote_NativeClient_getGroupList(JNIEnv *env, jo
 JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_kickMember(JNIEnv *env, jobject thiz, jint groupId, jint targetId) {
     int status = client_kick_member(groupId, targetId);
+    if (status != CLIENT_OK) throw_unified_error(env, status);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_dissolveGroup(JNIEnv *env, jobject thiz, jint groupId) {
+    int status = client_dissolve_group(groupId);
     if (status != CLIENT_OK) throw_unified_error(env, status);
 }

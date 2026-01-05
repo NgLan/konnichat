@@ -57,7 +57,7 @@ class ChatRepository(
 
         try {
             // Gửi tempId dương xuống Native
-            NativeClient.sendMessage(receiverId, content, tempId, chatType)
+            NativeClient.sendMessage(myUserId, receiverId, content, tempId, chatType)
         } catch (e: Exception) {
             Log.e("ChatRepo", "Send failed: ${e.message}")
             // Nếu lỗi, update trạng thái thành failed
