@@ -109,20 +109,41 @@ class ChatRepository(
     }
 
     // [NEW] Load lịch sử cũ hơn
-    fun loadHistory(targetId: Int, offset: Int, limit: Int) {
+    fun loadHistory(targetId: Int, isGroup: Boolean, offset: Int, limit: Int) {
         // Gọi Native, dữ liệu trả về sẽ vào callback onHistoryReceived -> lưu DB -> Flow update UI
-        NativeClient.getChatHistory(targetId, false, offset, limit)
+        NativeClient.getChatHistory(targetId, isGroup, offset, limit)
     }
 
     // [NEW] Lưu tin nhắn từ Network (Socket trả về)
     suspend fun saveMessageFromNetwork(dto: MessageDto) {
+        val existingUser = userDao.getUserById(dto.senderId)
+
+        if (existingUser == null) {
+            // 2. Nếu chưa có -> Tạo User tạm để thỏa mãn khóa ngoại
+            val placeholderUser = UserEntity(
+                serverId = dto.senderId,
+                email = "user_${dto.senderId}@unknown.com", // Email giả
+                name = "Người dùng ${dto.senderId}",        // Tên tạm
+                isOnline = false,
+                status = "active",
+                age = null,
+                avatarUrl = null,
+                createdAt = Date(),
+                updatedAt = Date()
+            )
+            // Lưu User tạm vào trước
+            userDao.insertUser(placeholderUser)
+            Log.d("ChatRepo", "⚠️ Đã tạo User tạm (ID: ${dto.senderId}) để nhận tin nhắn.")
+        }
+
+        // 3. Sau khi đảm bảo User tồn tại, mới lưu tin nhắn
         val entity = MessageEntity(
             serverId = dto.id,
             senderId = dto.senderId,
             receiverId = dto.receiverId,
             chatType = dto.chatType,
             content = dto.content,
-            status = "sent", // Tin từ server về mặc định là sent
+            status = "sent",
             createdAt = Date(dto.timestamp)
         )
         messageDao.insertMessage(entity)
@@ -330,5 +351,9 @@ class ChatRepository(
 
     fun getGroupMembersFlow(groupId: Int): Flow<List<GroupMemberWithUser>> {
         return groupDao.getMembersWithUserInfo(groupId)
+    }
+
+    suspend fun getGroupInfo(groupId: Int): GroupEntity? {
+        return groupDao.getGroupById(groupId)
     }
 }

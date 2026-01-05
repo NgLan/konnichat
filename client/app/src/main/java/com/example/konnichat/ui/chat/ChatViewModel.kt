@@ -31,28 +31,26 @@ class ChatViewModel(
     val isMuted: LiveData<Boolean> = _isMuted
     // Load tin nhắn (Reactive Flow -> LiveData)
     fun getMessages(myId: Int, friendId: Int, chatType: String): LiveData<List<MessageWithSender>> {
-        // 1. Kiểm tra quan hệ bạn bè ngay khi vào màn hình
-        checkFriendStatus(friendId)
-
-        checkMuteStatus(friendId)
-
+        // 1. [QUAN TRỌNG] Gán loại chat ngay lập tức
         this.currentChatType = chatType
 
-        // 2. Load sẵn history mới nhất từ server (Offset 0, Limit 20)
-        chatRepository.loadHistory(friendId, 0, 20)
+        // 2. Kiểm tra quan hệ bạn bè (để ẩn/hiện nút Kết bạn)
+        checkFriendStatus(friendId)
+        checkMuteStatus(friendId)
 
-        if (chatType == "private") {
-            checkFriendStatus(friendId)
-            checkMuteStatus(friendId)
-        } else {
-            // Nếu là Group, mặc định là hiện khung chat (isFriend = true)
+        // 3. Load lịch sử từ server
+        // Xác định cờ isGroup dựa trên chatType
+        val isGroup = (chatType == "group")
+        chatRepository.loadHistory(friendId, isGroup, 0, 20)
+
+        // 4. Nếu là Group, luôn set là "bạn bè" để hiện khung chat
+        if (isGroup) {
             _isFriend.postValue(true)
-            // Group cũng có thể mute (logic tương tự, tạm bỏ qua hoặc làm sau)
         }
-        // 3. Trả về LiveData từ DB Local (tự động update khi DB thay đổi)
+
+        // 5. Trả về LiveData từ DB Local
         return chatRepository.getMessages(myId, friendId, chatType).asLiveData()
     }
-
     private fun checkMuteStatus(targetId: Int) {
         // Vì SharedPreferences đọc nhanh nên có thể không cần coroutine,
         // nhưng để an toàn cứ dùng postValue
@@ -87,12 +85,14 @@ class ChatViewModel(
         isLoadingHistory = true
 
         viewModelScope.launch {
-            chatRepository.loadHistory(targetId, currentCount, 20)
+            // Truyền đúng cờ isGroup
+            val isGroup = (currentChatType == "group")
+            chatRepository.loadHistory(targetId, isGroup, currentCount, 20)
+
             delay(2000)
             isLoadingHistory = false
         }
     }
-
     // Kiểm tra xem targetId có trong bảng Friend của DB không
     private fun checkFriendStatus(targetId: Int) {
         if (currentChatType == "group") {

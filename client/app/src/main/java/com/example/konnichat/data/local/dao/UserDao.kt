@@ -5,6 +5,8 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import androidx.room.Update
 import com.example.konnichat.data.local.entity.UserEntity
 import kotlinx.coroutines.flow.Flow
 
@@ -17,11 +19,43 @@ interface UserDao {
     @Query("SELECT * FROM users WHERE server_id = :id LIMIT 1")
     suspend fun getUserById(id: Int): UserEntity?
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertUser(user: UserEntity)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertUserIgnore(user: UserEntity): Long
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun insertUsers(users: List<UserEntity>)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    abstract suspend fun insertUsersIgnore(users: List<UserEntity>): List<Long>
+    @Update
+    abstract suspend fun updateUser(user: UserEntity)
+
+    @Update
+    abstract suspend fun updateUsers(users: List<UserEntity>)
+
+    @Transaction
+    open suspend fun insertUser(user: UserEntity) {
+        val id = insertUserIgnore(user)
+        if (id == -1L) {
+            // Nếu insert thất bại (do đã tồn tại), thực hiện update
+            updateUser(user)
+        }
+    }
+
+    // 2. Upsert danh sách User (Dùng cho sync danh sách bạn bè/thành viên)
+    @Transaction
+    open suspend fun insertUsers(users: List<UserEntity>) {
+        val insertResults = insertUsersIgnore(users)
+        val updateList = mutableListOf<UserEntity>()
+
+        for (i in insertResults.indices) {
+            if (insertResults[i] == -1L) {
+                // Item này đã tồn tại, đưa vào danh sách cần update
+                updateList.add(users[i])
+            }
+        }
+
+        if (updateList.isNotEmpty()) {
+            updateUsers(updateList)
+        }
+    }
 
     @Query("UPDATE users SET is_online = :isOnline WHERE server_id = :friendId")
     suspend fun updateFriendStatus(friendId: Int, isOnline: Boolean)

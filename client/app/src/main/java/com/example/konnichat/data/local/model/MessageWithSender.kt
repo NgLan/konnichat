@@ -13,5 +13,8 @@ data class MessageWithSender(
     @Embedded val message: MessageEntity,
 
     @ColumnInfo(name = "senderName")
-    val senderName: String? // Tên người gửi (Có thể null nếu user chưa sync về)
+    val senderName: String?, // Tên người gửi (Có thể null nếu user chưa sync về)
+    @ColumnInfo(name = "senderAvatar")
+    val senderAvatar: String?
+
 )

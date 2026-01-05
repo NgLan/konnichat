@@ -40,7 +40,8 @@ object NotificationHelper {
         content: String,
         type: String,
         targetId: Int = -1,         // [NEW]
-        targetName: String = ""
+        targetName: String = "",
+        chatType: String = "private"
     ) {
         // Intent mở App khi click vào thông báo
         val intent = Intent(context, HomeActivity::class.java).apply {
@@ -51,6 +52,7 @@ object NotificationHelper {
             if (targetId != -1) {
                 putExtra("TARGET_ID", targetId)
                 putExtra("TARGET_NAME", targetName)
+                putExtra("CHAT_TYPE", chatType)
             }
         }
 

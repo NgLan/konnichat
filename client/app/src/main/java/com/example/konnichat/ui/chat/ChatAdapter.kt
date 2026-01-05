@@ -3,6 +3,7 @@ package com.example.konnichat.ui.chat
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
@@ -73,8 +74,8 @@ class ChatAdapter(private val currentUserId: Int) :
 
         when (holder) {
             is SentMessageViewHolder -> holder.bind(item.message)
-            is ReceivedMessageViewHolder -> holder.bind(item.message)
-            // [THÊM] Bind tin nhắn hệ thống
+            // [SỬA] Truyền nguyên cục item (MessageWithSender) thay vì chỉ item.message
+            is ReceivedMessageViewHolder -> holder.bind(item)
             is SystemMessageViewHolder -> holder.bind(item)
         }
     }
@@ -103,11 +104,36 @@ class ChatAdapter(private val currentUserId: Int) :
         private val tvContent: TextView = itemView.findViewById(R.id.tvContent)
         private val tvTime: TextView = itemView.findViewById(R.id.tvTime)
 
-        fun bind(msg: MessageEntity) {
+        private val tvSenderName: TextView = itemView.findViewById(R.id.tvSenderName)
+        private val imgAvatar: ImageView = itemView.findViewById(R.id.imgAvatar)
+
+        fun bind(item: MessageWithSender) { // Lưu ý: Truyền cả item (MessageWithSender) vào
+            val msg = item.message
+
             tvContent.text = msg.content
 
             val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
             tvTime.text = sdf.format(msg.createdAt)
+
+            // [THÊM] Hiển thị Tên người gửi
+            // item.senderName lấy từ bảng Users nhờ câu lệnh JOIN trong DAO
+            val displayName = item.senderName ?: "User ${msg.senderId}"
+            tvSenderName.text = displayName
+
+            // [THÊM] Logic ẩn/hiện tên:
+            // Nếu là chat Group: Luôn hiện tên (hoặc logic tùy bạn)
+            // Nếu là chat Private: Có thể ẩn tên đi cho gọn (vì chỉ chat với 1 người)
+            if (msg.chatType == "group") {
+                tvSenderName.visibility = View.VISIBLE
+                imgAvatar.visibility = View.VISIBLE
+            } else {
+                // Chat 1-1 thì ẩn tên và avatar đi cho giống Messenger (hoặc để nguyên tùy ý thích)
+                tvSenderName.visibility = View.GONE
+                imgAvatar.visibility = View.VISIBLE // Vẫn hiện avatar cho đẹp
+            }
+
+            // [THÊM] Hiển thị Avatar (Placeholder)
+            imgAvatar.setImageResource(com.example.konnichat.R.mipmap.ic_launcher_round)
         }
     }
 
