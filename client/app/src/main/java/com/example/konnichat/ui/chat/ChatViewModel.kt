@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.asLiveData
 import androidx.lifecycle.viewModelScope
 import com.example.konnichat.data.local.entity.MessageEntity
+import com.example.konnichat.data.local.model.MessageWithSender
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
 import kotlinx.coroutines.launch
@@ -29,7 +30,7 @@ class ChatViewModel(
     private val _isMuted = MutableLiveData<Boolean>(false)
     val isMuted: LiveData<Boolean> = _isMuted
     // Load tin nhắn (Reactive Flow -> LiveData)
-    fun getMessages(myId: Int, friendId: Int, chatType: String): LiveData<List<MessageEntity>> {
+    fun getMessages(myId: Int, friendId: Int, chatType: String): LiveData<List<MessageWithSender>> {
         // 1. Kiểm tra quan hệ bạn bè ngay khi vào màn hình
         checkFriendStatus(friendId)
 
@@ -94,6 +95,11 @@ class ChatViewModel(
 
     // Kiểm tra xem targetId có trong bảng Friend của DB không
     private fun checkFriendStatus(targetId: Int) {
+        if (currentChatType == "group") {
+            _isFriend.postValue(true)
+            return
+        }
+
         viewModelScope.launch {
             val friend = userRepository.getFriendById(targetId)
             _isFriend.postValue(friend != null)

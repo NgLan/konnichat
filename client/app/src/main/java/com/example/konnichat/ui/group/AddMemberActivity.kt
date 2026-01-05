@@ -62,6 +62,10 @@ class AddMemberActivity : AppCompatActivity() {
         binding.rvFriends.layoutManager = LinearLayoutManager(this)
         binding.rvFriends.adapter = adapter
 
+        binding.btnBack.setOnClickListener {
+            finish()
+        }
+
         binding.btnCreateGroup.setOnClickListener {
             val selectedIds = adapter.getSelectedUserIds()
             if (selectedIds.isNotEmpty()) {
