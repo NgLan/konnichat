@@ -92,6 +92,7 @@ class NativeClientTest {
         const val STATUS_ERR_REQ_PENDING = 8
         const val STATUS_ERROR_NOT_GROUP_ADMIN = 11
         const val STATUS_ERROR_CANNOT_REMOVE_SELF = 12
+        const val STATUS_ERROR_NOT_ALLOWED = 13
         // sizes
         const val MAX_GROUP_NAME = 100
 
@@ -1752,13 +1753,9 @@ class NativeClientTest {
 
     @Test
     fun test20_LeaveGroup_Realtime_SystemMsg() {
-        // Kịch bản:
-        // 1. A tạo nhóm với B.
-        // 2. B Login (NativeClient) và lắng nghe.
-        // 3. A (FakeClient) gửi lệnh Rời nhóm.
-        // 4. B nhận được:
-        //    - Callback onMemberLeft (để update list member)
-        //    - Callback onMessageReceived (để hiện timeline "A đã rời nhóm")
+        // Kịch bản: Member thường rời nhóm.
+        // 1. A (Member) rời nhóm.
+        // 2. B (Member khác/Admin) nhận được Notify và System Message.
 
         val time = System.currentTimeMillis()
         val emailA = "leaver_$time@konni.com"
@@ -1771,7 +1768,7 @@ class NativeClientTest {
         val idA = helperGetUserId(emailA, pass)
         val idB = helperGetUserId(emailB, pass)
 
-        // 1. B tạo nhóm có A (Để tiện lấy GroupID khi B đang login)
+        // 1. B (Admin) tạo nhóm có A
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         NativeClient.loginUser(emailB, pass)
 
@@ -1832,9 +1829,53 @@ class NativeClientTest {
 
         Assert.assertTrue("Timeout chờ Tin nhắn hệ thống", latchMsg.await(8, TimeUnit.SECONDS))
         Assert.assertEquals("MsgType phải là SYSTEM (9)", MSG_TYPE_SYSTEM, sysMsgType)
-        Assert.assertTrue("Nội dung tin nhắn phải chứa 'rời nhóm'", sysMsgContent.contains("rời nhóm"))
+        // Server lưu: "đã rời nhóm"
+        Assert.assertTrue("Nội dung tin nhắn phải chứa 'đã rời nhóm'", sysMsgContent.contains("đã rời nhóm"))
+    }
 
-        println("TEST PASSED: Nhận được tin nhắn hệ thống: '$sysMsgContent'")
+    @Test
+    fun test20_b_Admin_Leave_Restriction() {
+        // Kịch bản: Admin cố tình gọi lệnh LEAVE_GROUP (thay vì Dissolve).
+        // Server phải chặn và trả về lỗi (VD: INVALID_PARAM).
+
+        val time = System.currentTimeMillis()
+        val emailAdmin = "admin_l_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("AdminL", emailAdmin, pass)
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailAdmin, pass)
+
+        // 1. Tạo nhóm
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Admin Leave Test", intArrayOf())
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. Admin gọi lệnh Leave
+        val latchResp = CountDownLatch(1)
+        var statusResp = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_LEAVE_GROUP_RESP) {
+                    statusResp = status
+                    latchResp.countDown()
+                }
+            }
+        })
+
+        NativeClient.leaveGroup(groupId)
+
+        // 3. Verify: Phải trả về lỗi (Không cho phép)
+        Assert.assertTrue("Timeout chờ phản hồi Leave", latchResp.await(5, TimeUnit.SECONDS))
+        Assert.assertNotEquals("Admin không được phép rời nhóm (phải giải tán)", STATUS_SUCCESS, statusResp)
+        Assert.assertEquals(STATUS_ERROR_NOT_ALLOWED, statusResp)
     }
 
     @Test
@@ -1842,7 +1883,7 @@ class NativeClientTest {
         // Kịch bản:
         // 1. A và B trong nhóm.
         // 2. B Offline.
-        // 3. A rời nhóm.
+        // 3. A (Member) rời nhóm.
         // 4. B Online -> Get History -> Phải thấy dòng "A đã rời nhóm".
 
         val time = System.currentTimeMillis()
@@ -1853,12 +1894,19 @@ class NativeClientTest {
         NativeClient.registerUser("UserA", emailA, pass)
         NativeClient.registerUser("UserB", emailB, pass)
 
-        // --- SỬA LỖI TẠI ĐÂY: Lấy ID của B trước ---
         val idB = helperGetUserId(emailB, pass)
 
-        // 1. A tạo nhóm với B
+        // 1. B (Admin) tạo nhóm, thêm A vào
+        // (Để A là member thường, A mới rời được. Nếu A là admin thì test sẽ fail do luật mới)
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
-        NativeClient.loginUser(emailA, pass)
+        val userA = NativeClient.loginUser(emailA, pass)!!
+        val idA = userA.id
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // Login B tạo nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
 
         val latchCreate = CountDownLatch(1)
         var groupId = -1
@@ -1868,12 +1916,15 @@ class NativeClientTest {
                 latchCreate.countDown()
             }
         })
-
-        // Truyền idB đã lấy từ trước vào
-        NativeClient.createGroup("History Test Group", intArrayOf(idB))
+        NativeClient.createGroup("History Test Group", intArrayOf(idA))
         latchCreate.await(5, TimeUnit.SECONDS)
+        NativeClient.disconnect() // B offline
+        Thread.sleep(200)
 
-        // 2. A rời nhóm (NativeClient đang là A)
+        // 2. A Login và Rời nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
         val latchLeave = CountDownLatch(1)
         NativeClient.startListening(object : StubNativeEventListener() {
             override fun onRequestResponse(cmd: Int, status: Int) {
@@ -1883,11 +1934,11 @@ class NativeClientTest {
             }
         })
         NativeClient.leaveGroup(groupId)
-        Assert.assertTrue(latchLeave.await(5, TimeUnit.SECONDS))
-        NativeClient.disconnect() // A out
+        Assert.assertTrue("A rời nhóm thất bại", latchLeave.await(5, TimeUnit.SECONDS))
+        NativeClient.disconnect()
         Thread.sleep(500)
 
-        // 3. B Login và lấy History
+        // 3. B Login lại và lấy History
         Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
         NativeClient.loginUser(emailB, pass)
 
@@ -1910,8 +1961,8 @@ class NativeClientTest {
 
         // 4. Verify
         Assert.assertTrue("Timeout lấy History", latchHist.await(5, TimeUnit.SECONDS))
-        Assert.assertEquals("Tin mới nhất trong lịch sử phải là System Msg", MSG_TYPE_SYSTEM, lastMsgType)
-        Assert.assertTrue("Nội dung phải chứa 'rời nhóm'", lastMsgContent.contains("rời nhóm"))
+        Assert.assertEquals("Tin mới nhất phải là System Msg", MSG_TYPE_SYSTEM, lastMsgType)
+        Assert.assertTrue("Nội dung phải chứa 'đã rời nhóm'", lastMsgContent.contains("đã rời nhóm"))
     }
 
     @Test
@@ -1920,7 +1971,8 @@ class NativeClientTest {
         // 1. A tạo nhóm với B.
         // 2. B rời nhóm.
         // 3. A thêm lại B vào nhóm.
-        // 4. Kiểm tra xem DB có cho phép không và B có nhận được thông báo vào nhóm lại không.
+        // 4. Kiểm tra A nhận Success Response.
+        // 5. Kiểm tra lịch sử chat có dòng "đã thêm".
 
         val time = System.currentTimeMillis()
         val emailA = "admin_$time@konni.com"
@@ -1945,10 +1997,9 @@ class NativeClientTest {
         })
         NativeClient.createGroup("Rejoin Group", intArrayOf(idB))
         latchCreate.await(5, TimeUnit.SECONDS)
-        NativeClient.disconnect()
-        Thread.sleep(200)
 
         // 2. FakeClient B vào và Rời nhóm
+        // (Giữ A online để không bị mất session)
         val threadB = Thread {
             val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
             fb.login(emailB, pass)
@@ -1958,29 +2009,42 @@ class NativeClientTest {
             fb.close()
         }
         threadB.start()
-        threadB.join() // Chờ B rời xong
+        threadB.join()
 
-        // 3. A Login lại và thêm B vào lại
-        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
-        NativeClient.loginUser(emailA, pass)
-
+        // 3. A thêm B vào lại
         val latchAdd = CountDownLatch(1)
         var addStatus = -1
+
+        // Reset Listener để hứng Add Response
         NativeClient.startListening(object : StubNativeEventListener() {
             override fun onRequestResponse(cmd: Int, status: Int) {
-                if (cmd == CMD_ADD_MEMBER_RESP) { // CMD 33
+                if (cmd == CMD_ADD_MEMBER_RESP) {
                     addStatus = status
                     latchAdd.countDown()
                 }
             }
         })
 
-        // Gọi lệnh thêm thành viên (Server sẽ chạy ON DUPLICATE KEY UPDATE status='active')
         NativeClient.addMembersToGroup(groupId, intArrayOf(idB))
+        Assert.assertTrue("Timeout chờ Add Member Resp", latchAdd.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals(STATUS_SUCCESS, addStatus)
 
-        // 4. Verify
-        Assert.assertTrue("Timeout chờ Add Member", latchAdd.await(5, TimeUnit.SECONDS))
-        Assert.assertEquals("Thêm lại người đã rời phải thành công (SUCCESS)", STATUS_SUCCESS, addStatus)
+        // 4. Verify System Message qua History (Vì A không nhận realtime của chính mình)
+        val latchHist = CountDownLatch(1)
+        var sysMsgContent = ""
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                if (messages.isNotEmpty()) {
+                    sysMsgContent = messages[0].content // Tin mới nhất
+                    latchHist.countDown()
+                }
+            }
+        })
+
+        NativeClient.getChatHistory(groupId, true, 0, 10)
+        Assert.assertTrue("Timeout lấy History", latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertTrue("Tin nhắn hệ thống phải chứa 'đã thêm'", sysMsgContent.contains("đã thêm"))
     }
 
     // ==========================================
