@@ -39,4 +39,10 @@ interface NativeEventListener {
     fun onMemberLeft(groupId: Int, memberId: Int, memberName: String)
     fun onGroupListReceived(groups: Array<GroupDto>)
     fun onMemberRemoved(groupId: Int, memberId: Int, memberName: String, adminId: Int, adminName: String)
+    // Khi nhận được sự kiện này, UI cần:
+    // 1. Đóng màn hình chat của nhóm này (nếu đang mở).
+    // 2. Xóa nhóm khỏi danh sách nhóm.
+    // 3. Xóa data trong Room DB local.
+    // 4. Hiện Toast: "Nhóm đã bị giải tán".
+    fun onGroupDissolved(groupId: Int)
 }

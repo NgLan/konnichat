@@ -47,10 +47,8 @@ typedef enum {
     CMD_LEAVE_GROUP         = 36,
     CMD_LEAVE_GROUP_RESP    = 37,
 
-    CMD_SEND_GROUP_MSG      = 38,
-    CMD_SEND_GROUP_MSG_RESP = 39,
-
-    CMD_RECEIVE_GROUP_MSG   = 300, // Event push
+    CMD_DISSOLVE_GROUP      = 38,
+    CMD_DISSOLVE_GROUP_RESP = 39,
 
     CMD_GET_GROUP_LIST      = 50,
     CMD_GET_GROUP_LIST_RESP = 51,
@@ -97,6 +95,8 @@ typedef enum {
     CMD_NOTIFY_MEMBERS_ADDED = 87,
     CMD_NOTIFY_MEMBER_LEFT   = 88,
     CMD_NOTIFY_MEMBER_REMOVED = 89,
+    CMD_NOTIFY_GROUP_DISSOLVED = 90,
+
     // 99. Error
     CMD_ERROR_UNKNOWN       = 999
 } CommandType;
@@ -317,5 +317,16 @@ typedef struct __attribute__((packed)) {
     int32_t admin_id;               // ID người thực hiện kick
     char admin_name[MAX_NAME_LEN];  // Tên admin
 } MemberRemovedNotifyPayload;
+
+// Request
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+} DissolveGroupReqPayload;
+
+// Notify
+typedef struct __attribute__((packed)) {
+    int32_t group_id;
+    char group_name[MAX_GROUP_NAME];
+} GroupDissolvedNotifyPayload;
 
 #endif

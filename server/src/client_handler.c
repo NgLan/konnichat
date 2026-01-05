@@ -1095,7 +1095,7 @@ static void handle_remove_member(int sock, PacketHeader *reqHeader, void *payloa
                     strcpy(sysMsg.chat_type, "group");
                     strcpy(sysMsg.content, sys_content);
                     sysMsg.created_at = now;
-                    
+
                     send_response(mem_sock, CMD_RECEIVE_MESSAGE, 0, STATUS_SUCCESS, &sysMsg, sizeof(sysMsg));
                 }
             }
@@ -1113,6 +1113,56 @@ static void handle_remove_member(int sock, PacketHeader *reqHeader, void *payloa
     {
         // Lỗi DB hoặc User không tồn tại
         send_response(sock, CMD_REMOVE_MEMBER_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
+    }
+}
+
+static void handle_dissolve_group(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    DissolveGroupReqPayload *req = (DissolveGroupReqPayload *)payload;
+    int group_id = req->group_id;
+
+    LOG_INFO("User %d requesting to DISSOLVE group %d", current_user_id, group_id);
+
+    // 1. Lấy danh sách thành viên TRƯỚC KHI XÓA để còn thông báo
+    // (Vì xóa xong DB sẽ mất hết liên kết)
+    int member_ids[MAX_GROUP_MEMBERS];
+    int count = db_get_group_member_ids(group_id, member_ids, MAX_GROUP_MEMBERS);
+
+    // Lấy tên nhóm để hiển thị cho đẹp
+    char group_name[MAX_GROUP_NAME] = "Unknown Group";
+    db_get_group_name(group_id, group_name);
+
+    // 2. Thực hiện xóa
+    int result = db_dissolve_group(group_id, current_user_id);
+
+    if (result == 1)
+    {
+        // Success -> Báo cho Admin
+        send_response(sock, CMD_DISSOLVE_GROUP_RESP, reqHeader->request_id, STATUS_SUCCESS, NULL, 0);
+
+        // Broadcast cho các thành viên (kể cả admin cũng nhận để xóa UI)
+        GroupDissolvedNotifyPayload notify;
+        notify.group_id = group_id;
+        strncpy(notify.group_name, group_name, MAX_GROUP_NAME - 1);
+
+        for (int i = 0; i < count; i++)
+        {
+            int target_sock = get_socket_by_user_id(member_ids[i]);
+            if (target_sock != -1)
+            {
+                // Gửi thông báo giải tán
+                send_response(target_sock, CMD_NOTIFY_GROUP_DISSOLVED, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+            }
+        }
+        LOG_INFO("Group %d ('%s') dissolved by User %d. Notified %d users.", group_id, group_name, current_user_id, count);
+    }
+    else if (result == -1)
+    {
+        send_response(sock, CMD_DISSOLVE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_NOT_GROUP_ADMIN, NULL, 0);
+    }
+    else
+    {
+        send_response(sock, CMD_DISSOLVE_GROUP_RESP, reqHeader->request_id, STATUS_ERROR_DB, NULL, 0);
     }
 }
 
@@ -1231,6 +1281,9 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_REMOVE_MEMBER:
             handle_remove_member(sock, &header, payload, current_user_id);
+            break;
+        case CMD_DISSOLVE_GROUP:
+            handle_dissolve_group(sock, &header, payload, current_user_id);
             break;
 
         default:

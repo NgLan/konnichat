@@ -86,4 +86,21 @@ char* db_get_member_role(int32_t group_id, int32_t user_id);
  */
 int db_kick_member(int32_t group_id, int32_t target_id);
 
+/**
+ * @brief Giải tán nhóm (Xóa sạch Group, Member và Message).
+ * Chỉ Admin mới làm được.
+ * @return 
+ *   1: Thành công
+ *   0: Lỗi DB
+ *  -1: Không phải Admin hoặc nhóm không tồn tại
+ */
+int db_dissolve_group(int32_t group_id, int32_t requester_id);
+
+/**
+ * @brief Lấy tên nhóm theo ID.
+ * @param group_name Buffer để chứa kết quả (size tối thiểu MAX_GROUP_NAME).
+ * @return 1 nếu tìm thấy, 0 nếu không thấy.
+ */
+int db_get_group_name(int32_t group_id, char* group_name);
+
 #endif // GROUP_REPO_H
