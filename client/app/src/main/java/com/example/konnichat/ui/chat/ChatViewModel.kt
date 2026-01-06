@@ -9,6 +9,7 @@ import com.example.konnichat.data.local.entity.MessageEntity
 import com.example.konnichat.data.local.model.MessageWithSender
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 
@@ -41,12 +42,16 @@ class ChatViewModel(
         // 3. Load lịch sử từ server
         // Xác định cờ isGroup dựa trên chatType
         val isGroup = (chatType == "group")
-        chatRepository.loadHistory(friendId, isGroup, 0, 20)
 
         // 4. Nếu là Group, luôn set là "bạn bè" để hiện khung chat
         if (isGroup) {
             _isFriend.postValue(true)
+            viewModelScope.launch(Dispatchers.IO) {
+                chatRepository.fetchGroupMembers(friendId)
+            }
         }
+        chatRepository.loadHistory(friendId, isGroup, 0, 20)
+
 
         // 5. Trả về LiveData từ DB Local
         return chatRepository.getMessages(myId, friendId, chatType).asLiveData()

@@ -369,4 +369,13 @@ class ChatRepository(
     suspend fun getGroupInfo(groupId: Int): GroupEntity? {
         return groupDao.getGroupById(groupId)
     }
+
+    suspend fun fetchGroupMembers(groupId: Int) {
+        try {
+            // Lấy 100 thành viên đầu tiên (hoặc nhiều hơn tùy logic phân trang của bạn)
+            NativeClient.getGroupMembers(groupId, 0, 100)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }
