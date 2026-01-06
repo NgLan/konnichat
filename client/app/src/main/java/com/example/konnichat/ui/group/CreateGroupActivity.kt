@@ -10,8 +10,9 @@ import com.example.konnichat.App
 import com.example.konnichat.databinding.ActivityCreateGroupBinding
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.ui.base.BaseActivity
 
-class CreateGroupActivity : AppCompatActivity() {
+class CreateGroupActivity : BaseActivity() {
 
     private lateinit var binding: ActivityCreateGroupBinding
     private lateinit var viewModel: CreateGroupViewModel

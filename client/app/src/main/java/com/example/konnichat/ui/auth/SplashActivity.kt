@@ -12,7 +12,9 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import com.example.konnichat.core.state.Resource
 import com.example.konnichat.App
-class SplashActivity : AppCompatActivity() {
+import com.example.konnichat.ui.base.BaseActivity
+
+class SplashActivity : BaseActivity() {
 
     // Khởi tạo ViewModel
     private val viewModel: AuthViewModel by viewModels {

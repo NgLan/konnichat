@@ -43,7 +43,8 @@ class App : Application() {
     }
 
     val authRepository by lazy {
-        AuthRepository(db.userDao(), db)
+        val prefs = applicationContext.getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
+        AuthRepository(db.userDao(), db, prefs)
     }
 
     override fun onCreate() {
@@ -55,6 +56,8 @@ class App : Application() {
         NativeEventListenerImpl.context = applicationContext
         NativeEventListenerImpl.userRepository = userRepository
         NativeEventListenerImpl.chatRepository = chatRepository
+
+        NativeEventListenerImpl.authRepository = authRepository
 
         NotificationHelper.createNotificationChannel(this)
         // 3. Bắt đầu lắng nghe sự kiện từ Native (C)

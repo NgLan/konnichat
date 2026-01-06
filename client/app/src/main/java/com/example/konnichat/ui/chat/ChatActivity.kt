@@ -17,8 +17,9 @@ import com.example.konnichat.data.repository.UserRepository
 import android.view.Menu
 import android.view.MenuItem
 import com.example.konnichat.R
+import com.example.konnichat.ui.base.BaseActivity
 import com.example.konnichat.ui.group.AddMemberActivity
-class ChatActivity : AppCompatActivity() {
+class ChatActivity : BaseActivity() {
 
     private lateinit var binding: ActivityChatBinding
     private lateinit var viewModel: ChatViewModel

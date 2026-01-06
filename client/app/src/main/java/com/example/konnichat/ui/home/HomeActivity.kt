@@ -17,11 +17,12 @@ import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListenerImpl
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.ui.base.BaseActivity
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.example.konnichat.ui.chat.ChatActivity
 import com.example.konnichat.ui.group.CreateGroupActivity
 
-class HomeActivity : AppCompatActivity() {
+class HomeActivity : BaseActivity() {
 
     private val viewModel: HomeViewModel by viewModels {
         HomeViewModelFactory(
