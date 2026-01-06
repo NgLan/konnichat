@@ -13,8 +13,8 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface UserDao {
     // Thêm hàm này: Lấy danh sách bạn bè, sắp xếp người Online lên đầu
-    @Query("SELECT * FROM users WHERE server_id != :myId ORDER BY is_online DESC, name ASC")
-    fun getAllFriends(myId: Int): Flow<List<UserEntity>>
+    @Query("SELECT * FROM users WHERE server_id != :myId AND relation_type = 1 ORDER BY is_online DESC, name ASC")
+    abstract fun getAllFriends(myId: Int): Flow<List<UserEntity>>
 
     @Query("SELECT * FROM users WHERE server_id = :id LIMIT 1")
     suspend fun getUserById(id: Int): UserEntity?
@@ -69,5 +69,8 @@ interface UserDao {
 
     @Query("DELETE FROM users WHERE server_id = :id")
     suspend fun deleteUserByServerId(id: Int)
+
+    @Query("UPDATE users SET name = :name, email = :email, is_online = :isOnline, avatar_url = :avatarUrl WHERE server_id = :id")
+    abstract suspend fun updateUserInfoOnly(id: Int, name: String, email: String, isOnline: Boolean, avatarUrl: String?)
 
 }

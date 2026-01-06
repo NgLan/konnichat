@@ -315,29 +315,42 @@ class ChatRepository(
     suspend fun saveGroupMembersList(groupId: Int, members: Array<GroupMemberDto>) {
         if (members.isEmpty()) return
 
-        // 1. Update bảng Users trước (để đảm bảo khóa ngoại không bị lỗi)
-        // Lưu ý: Chỉ điền các trường Server trả về, các trường khác để null
-        val userEntities = members.map { dto ->
-            UserEntity(
+        // 1. Lưu User vào bảng Users (Cẩn thận để không ghi đè trạng thái bạn bè)
+        members.forEach { dto ->
+            // B1: Tạo entity mặc định là Stranger (relationType = 0)
+            val userEntity = UserEntity(
                 serverId = dto.userId,
                 email = dto.email,
                 name = dto.name,
                 isOnline = dto.isOnline,
                 status = "active",
-                // Các trường này API GetGroupMembers chưa trả về -> để null
                 age = null,
                 avatarUrl = null,
+                relationType = 0, // Mặc định là người lạ
                 createdAt = Date(),
                 updatedAt = Date()
             )
-        }
-        // Insert hoặc Update user
-        userDao.insertUsers(userEntities)
 
-        // 2. Update bảng GroupMembers
+            // B2: Thử Insert (Nếu chưa có thì thêm mới là Stranger)
+            val rowId = userDao.insertUserIgnore(userEntity)
+
+            // B3: Nếu Insert thất bại (rowId == -1) nghĩa là User đã có trong DB (có thể là Bạn hoặc Người lạ cũ)
+            // Ta chỉ cập nhật thông tin mới nhất (Tên, Online...) mà KHÔNG đổi relationType
+            if (rowId == -1L) {
+                userDao.updateUserInfoOnly(
+                    id = dto.userId,
+                    name = dto.name,
+                    email = dto.email,
+                    isOnline = dto.isOnline,
+                    avatarUrl = null
+                )
+            }
+        }
+
+        // 2. Update bảng GroupMembers (Giữ nguyên code cũ)
         val memberEntities = members.map { dto ->
             GroupMemberEntity(
-                serverId = 0, // Local mapping, không quan trọng ID này lắm
+                serverId = 0,
                 groupId = groupId,
                 memberId = dto.userId,
                 role = dto.role,

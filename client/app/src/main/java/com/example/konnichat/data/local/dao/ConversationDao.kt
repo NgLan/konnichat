@@ -11,14 +11,7 @@ interface ConversationDao {
     /**
      * Câu lệnh SQL phức tạp để lấy danh sách hội thoại hỗn hợp (User + Group).
      *
-     * PHẦN 1: Lấy User (Private Chat)
-     * - Join bảng users với tin nhắn mới nhất.
-     *
-     * PHẦN 2: Lấy Group (Group Chat)
-     * - Join bảng groups với tin nhắn mới nhất (receiver_id = group_id, chat_type = 'group').
-     *
-     * UNION ALL: Gộp 2 kết quả lại.
-     * ORDER BY: Sắp xếp theo thời gian tin nhắn mới nhất giảm dần.
+     * [SỬA ĐỔI]: Thêm điều kiện lọc ở PHẦN 1 để ẩn người lạ chưa có tin nhắn.
      */
     @Query("""
         SELECT * FROM (
@@ -40,15 +33,20 @@ interface ConversationDao {
                 LIMIT 1
             )
             WHERE u.server_id != :myUserId
+            AND (
+                u.relation_type = 1          -- Điều kiện 1: Là BẠN BÈ thì luôn hiện (kể cả chưa chat)
+                OR 
+                m.server_id IS NOT NULL      -- Điều kiện 2: Nếu là NGƯỜI LẠ (type=0) thì phải có tin nhắn mới hiện
+            )
 
             UNION ALL
 
-            -- PHẦN 2: GROUP
+            -- PHẦN 2: GROUP (Group Chat)
             SELECT 
                 g.server_id AS id,
                 g.name AS name,
                 g.avatar_url AS avatar,
-                0 AS isOnline, -- Group mặc định là 0 (coi như offline)
+                0 AS isOnline, 
                 'group' AS chatType,
                 gm.content AS lastMessage,
                 gm.created_at AS lastMessageTime
@@ -60,8 +58,6 @@ interface ConversationDao {
                 ORDER BY created_at DESC 
                 LIMIT 1
             )
-            -- Có thể thêm điều kiện kiểm tra User có trong nhóm không nếu bảng group_members đầy đủ
-            -- Hiện tại cứ lấy tất cả group có trong DB local
         )
         ORDER BY lastMessageTime DESC
     """)

@@ -43,6 +43,7 @@ class UserRepository(
                 isOnline = dto.isOnline,
                 age = null,
                 status = "active",
+                relationType = 1,
                 avatarUrl = null,
                 createdAt = Date(),
                 updatedAt = Date()
@@ -127,6 +128,7 @@ class UserRepository(
             age = null,
             status = "active",
             avatarUrl = null,
+            relationType = 1,
             createdAt = Date(),
             updatedAt = Date()
         )
