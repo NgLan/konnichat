@@ -1,58 +1,66 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:gravity="center_vertical"
     android:orientation="horizontal"
-    android:padding="12dp">
+    android:padding="12dp"
+    android:gravity="center_vertical"
+    android:background="?attr/selectableItemBackground">
 
     <ImageView
         android:id="@+id/imgAvatar"
-        android:layout_width="48dp"
-        android:layout_height="48dp"
-        android:src="@mipmap/ic_launcher_round" />
+        android:layout_width="50dp"
+        android:layout_height="50dp"
+        android:src="@mipmap/ic_launcher_round"
+        android:layout_marginEnd="16dp"/>
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginStart="12dp"
         android:layout_weight="1"
-        android:orientation="vertical">
+        android:orientation="vertical"
+        android:layout_marginStart="12dp">
 
         <TextView
             android:id="@+id/tvName"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:ellipsize="end"
-            android:maxLines="1"
-            android:textColor="@android:color/black"
-            android:textSize="16sp"
+            android:text="Tên thành viên"
             android:textStyle="bold"
-            tools:text="Nguyễn Văn A" />
+            android:textSize="16sp"
+            android:textColor="#000000"/>
 
-        <TextView
-            android:id="@+id/tvStatus"
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="12sp"
-            tools:text="Online" />
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/tvRole"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Trưởng nhóm"
+                android:textSize="12sp"
+                android:textColor="#FF5722"
+                android:layout_marginEnd="8dp"
+                android:visibility="gone"/>
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Online"
+                android:textSize="12sp"
+                android:textColor="#4CAF50"/>
+        </LinearLayout>
     </LinearLayout>
 
-    <TextView
-        android:id="@+id/tvRole"
+    <ImageButton
+        android:id="@+id/btnMenu"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:background="@drawable/et_background"
-        android:paddingStart="8dp"
-        android:paddingTop="2dp"
-        android:paddingEnd="8dp"
-        android:paddingBottom="2dp"
-        android:textColor="#F44336"
-        android:textSize="12sp"
-        android:textStyle="bold"
-        android:visibility="gone"
-        tools:text="Trưởng nhóm"
-        tools:visibility="visible" />
-
+        android:src="@android:drawable/ic_menu_more"
+        android:background="?attr/selectableItemBackgroundBorderless"
+        android:padding="8dp"
+        android:visibility="gone" />
 </LinearLayout>

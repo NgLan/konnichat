@@ -62,4 +62,8 @@ interface MessageDao {
         ORDER BY m.created_at ASC
     """)
     fun getGroupMessagesWithSender(groupId: Int): Flow<List<MessageWithSender>>
+
+    // [THÊM] Xóa toàn bộ tin nhắn của một nhóm (Dùng khi rời nhóm/bị kick)
+    @Query("DELETE FROM messages WHERE receiver_id = :groupId AND chat_type = 'group'")
+    suspend fun deleteGroupMessages(groupId: Int)
 }

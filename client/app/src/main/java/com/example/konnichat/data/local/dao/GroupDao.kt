@@ -52,4 +52,7 @@ interface GroupDao {
             u.name ASC
     """)
     fun getMembersWithUserInfo(groupId: Int): Flow<List<GroupMemberWithUser>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = :groupId AND member_id = :userId)")
+    fun isUserInGroupFlow(groupId: Int, userId: Int): Flow<Boolean>
 }

@@ -1,6 +1,9 @@
 package com.example.konnichat.ui.group
 
+import android.content.Context
 import android.os.Bundle
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -13,11 +16,15 @@ class GroupInfoActivity : AppCompatActivity() {
     private lateinit var viewModel: GroupInfoViewModel
     private lateinit var adapter: GroupMemberAdapter
     private var groupId: Int = -1
+    private var myUserId: Int = -1
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         binding = ActivityGroupInfoBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        val prefs = getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
+        myUserId = prefs.getInt("USER_ID", -1)
 
         groupId = intent.getIntExtra("GROUP_ID", -1)
         val groupName = intent.getStringExtra("GROUP_NAME") ?: "Thông tin nhóm"
@@ -34,19 +41,39 @@ class GroupInfoActivity : AppCompatActivity() {
 
     private fun setupViewModel() {
         val app = application as App
-        val factory = GroupInfoViewModelFactory(app.chatRepository, groupId)
+        val factory = GroupInfoViewModelFactory(app.chatRepository, groupId, myUserId)
         viewModel = ViewModelProvider(this, factory)[GroupInfoViewModel::class.java]
 
         viewModel.members.observe(this) { list ->
             adapter.submitList(list)
+        }
+
+        viewModel.isAdmin.observe(this) { isAdmin ->
+            adapter.setAdminStatus(isAdmin)
         }
     }
 
     private fun setupUI() {
         binding.btnBack.setOnClickListener { finish() }
 
-        adapter = GroupMemberAdapter()
+        adapter = GroupMemberAdapter(myUserId) { targetId ->
+            // Khi bấm nút Kick -> Hiện Dialog xác nhận
+            showKickConfirmation(targetId)
+        }
+
         binding.rvMembers.layoutManager = LinearLayoutManager(this)
         binding.rvMembers.adapter = adapter
+    }
+
+    private fun showKickConfirmation(targetId: Int) {
+        AlertDialog.Builder(this)
+            .setTitle("Mời ra khỏi nhóm")
+            .setMessage("Bạn có chắc chắn muốn mời thành viên này ra khỏi nhóm không?")
+            .setPositiveButton("Đồng ý") { _, _ ->
+                viewModel.kickMember(targetId)
+                Toast.makeText(this, "Đã gửi lệnh mời ra khỏi nhóm", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
     }
 }

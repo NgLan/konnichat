@@ -12,6 +12,7 @@ import com.example.konnichat.data.repository.UserRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 
 class ChatViewModel(
     private val chatRepository: ChatRepository,
@@ -35,9 +36,30 @@ class ChatViewModel(
         // 1. [QUAN TRỌNG] Gán loại chat ngay lập tức
         this.currentChatType = chatType
 
+        if (chatType == "group") {
+            // 1. Nếu là Group: Lắng nghe realtime từ bảng group_members
+            viewModelScope.launch {
+                chatRepository.checkGroupMembership(groupId = friendId, userId = myId)
+                    .collectLatest { isMember ->
+                        // Nếu còn là thành viên -> isMember = true -> Hiện chat
+                        // Nếu bị kick (xóa khỏi DB) -> isMember = false -> Ẩn chat
+                        _isFriend.postValue(isMember)
+                    }
+            }
+
+            // 2. Fetch thành viên mới nhất
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                chatRepository.fetchGroupMembers(friendId)
+            }
+        } else {
+            // 3. Nếu là Private: Logic cũ
+            checkFriendStatus(friendId)
+            checkMuteStatus(friendId)
+        }
+
         // 2. Kiểm tra quan hệ bạn bè (để ẩn/hiện nút Kết bạn)
-        checkFriendStatus(friendId)
-        checkMuteStatus(friendId)
+//        checkFriendStatus(friendId)
+//        checkMuteStatus(friendId)
 
         // 3. Load lịch sử từ server
         // Xác định cờ isGroup dựa trên chatType
@@ -101,7 +123,7 @@ class ChatViewModel(
     // Kiểm tra xem targetId có trong bảng Friend của DB không
     private fun checkFriendStatus(targetId: Int) {
         if (currentChatType == "group") {
-            _isFriend.postValue(true)
+//            _isFriend.postValue(true)
             return
         }
 

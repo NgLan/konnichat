@@ -378,4 +378,63 @@ class ChatRepository(
             e.printStackTrace()
         }
     }
+
+    suspend fun kickMember(groupId: Int, targetId: Int) {
+        NativeClient.kickMember(groupId, targetId)
+    }
+
+    // [THÊM MỚI] Xử lý sự kiện Member Removed từ Server
+// [SỬA ĐỔI] Xử lý sự kiện Member Removed từ Server
+    @Transaction
+    suspend fun handleMemberRemoved(
+        groupId: Int,
+        memberId: Int,
+        memberName: String,
+        adminId: Int,
+        adminName: String,
+        myUserId: Int // [THÊM THAM SỐ] Cần biết ID của mình để so sánh
+    ) {
+        if (memberId == myUserId) {
+            // --- TRƯỜNG HỢP 1: CHÍNH TÔI BỊ KICK ---
+            Log.d("ChatRepo", "Tôi đã bị kick khỏi nhóm $groupId. Đang xóa dữ liệu...")
+
+            // 1. Xóa thông tin nhóm
+            groupDao.deleteGroup(groupId) // Hàm này xóa trong bảng `groups`
+
+            // 2. Xóa thành viên (Logic deleteGroup có thể chưa cascade hết nếu thiết kế DB lỏng)
+            // Tốt nhất xóa tay cho sạch bảng group_members liên quan đến nhóm này
+            // (Tuy nhiên groupDao.deleteGroup chỉ xóa dòng trong groups,
+            // các bảng khác nếu có ForeignKey CASCADE thì tự bay, nếu không thì phải xóa tay).
+            // Giả sử bảng group_members có FK nối với groups -> CASCADE -> Tự xóa.
+
+            // 3. Xóa tin nhắn của nhóm này
+            messageDao.deleteGroupMessages(groupId)
+
+            Log.d("ChatRepo", "Đã xóa sạch dữ liệu nhóm $groupId khỏi máy.")
+
+        } else {
+            // --- TRƯỜNG HỢP 2: NGƯỜI KHÁC BỊ KICK ---
+
+            // 1. Xóa thành viên đó khỏi DB Local
+            groupDao.deleteMember(groupId, memberId)
+
+            // 2. Tạo tin nhắn hệ thống báo cho mình biết
+            val content = "đã mời $memberName ra khỏi nhóm"
+            val systemMsg = MessageEntity(
+                serverId = -System.currentTimeMillis().toInt(),
+                senderId = adminId,
+                receiverId = groupId,
+                chatType = "group",
+                msgType = 9, // TYPE_SYSTEM
+                content = content,
+                status = "sent",
+                createdAt = Date()
+            )
+            messageDao.insertMessage(systemMsg)
+            Log.d("ChatRepo", "Đã cập nhật DB: $memberName bị kick khỏi nhóm $groupId")
+        }
+    }
+    fun checkGroupMembership(groupId: Int, userId: Int): Flow<Boolean> {
+        return groupDao.isUserInGroupFlow(groupId, userId)
+    }
 }

@@ -135,21 +135,29 @@ class ChatActivity : AppCompatActivity() {
         }
 
         // Quan sát trạng thái bạn bè để ẩn/hiện khung chat
-        viewModel.isFriend.observe(this) { isFriend ->
-            if (isFriend) {
-                // Là bạn bè: Hiện khung chat, ẩn khung block
+        viewModel.isFriend.observe(this) { canChat ->
+            if (canChat) {
+                // Được phép chat
                 binding.layoutInput.visibility = View.VISIBLE
                 binding.layoutBlock.visibility = View.GONE
             } else {
-                // Người lạ: Ẩn khung chat, hiện khung block/kết bạn
+                // Không được phép chat (Chưa kết bạn HOẶC Bị kick khỏi nhóm)
                 binding.layoutInput.visibility = View.GONE
                 binding.layoutBlock.visibility = View.VISIBLE
 
-                // Reset lại trạng thái nút kết bạn nếu cần thiết
-                binding.tvBlockMessage.text = "Hai bạn chưa phải bạn bè. Kết bạn để nhắn tin."
+                if (chatType == "group") {
+                    // [THÊM] Giao diện khi bị kick khỏi nhóm
+                    binding.tvBlockMessage.text = "Bạn không còn là thành viên của nhóm này."
+                    binding.btnAddFriend.visibility = View.GONE // Ẩn nút kết bạn đi
+                } else {
+                    // Giao diện khi chưa kết bạn (Private)
+                    binding.tvBlockMessage.text = "Hai bạn chưa phải bạn bè. Kết bạn để nhắn tin."
+                    binding.btnAddFriend.visibility = View.VISIBLE
+                    binding.btnAddFriend.text = "Kết bạn"
+                    binding.btnAddFriend.isEnabled = true
+                }
             }
         }
-
         // Quan sát kết quả gửi lời mời kết bạn (Optional)
         viewModel.friendReqStatus.observe(this) { success ->
             if (success) {

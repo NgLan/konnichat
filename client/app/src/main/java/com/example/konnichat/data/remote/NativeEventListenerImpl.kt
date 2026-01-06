@@ -287,7 +287,20 @@ object NativeEventListenerImpl : NativeEventListener {
         adminId: Int,
         adminName: String
     ) {
-        TODO("Not yet implemented")
+        Log.d(TAG, "🔨 Member Removed: $memberName by Admin $adminName in Group $groupId")
+
+        chatRepository?.let { repo ->
+            // [THÊM] Lấy My User ID từ SharedPreferences (thông qua Context)
+            val prefs = context?.getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
+            val myUserId = prefs?.getInt("USER_ID", -1) ?: -1
+
+            if (myUserId != -1) {
+                CoroutineScope(Dispatchers.IO).launch {
+                    // Truyền thêm myUserId vào
+                    repo.handleMemberRemoved(groupId, memberId, memberName, adminId, adminName, myUserId)
+                }
+            }
+        }
     }
 
     override fun onGroupDissolved(groupId: Int) {
