@@ -52,7 +52,7 @@ typedef struct {
 // --- 2. CÁC HÀM QUẢN LÝ ---
 
 // Khởi tạo kết nối Socket
-int client_init(const char *ip, int port);
+int client_init(const char *host, int port);
 
 // Đóng kết nối
 void client_close();

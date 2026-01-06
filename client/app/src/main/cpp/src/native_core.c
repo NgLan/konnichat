@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <syslog.h>
 #include <ctype.h>
+#include <netdb.h>
 
 static int g_socket = -1;
 static int g_req_id = 0;
@@ -148,7 +149,8 @@ static void trim_string(char *str)
 }
 
 // --- INIT & CONNECT ---
-int client_init(const char *ip, int port)
+// --- INIT & CONNECT ---
+int client_init(const char *host, int port) // Đổi tên tham số 'ip' thành 'host' cho đúng nghĩa
 {
     if (g_socket != -1)
         return 0;
@@ -158,26 +160,47 @@ int client_init(const char *ip, int port)
         return -1;
 
     struct sockaddr_in serv_addr;
+    struct hostent *server;
+
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
 
-    if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0)
+    // BƯỚC 1: Thử coi đây là địa chỉ IP số (VD: 192.168.1.5)
+    if (inet_pton(AF_INET, host, &serv_addr.sin_addr) > 0)
     {
-        close(g_socket);
-        g_socket = -1;
-        return -2;
+        // Là IP hợp lệ, không cần làm gì thêm
+    }
+    else
+    {
+        // BƯỚC 2: Nếu không phải IP, thử phân giải tên miền (DNS) cho Ngrok
+        LOGI("Input is not IP, trying DNS resolve for: %s", host);
+        server = gethostbyname(host);
+
+        if (server == NULL) {
+            LOGE("DNS Resolution Failed! Host not found: %s", host);
+            close(g_socket);
+            g_socket = -1;
+            return -2; // Lỗi: Không tìm thấy host
+        }
+
+        // Copy địa chỉ IP tìm được từ DNS vào struct
+        memcpy((char *)&serv_addr.sin_addr.s_addr,
+               (char *)server->h_addr,
+               server->h_length);
     }
 
+    // BƯỚC 3: Kết nối
     if (connect(g_socket, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
+        LOGE("Connect failed to %s:%d", host, port);
         close(g_socket);
         g_socket = -1;
         return -3;
     }
 
     g_is_running = 0;
-    LOGI("Connected to Server %s:%d", ip, port);
+    LOGI("Connected to Server %s:%d", host, port);
     return 0;
 }
 
