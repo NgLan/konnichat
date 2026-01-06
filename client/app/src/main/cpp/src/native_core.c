@@ -150,57 +150,80 @@ static void trim_string(char *str)
 
 // --- INIT & CONNECT ---
 // --- INIT & CONNECT ---
-int client_init(const char *host, int port) // Đổi tên tham số 'ip' thành 'host' cho đúng nghĩa
+// File: native_core.c
+
+// --- HELPER MỚI THÊM ---
+// Hàm để thay đổi timeout của socket linh hoạt
+static void set_socket_timeout(int sock, int seconds) {
+    struct timeval timeout;
+    timeout.tv_sec = seconds;
+    timeout.tv_usec = 0;
+    setsockopt(sock, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+    setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
+}
+
+int client_init(const char *host, int port)
 {
-    if (g_socket != -1)
-        return 0;
+    // 1. DỌN DẸP TRIỆT ĐỂ TRẠNG THÁI CŨ
+    // Tắt cờ chạy để các thread cũ (nếu còn) tự thoát
+    g_is_running = 0;
+    if (g_socket != -1) {
+        shutdown(g_socket, SHUT_RDWR);
+        close(g_socket);
+        g_socket = -1;
+    }
 
-    g_socket = socket(AF_INET, SOCK_STREAM, 0);
-    if (g_socket < 0)
+    // 2. PHẢI ĐỢI luồng cũ thoát hẳn trước khi cho phép kết nối mới
+    if (g_read_thread != 0) {
+        pthread_join(g_read_thread, NULL);
+        g_read_thread = 0;
+    }
+    if (g_hb_thread != 0) {
+        pthread_join(g_hb_thread, NULL);
+        g_hb_thread = 0;
+    }
+
+    // Reset request ID về 0 cho phiên kết nối mới
+    g_req_id = 0;
+
+    // 2. TẠO SOCKET MỚI (Dùng biến tạm)
+    int temp_sock = socket(AF_INET, SOCK_STREAM, 0);
+    if (temp_sock < 0) {
+        LOGE("Could not create socket");
         return -1;
+    }
 
+    // 3. THIẾT LẬP ĐỊA CHỈ
     struct sockaddr_in serv_addr;
-    struct hostent *server;
-
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
 
-    // BƯỚC 1: Thử coi đây là địa chỉ IP số (VD: 192.168.1.5)
-    if (inet_pton(AF_INET, host, &serv_addr.sin_addr) > 0)
-    {
-        // Là IP hợp lệ, không cần làm gì thêm
-    }
-    else
-    {
-        // BƯỚC 2: Nếu không phải IP, thử phân giải tên miền (DNS) cho Ngrok
+    if (inet_pton(AF_INET, host, &serv_addr.sin_addr) <= 0) {
         LOGI("Input is not IP, trying DNS resolve for: %s", host);
-        server = gethostbyname(host);
-
+        struct hostent *server = gethostbyname(host);
         if (server == NULL) {
-            LOGE("DNS Resolution Failed! Host not found: %s", host);
-            close(g_socket);
-            g_socket = -1;
-            return -2; // Lỗi: Không tìm thấy host
+            LOGE("DNS Resolution Failed: %s", host);
+            close(temp_sock);
+            return -2;
         }
-
-        // Copy địa chỉ IP tìm được từ DNS vào struct
-        memcpy((char *)&serv_addr.sin_addr.s_addr,
-               (char *)server->h_addr,
-               server->h_length);
+        memcpy((char *)&serv_addr.sin_addr.s_addr, (char *)server->h_addr, server->h_length);
     }
 
-    // BƯỚC 3: Kết nối
-    if (connect(g_socket, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
-    {
+    // 4. THIẾT LẬP TIMEOUT CHO SOCKET (Tránh bị treo khi autoLogin)
+    set_socket_timeout(temp_sock, 5);
+
+    // 5. KẾT NỐI
+    if (connect(temp_sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
         LOGE("Connect failed to %s:%d", host, port);
-        close(g_socket);
-        g_socket = -1;
+        close(temp_sock);
         return -3;
     }
 
-    g_is_running = 1;
-    LOGI("Connected to Server %s:%d", host, port);
+    // 6. CHỈ GÁN VÀO BIẾN TOÀN CỤC KHI THÀNH CÔNG RỰC RỠ
+    g_socket = temp_sock;
+
+    LOGI("✅ Connected successfully to %s:%d (Socket: %d)", host, port, g_socket);
     return 0;
 }
 
@@ -1007,6 +1030,11 @@ static void *read_thread_func(void *arg)
     PacketHeader header;
     LOGI("=== READ THREAD STARTED ===");
 
+    if (g_socket != -1) {
+        set_socket_timeout(g_socket, 0);
+        LOGI("Native Socket timeout cleared for long-polling.");
+    }
+
     while (g_is_running)
     {
         if (g_socket == -1)
@@ -1059,25 +1087,31 @@ static void *heartbeat_thread_func(void *arg) {
     return NULL;
 }
 
+// File: native_core.c
+
 void start_reader_thread(NativeCallbacks callbacks)
 {
     g_callbacks = callbacks;
 
-    if (g_read_thread != 0) {
-        LOGW("Reader thread already running. Callbacks updated.");
+    // KIỂM TRA: Nếu luồng đang chạy thì không tạo thêm bất cứ cái gì nữa
+    if (g_is_running && (g_read_thread != 0 || g_hb_thread != 0)) {
+        LOGW("Threads are already running. Skipping creation.");
         return;
     }
 
     g_is_running = 1;
-    if (pthread_create(&g_read_thread, NULL, read_thread_func, NULL) != 0)
-    {
+
+    // Tạo luồng đọc
+    if (pthread_create(&g_read_thread, NULL, read_thread_func, NULL) != 0) {
         LOGE("Failed to create reader thread");
-        g_read_thread = 0;
-        LOGI("=== READ THREAD EXITED ===");
+        g_is_running = 0;
         return;
     }
 
+    // Tạo luồng Heartbeat
     if (pthread_create(&g_hb_thread, NULL, heartbeat_thread_func, NULL) != 0) {
         LOGE("Failed to create heartbeat thread");
     }
+
+    LOGI("✅ All native threads started successfully.");
 }

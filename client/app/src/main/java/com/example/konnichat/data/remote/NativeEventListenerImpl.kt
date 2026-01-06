@@ -42,6 +42,7 @@ object NativeEventListenerImpl : NativeEventListener {
 
     // Biến tạm để check xem user có đang chat không (Bạn cần cập nhật biến này từ Activity)
     var currentChatTargetId: Int = -1
+    private var isReconnecting = false
 
     private const val TAG = "KONNI_EVENT"
 
@@ -52,57 +53,65 @@ object NativeEventListenerImpl : NativeEventListener {
 
     // [SỬA] Hàm khởi động vòng lặp kết nối lại
     private fun startReconnectLoop() {
-        if (isUserLoggedOut) return
+        if (isUserLoggedOut || isReconnecting) return
+        isReconnecting = true
 
         CoroutineScope(Dispatchers.IO).launch {
-            Log.d(TAG, "🔄 Bắt đầu quy trình Reconnect...")
+            try {
+                Log.d(TAG, "🔄 Bắt đầu quy trình Reconnect...")
 
-            // Chuyển trạng thái -> UI hiện "Đang kết nối lại..."
-            connectionState.postValue(ConnectionState.CONNECTING)
 
-            var retryCount = 0
-            while (true) {
-                if (isUserLoggedOut) break
+                // Chuyển trạng thái -> UI hiện "Đang kết nối lại..."
+                connectionState.postValue(ConnectionState.CONNECTING)
 
-                // 1. Thử Connect Socket
-                Log.d(TAG, "🔄 Đang thử kết nối lại (Lần ${retryCount + 1})...")
-                val res = NativeClient.connect(Constants.SERVER_HOST, Constants.SERVER_PORT)
 
-                if (res == 0) { // Kết nối socket thành công
-                    Log.d(TAG, "✅ Socket đã kết nối lại! Chờ ổn định...")
+                var retryCount = 0
+                while (true) {
+                    if (isUserLoggedOut) break
 
-                    // [THÊM QUAN TRỌNG] Delay để socket kịp sẵn sàng ghi dữ liệu
-                    delay(1000)
+                    // 1. Thử Connect Socket
+                    Log.d(TAG, "🔄 Đang thử kết nối lại (Lần ${retryCount + 1})...")
+                    val res = NativeClient.connect(Constants.SERVER_HOST, Constants.SERVER_PORT)
 
-                    Log.d(TAG, "⏳ Đang Auto Login...")
+                    if (res == 0) { // Kết nối socket thành công
+                        Log.d(TAG, "✅ Socket đã kết nối lại! Chờ ổn định...")
 
-                    // 2. Thử Auto Login
-                    // Lưu ý: Lúc này chưa start listening thread nên loginUser (đồng bộ) sẽ hoạt động tốt
-                    val loginSuccess = authRepository?.autoLogin() == true
+                        // [THÊM QUAN TRỌNG] Delay để socket kịp sẵn sàng ghi dữ liệu
+                        delay(1000)
 
-                    if (loginSuccess) {
-                        Log.d(TAG, "✅ Auto Login thành công! Khôi phục trạng thái.")
+                        Log.d(TAG, "⏳ Đang Auto Login...")
 
-                        // [THÊM QUAN TRỌNG] Khởi động lại luồng đọc ở Native (vì luồng cũ đã chết khi disconnect)
-                        // Nếu không gọi dòng này, bạn sẽ login được nhưng KHÔNG NHẬN ĐƯỢC tin nhắn mới
-                        NativeClient.startListening(this@NativeEventListenerImpl)
+                        // 2. Thử Auto Login
+                        // Lưu ý: Lúc này chưa start listening thread nên loginUser (đồng bộ) sẽ hoạt động tốt
+                        val loginSuccess = authRepository?.autoLogin() == true
 
-                        connectionState.postValue(ConnectionState.CONNECTED)
+                        if (loginSuccess) {
+                            Log.d(TAG, "✅ Auto Login thành công! Khôi phục trạng thái.")
 
-                        // 3. Đồng bộ dữ liệu bị lỡ
-                        NativeClient.fetchOfflineMessages()
-                        break // Thoát vòng lặp
-                    } else {
-                        Log.e(TAG, "❌ Auto Login thất bại. Có thể mật khẩu đổi hoặc lỗi server.")
-                        // Nếu login fail thì có thể do session lỗi -> Thử lại sau
+                            // [THÊM QUAN TRỌNG] Khởi động lại luồng đọc ở Native (vì luồng cũ đã chết khi disconnect)
+                            // Nếu không gọi dòng này, bạn sẽ login được nhưng KHÔNG NHẬN ĐƯỢC tin nhắn mới
+                            NativeClient.startListening(this@NativeEventListenerImpl)
+
+                            connectionState.postValue(ConnectionState.CONNECTED)
+
+                            // 3. Đồng bộ dữ liệu bị lỡ
+                            NativeClient.fetchOfflineMessages()
+                            break // Thoát vòng lặp
+                        } else {
+                            Log.e(TAG, "❌ Auto Login thất bại. Có thể mật khẩu đổi hoặc lỗi server.")
+                            // Nếu login fail thì có thể do session lỗi -> Thử lại sau
+                        }
                     }
-                }
 
-                // Nếu thất bại: Đợi tăng dần (Exponential Backoff)
-                val delayTime = minOf((retryCount + 1) * 2000L, 10000L)
-                delay(delayTime)
-                retryCount++
+                    // Nếu thất bại: Đợi tăng dần (Exponential Backoff)
+                    val delayTime = minOf((retryCount + 1) * 2000L, 10000L)
+                    delay(delayTime)
+                    retryCount++
+                }
+            } finally {
+                isReconnecting = false
             }
+
         }
     }
     // --- 1. XỬ LÝ KẾT BẠN (TRỌNG TÂM) ---
