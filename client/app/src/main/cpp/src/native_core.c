@@ -199,7 +199,7 @@ int client_init(const char *host, int port) // Đổi tên tham số 'ip' thành
         return -3;
     }
 
-    g_is_running = 0;
+    g_is_running = 1;
     LOGI("Connected to Server %s:%d", host, port);
     return 0;
 }

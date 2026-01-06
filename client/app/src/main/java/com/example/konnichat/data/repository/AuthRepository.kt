@@ -29,7 +29,6 @@ class AuthRepository (
             val result = NativeClient.connect(Constants.SERVER_HOST, Constants.SERVER_PORT)
             if (result == 0) {
                 NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
-
                 Resource.Success(true)
             } else {
                 Resource.Error("Kết nối thất bại. Mã lỗi: $result")
@@ -45,6 +44,7 @@ class AuthRepository (
             // NativeClient.loginUser là hàm blocking, nó sẽ chờ server trả lời hoặc ném Exception
             val user = NativeClient.loginUser(email, pass)
             if (user != null) {
+                NativeClient.startListening(NativeEventListenerImpl)
                 NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
                 NativeEventListenerImpl.isUserLoggedOut = false // Reset cờ logout
                 prefs.edit()
