@@ -30,7 +30,7 @@ class App : Application() {
     val userRepository by lazy {
         // Tên file "konnichat_prefs" phải KHỚP với tên file bên LoginActivity
         val prefs = applicationContext.getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
-        UserRepository(db.userDao(), prefs)
+        UserRepository(db.userDao(),db.messageDao(), prefs)
     }
 
     val chatRepository by lazy {

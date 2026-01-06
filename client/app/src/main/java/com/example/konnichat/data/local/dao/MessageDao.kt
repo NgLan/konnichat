@@ -66,4 +66,7 @@ interface MessageDao {
     // [THÊM] Xóa toàn bộ tin nhắn của một nhóm (Dùng khi rời nhóm/bị kick)
     @Query("DELETE FROM messages WHERE receiver_id = :groupId AND chat_type = 'group'")
     suspend fun deleteGroupMessages(groupId: Int)
+
+    @Query("DELETE FROM messages WHERE (sender_id = :userId OR receiver_id = :userId) AND chat_type = 'private'")
+    suspend fun deletePrivateChat(userId: Int)
 }

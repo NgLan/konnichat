@@ -67,6 +67,12 @@ interface UserDao {
     @Query("SELECT EXISTS(SELECT 1 FROM users WHERE server_id = :id)")
     suspend fun isFriend(id: Int): Boolean
 
+    @Query("UPDATE users SET relation_type = 0 WHERE server_id = :id")
+    abstract suspend fun unfriendLocalUser(id: Int)
+
+    @Query("UPDATE users SET relation_type = 1 WHERE server_id = :id")
+    abstract suspend fun makeFriendLocalUser(id: Int)
+
     @Query("DELETE FROM users WHERE server_id = :id")
     suspend fun deleteUserByServerId(id: Int)
 

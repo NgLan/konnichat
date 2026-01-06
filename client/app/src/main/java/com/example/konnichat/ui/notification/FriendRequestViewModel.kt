@@ -19,16 +19,23 @@ class FriendRequestViewModel(private val userRepository: UserRepository) : ViewM
         }
     }
 
-    fun respond(requestId: Int, accept: Boolean) {
+    fun respond(requestId: Int, senderId: Int, accept: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
-            // 1. OPTIMISTIC UPDATE: Xóa ngay khỏi UI để người dùng thấy phản hồi tức thì
-            userRepository.removePendingRequest(requestId)
-
-            // 2. Gửi lệnh lên Server (chạy ngầm)
-            NativeClient.respondFriendRequest(requestId, accept)
-
-            // Không cần gọi loadRequests() nữa vì ta đã xóa tay ở bước 1 rồi.
-            // Nếu muốn chắc chắn đồng bộ, có thể gọi lại sau 1 khoảng delay, nhưng không cần thiết.
+            try {
+                if (accept) {
+                    // 1. Nếu ĐỒNG Ý: Gọi hàm repository (vừa tạo ở bước trước)
+                    // Hàm này sẽ: Gọi Server + Update User đó thành "Bạn bè" (relation_type=1) + Xóa request
+                    userRepository.acceptFriendRequest(requestId, senderId)
+                } else {
+                    // 2. Nếu TỪ CHỐI:
+                    // Xóa UI
+                    userRepository.removePendingRequest(requestId)
+                    // Gọi Server báo từ chối
+                    NativeClient.respondFriendRequest(requestId, false)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
         }
     }
 }

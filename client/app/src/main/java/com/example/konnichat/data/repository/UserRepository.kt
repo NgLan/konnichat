@@ -9,6 +9,7 @@ import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.remote.dto.UserSearchDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.ui.search.UserSearchUiModel
+import com.example.konnichat.data.local.dao.MessageDao
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,8 +18,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.Flow
 import java.util.Date
 
+//private val UserRepository.messageDao: Any
+
 class UserRepository(
     private val userDao: UserDao,
+    private val messageDao: MessageDao,
     private val prefs: SharedPreferences
 ) {
 
@@ -153,12 +157,33 @@ class UserRepository(
         }
     }
 
-    // 1. Xóa bạn khỏi Database (khi bị Unfriend)
-    suspend fun deleteFriend(friendId: Int) {
-        // Giả sử UserDao có hàm deleteFriendById, nếu chưa có bạn cần thêm vào UserDao
-        // Hoặc dùng query: @Query("DELETE FROM users WHERE server_id = :id")
-        userDao.deleteUserByServerId(friendId)
+    suspend fun unfriendUser(friendId: Int) {
+        // 1. Gọi Server
+        NativeClient.unfriendUser(friendId)
+
+        // 2. [QUAN TRỌNG] Xóa tin nhắn riêng tư trước (để làm sạch lịch sử chat)
+        messageDao.deletePrivateChat(friendId)
+
+        // 3. Update trạng thái User về "Người lạ" (Thay vì Delete gây crash)
+        userDao.unfriendLocalUser(friendId)
+
+        // 4. Update UI Search
+        updateSearchStatusToNone(friendId)
     }
+
+    // Hàm xử lý khi bị người khác Unfriend (từ Socket)
+    suspend fun deleteFriend(friendId: Int) {
+        // Xóa tin nhắn
+        messageDao.deletePrivateChat(friendId)
+        // Chuyển về người lạ
+        userDao.unfriendLocalUser(friendId)
+        updateSearchStatusToNone(friendId)
+    }
+
+    // 1. Xóa bạn khỏi Database (khi bị Unfriend)
+//    suspend fun deleteFriend(friendId: Int) {
+//        userDao.deleteUserByServerId(friendId)
+//    }
 
     // 2. Reset trạng thái tìm kiếm về STATUS_NONE (khi bị Từ chối hoặc Unfriend)
     fun updateSearchStatusToNone(userId: Int) {
@@ -193,5 +218,18 @@ class UserRepository(
     // [THÊM MỚI] Set trạng thái mute
     fun setUserMute(userId: Int, isMuted: Boolean) {
         prefs.edit().putBoolean("MUTE_NOTIFY_$userId", isMuted).apply()
+    }
+
+    suspend fun acceptFriendRequest(requestId: Int, senderId: Int) {
+        // 1. Gọi Server báo là đã đồng ý
+        NativeClient.respondFriendRequest(requestId, true)
+
+        // 2. [QUAN TRỌNG] Cập nhật DB Local ngay lập tức
+        // Chuyển người gửi (A) từ trạng thái '0' (Stranger) sang '1' (Friend)
+        // Việc này sẽ làm User A xuất hiện ngay lập tức trong danh sách bạn bè của B
+        userDao.makeFriendLocalUser(senderId)
+
+        // 3. Xóa lời mời khỏi danh sách chờ (để update UI tab Notification)
+        removePendingRequest(requestId)
     }
 }
