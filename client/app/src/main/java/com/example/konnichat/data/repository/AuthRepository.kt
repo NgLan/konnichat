@@ -22,7 +22,7 @@ class AuthRepository (
     suspend fun connectToServer(): Resource<Boolean> = withContext(Dispatchers.IO) {
         try {
             // Gọi hàm C: connect. Hàm này trả về 0 nếu thành công.
-            val result = NativeClient.connect(Constants.SERVER_IP, Constants.SERVER_PORT)
+            val result = NativeClient.connect(Constants.SERVER_HOST, Constants.SERVER_PORT)
             if (result == 0) {
                 Resource.Success(true)
             } else {

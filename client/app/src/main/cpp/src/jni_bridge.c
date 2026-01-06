@@ -56,8 +56,10 @@ static jclass g_UnknownException;
 // Helper: Lấy JNIEnv cho thread hiện tại
 static JNIEnv *get_jni_env() {
     JNIEnv *env = NULL;
-    if (g_jvm == NULL)
+    if (g_jvm == NULL) {
+        LOGE("get_jni_env: Global JVM is NULL");
         return NULL;
+    }
 
     // Kiểm tra xem thread này đã attach chưa
     int stat = (*g_jvm)->GetEnv(g_jvm, (void **) &env, JNI_VERSION_1_6);
@@ -67,6 +69,11 @@ static JNIEnv *get_jni_env() {
             LOGE("Failed to attach thread to JVM");
             return NULL;
         }
+    } else if (stat == JNI_OK) {
+        // Thread đã được attach từ trước -> Tốt
+    } else {
+        LOGE("GetEnv failed with error: %d", stat);
+        return NULL;
     }
     return env;
 }
@@ -286,12 +293,24 @@ void jni_on_group_created(int group_id, const char* name) {
 }
 
 void jni_on_disconnect(const char *reason) {
+    LOGE("jni_on_disconnect called with reason: %s", reason); // <--- LOG 1
+
     JNIEnv *env = get_jni_env();
-    if (!env || !g_listener)
+    if (!env) {
+        LOGE("jni_on_disconnect: Could not get JNIEnv!"); // <--- Check lỗi này
         return;
+    }
+
+    if (!g_listener) {
+        LOGE("jni_on_disconnect: Listener is NULL!"); // <--- Check lỗi này
+        return;
+    }
+
     jstring jReason = (*env)->NewStringUTF(env, reason);
     (*env)->CallVoidMethod(env, g_listener, m_onDisconnect, jReason);
     (*env)->DeleteLocalRef(env, jReason);
+
+    LOGE("jni_on_disconnect: Callback invoked successfully");
 }
 
 void jni_on_pending_list(int count, PendingReqInfo *list) {
@@ -822,4 +841,9 @@ Java_com_example_konnichat_data_remote_NativeClient_dissolveGroup(JNIEnv *env, j
 JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_getGroupMembers(JNIEnv *env, jobject thiz, jint groupId, jint offset, jint limit) {
     client_get_group_members(groupId, offset, limit);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_logoutUser(JNIEnv *env, jobject thiz) {
+    client_logout();
 }

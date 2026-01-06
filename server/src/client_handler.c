@@ -1251,6 +1251,12 @@ void *handle_client(void *socket_desc)
         if (status <= 0)
             break;
 
+        // User còn sống -> Cập nhật Heartbeat
+        if (current_user_id != -1)
+        {
+            update_client_activity(current_user_id);
+        }
+
         // 2. KIỂM TRA STATUS CODE TRONG HEADER
         // Nếu Header báo lỗi, ta KHÔNG xử lý payload, nhưng PHẢI đọc bỏ payload để dọn socket
         if (header.status_code != STATUS_SUCCESS)
@@ -1297,8 +1303,15 @@ void *handle_client(void *socket_desc)
         }
 
         // 5. Dispatch Command
+        int should_break = 0; // Cờ để thoát vòng lặp
+
         switch (header.command_type)
         {
+        case CMD_HEARTBEAT:
+        {
+            LOG_INFO("Received HEARTBEAT from User %d", current_user_id);
+            continue;
+        }
         case CMD_REGISTER:
             handle_register(sock, &header, payload);
             break;
@@ -1309,6 +1322,10 @@ void *handle_client(void *socket_desc)
                 current_user_id = uid;
             break;
         }
+        case CMD_LOGOUT:
+            LOG_INFO("User %d sent LOGOUT request.", current_user_id);
+            should_break = 1;
+            break;
         case CMD_GET_FRIEND_LIST:
             handle_get_friends(sock, &header, payload, current_user_id);
             break;
@@ -1365,6 +1382,11 @@ void *handle_client(void *socket_desc)
 
         if (payload)
             free(payload);
+
+        if (should_break)
+        {
+            break; // Thoát vòng lặp while(1)
+        }
     }
 
     // Cleanup khi disconnect
@@ -1373,6 +1395,7 @@ void *handle_client(void *socket_desc)
         db_update_user_status(current_user_id, 0);
         remove_connected_client(current_user_id);
         notify_friends_status(current_user_id, 0);
+        LOG_INFO("User %d cleaned up and set to OFFLINE.", current_user_id);
     }
 
     close(sock);

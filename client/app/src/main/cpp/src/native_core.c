@@ -11,10 +11,12 @@
 #include <pthread.h>
 #include <syslog.h>
 #include <ctype.h>
+#include <netdb.h>
 
 static int g_socket = -1;
 static int g_req_id = 0;
 static int g_is_running = 0;
+static pthread_t g_hb_thread = 0;
 static pthread_t g_read_thread = 0;
 static pthread_mutex_t g_send_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_mutex_t g_client_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -147,7 +149,8 @@ static void trim_string(char *str)
 }
 
 // --- INIT & CONNECT ---
-int client_init(const char *ip, int port)
+// --- INIT & CONNECT ---
+int client_init(const char *host, int port) // Đổi tên tham số 'ip' thành 'host' cho đúng nghĩa
 {
     if (g_socket != -1)
         return 0;
@@ -157,26 +160,47 @@ int client_init(const char *ip, int port)
         return -1;
 
     struct sockaddr_in serv_addr;
+    struct hostent *server;
+
     memset(&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_port = htons(port);
 
-    if (inet_pton(AF_INET, ip, &serv_addr.sin_addr) <= 0)
+    // BƯỚC 1: Thử coi đây là địa chỉ IP số (VD: 192.168.1.5)
+    if (inet_pton(AF_INET, host, &serv_addr.sin_addr) > 0)
     {
-        close(g_socket);
-        g_socket = -1;
-        return -2;
+        // Là IP hợp lệ, không cần làm gì thêm
+    }
+    else
+    {
+        // BƯỚC 2: Nếu không phải IP, thử phân giải tên miền (DNS) cho Ngrok
+        LOGI("Input is not IP, trying DNS resolve for: %s", host);
+        server = gethostbyname(host);
+
+        if (server == NULL) {
+            LOGE("DNS Resolution Failed! Host not found: %s", host);
+            close(g_socket);
+            g_socket = -1;
+            return -2; // Lỗi: Không tìm thấy host
+        }
+
+        // Copy địa chỉ IP tìm được từ DNS vào struct
+        memcpy((char *)&serv_addr.sin_addr.s_addr,
+               (char *)server->h_addr,
+               server->h_length);
     }
 
+    // BƯỚC 3: Kết nối
     if (connect(g_socket, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
+        LOGE("Connect failed to %s:%d", host, port);
         close(g_socket);
         g_socket = -1;
         return -3;
     }
 
     g_is_running = 0;
-    LOGI("Connected to Server %s:%d", ip, port);
+    LOGI("Connected to Server %s:%d", host, port);
     return 0;
 }
 
@@ -188,6 +212,10 @@ void client_close()
         shutdown(g_socket, SHUT_RDWR);
         close(g_socket);
         g_socket = -1;
+    }
+    if (g_hb_thread != 0) {
+        pthread_join(g_hb_thread, NULL);
+        g_hb_thread = 0;
     }
     if (g_read_thread != 0)
     {
@@ -521,6 +549,20 @@ int client_get_group_members(int group_id, int offset, int limit) {
     pthread_mutex_unlock(&g_send_mutex);
 
     return (res > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
+void client_logout()
+{
+    if (g_socket != -1) {
+        // 1. Gửi gói tin thông báo cho Server biết
+        // Không cần chờ phản hồi, gửi xong là cắt luôn
+        pthread_mutex_lock(&g_send_mutex);
+        send_request(CMD_LOGOUT, NULL, 0);
+        pthread_mutex_unlock(&g_send_mutex);
+    }
+
+    // 2. Đóng kết nối và dọn dẹp tài nguyên Client
+    client_close();
 }
 
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
@@ -988,6 +1030,35 @@ static void *read_thread_func(void *arg)
     return NULL;
 }
 
+static void *heartbeat_thread_func(void *arg) {
+    while (g_is_running) {
+        // Ngủ trước khi gửi (Interval)
+        sleep(HEARTBEAT_INTERVAL_SEC);
+
+        if (!g_is_running || g_socket == -1) break;
+
+        // Gửi Ping (Gói tin rỗng, chỉ có Header CMD_HEARTBEAT)
+        // Dùng mutex để tránh đánh nhau với luồng chính
+        pthread_mutex_lock(&g_send_mutex);
+
+        PacketHeader header;
+        memset(&header, 0, sizeof(header));
+        header.version = SERVER_PROTOCOL_VERSION;
+        header.command_type = CMD_HEARTBEAT;
+        header.timestamp = get_timestamp();
+
+        int res = send(g_socket, &header, sizeof(PacketHeader), 0);
+
+        pthread_mutex_unlock(&g_send_mutex);
+
+        if (res < 0) {
+            LOGE("Heartbeat send failed. Connection likely dead.");
+            break;
+        }
+    }
+    return NULL;
+}
+
 void start_reader_thread(NativeCallbacks callbacks)
 {
     g_callbacks = callbacks;
@@ -1004,5 +1075,9 @@ void start_reader_thread(NativeCallbacks callbacks)
         g_read_thread = 0;
         LOGI("=== READ THREAD EXITED ===");
         return;
+    }
+
+    if (pthread_create(&g_hb_thread, NULL, heartbeat_thread_func, NULL) != 0) {
+        LOGE("Failed to create heartbeat thread");
     }
 }
