@@ -109,20 +109,41 @@ class ChatRepository(
     }
 
     // [NEW] Load lịch sử cũ hơn
-    fun loadHistory(targetId: Int, offset: Int, limit: Int) {
+    fun loadHistory(targetId: Int, isGroup: Boolean, offset: Int, limit: Int) {
         // Gọi Native, dữ liệu trả về sẽ vào callback onHistoryReceived -> lưu DB -> Flow update UI
-        NativeClient.getChatHistory(targetId, false, offset, limit)
+        NativeClient.getChatHistory(targetId, isGroup, offset, limit)
     }
 
     // [NEW] Lưu tin nhắn từ Network (Socket trả về)
     suspend fun saveMessageFromNetwork(dto: MessageDto) {
+        val existingUser = userDao.getUserById(dto.senderId)
+
+        if (existingUser == null) {
+            // 2. Nếu chưa có -> Tạo User tạm để thỏa mãn khóa ngoại
+            val placeholderUser = UserEntity(
+                serverId = dto.senderId,
+                email = "user_${dto.senderId}@unknown.com", // Email giả
+                name = "Người dùng ${dto.senderId}",        // Tên tạm
+                isOnline = false,
+                status = "active",
+                age = null,
+                avatarUrl = null,
+                createdAt = Date(),
+                updatedAt = Date()
+            )
+            // Lưu User tạm vào trước
+            userDao.insertUser(placeholderUser)
+            Log.d("ChatRepo", "⚠️ Đã tạo User tạm (ID: ${dto.senderId}) để nhận tin nhắn.")
+        }
+
+        // 3. Sau khi đảm bảo User tồn tại, mới lưu tin nhắn
         val entity = MessageEntity(
             serverId = dto.id,
             senderId = dto.senderId,
             receiverId = dto.receiverId,
             chatType = dto.chatType,
             content = dto.content,
-            status = "sent", // Tin từ server về mặc định là sent
+            status = "sent",
             createdAt = Date(dto.timestamp)
         )
         messageDao.insertMessage(entity)
@@ -294,29 +315,42 @@ class ChatRepository(
     suspend fun saveGroupMembersList(groupId: Int, members: Array<GroupMemberDto>) {
         if (members.isEmpty()) return
 
-        // 1. Update bảng Users trước (để đảm bảo khóa ngoại không bị lỗi)
-        // Lưu ý: Chỉ điền các trường Server trả về, các trường khác để null
-        val userEntities = members.map { dto ->
-            UserEntity(
+        // 1. Lưu User vào bảng Users (Cẩn thận để không ghi đè trạng thái bạn bè)
+        members.forEach { dto ->
+            // B1: Tạo entity mặc định là Stranger (relationType = 0)
+            val userEntity = UserEntity(
                 serverId = dto.userId,
                 email = dto.email,
                 name = dto.name,
                 isOnline = dto.isOnline,
                 status = "active",
-                // Các trường này API GetGroupMembers chưa trả về -> để null
                 age = null,
                 avatarUrl = null,
+                relationType = 0, // Mặc định là người lạ
                 createdAt = Date(),
                 updatedAt = Date()
             )
-        }
-        // Insert hoặc Update user
-        userDao.insertUsers(userEntities)
 
-        // 2. Update bảng GroupMembers
+            // B2: Thử Insert (Nếu chưa có thì thêm mới là Stranger)
+            val rowId = userDao.insertUserIgnore(userEntity)
+
+            // B3: Nếu Insert thất bại (rowId == -1) nghĩa là User đã có trong DB (có thể là Bạn hoặc Người lạ cũ)
+            // Ta chỉ cập nhật thông tin mới nhất (Tên, Online...) mà KHÔNG đổi relationType
+            if (rowId == -1L) {
+                userDao.updateUserInfoOnly(
+                    id = dto.userId,
+                    name = dto.name,
+                    email = dto.email,
+                    isOnline = dto.isOnline,
+                    avatarUrl = null
+                )
+            }
+        }
+
+        // 2. Update bảng GroupMembers (Giữ nguyên code cũ)
         val memberEntities = members.map { dto ->
             GroupMemberEntity(
-                serverId = 0, // Local mapping, không quan trọng ID này lắm
+                serverId = 0,
                 groupId = groupId,
                 memberId = dto.userId,
                 role = dto.role,
@@ -330,5 +364,9 @@ class ChatRepository(
 
     fun getGroupMembersFlow(groupId: Int): Flow<List<GroupMemberWithUser>> {
         return groupDao.getMembersWithUserInfo(groupId)
+    }
+
+    suspend fun getGroupInfo(groupId: Int): GroupEntity? {
+        return groupDao.getGroupById(groupId)
     }
 }

@@ -129,49 +129,70 @@ object NativeEventListenerImpl : NativeEventListener {
     }
 
     override fun onMessageReceived(msg: MessageDto) {
-        Log.d(TAG, "📩 Có tin nhắn mới từ ${msg.senderId}: ${msg.content}")
+        Log.d(TAG, "📩 Có tin nhắn mới [${msg.chatType}] từ ${msg.senderId}: ${msg.content}")
 
         chatRepository?.let { repo ->
             CoroutineScope(Dispatchers.IO).launch {
-                // 1. Lưu vào Database
+                // 1. Lưu tin nhắn vào Database (Room)
                 repo.saveMessageFromNetwork(msg)
 
-                val isChattingWithSender = (currentChatTargetId == msg.senderId)
+                // 2. Xác định ngữ cảnh (Group hay Private)
+                val isGroup = (msg.chatType == "group")
 
-                val isMuted = userRepository?.isUserMuted(msg.senderId) ?: false
+                // Nếu là Group: Target là GroupID (receiverId).
+                // Nếu là Private: Target là người gửi (senderId).
+                val targetId = if (isGroup) msg.receiverId else msg.senderId
 
-                if (isChattingWithSender) {
-                    Log.d(TAG, "Đang chat với User ${msg.senderId}. Bỏ qua thông báo.")
+                // 3. Kiểm tra xem người dùng có đang mở màn hình chat này không
+                // (currentChatTargetId cần được cập nhật từ onResume/onPause của ChatActivity)
+                if (currentChatTargetId == targetId) {
+                    Log.d(TAG, "Đang chat trong cuộc hội thoại $targetId. Bỏ qua thông báo.")
                     return@launch
                 }
 
-                if (isMuted) {
-                    Log.d(TAG, "User ${msg.senderId} đang bị tắt thông báo. Bỏ qua.")
-                    return@launch
-                }
-
-
-                // 2. Logic Thông báo
-                // Kiểm tra xem có đang chat với người này không.
-                // Lưu ý: Bạn cần update biến currentChatTargetId từ ChatActivity (onResume/onPause)
+                // 4. Chuẩn bị dữ liệu hiển thị thông báo
                 context?.let { ctx ->
-                    // Lấy tên người gửi từ DB để hiển thị cho đẹp
-                    val senderEntity = userRepository?.getFriendById(msg.senderId)
-                    val senderName = senderEntity?.name ?: "Người dùng ${msg.senderId}"
+                    var notifyTitle = ""
+                    var notifyContent = ""
 
+                    if (isGroup) {
+                        // --- TRƯỜNG HỢP CHAT NHÓM ---
+                        // Lấy tên nhóm để làm Tiêu đề
+                        val groupInfo = repo.getGroupInfo(targetId)
+                        val groupName = groupInfo?.name ?: "Nhóm $targetId"
+
+                        // Lấy tên người gửi để ghép vào nội dung
+                        val senderInfo = userRepository?.getFriendById(msg.senderId)
+                        val senderName = senderInfo?.name ?: "User ${msg.senderId}"
+
+                        notifyTitle = groupName
+                        // Nội dung: "Tên A: Nội dung tin nhắn"
+                        notifyContent = "$senderName: ${msg.content}"
+                    } else {
+                        // --- TRƯỜNG HỢP CHAT RIÊNG (1-1) ---
+                        // Lấy tên người gửi làm Tiêu đề
+                        val senderInfo = userRepository?.getFriendById(msg.senderId)
+                        val senderName = senderInfo?.name ?: "Người dùng ${msg.senderId}"
+
+                        notifyTitle = senderName
+                        // Nội dung: Chỉ hiện nội dung tin nhắn
+                        notifyContent = msg.content
+                    }
+
+                    // 5. Hiển thị thông báo
                     NotificationHelper.showNotification(
                         ctx,
-                        title = senderName,
-                        content = msg.content,
+                        title = notifyTitle,
+                        content = notifyContent,
                         type = "MESSAGE",
-                        targetId = msg.senderId,    // [QUAN TRỌNG] Để mở đúng đoạn chat
-                        targetName = senderName
+                        targetId = targetId,   // ID để mở lại đoạn chat (GroupId hoặc FriendId)
+                        targetName = notifyTitle, // Tên hiển thị trên Toolbar khi mở chat
+                        chatType = if (isGroup) "group" else "private"
                     )
                 }
             }
         }
     }
-
     override fun onMessageSent(tempId: Int, serverId: Int, serverTime: Long) {
         Log.d(TAG, "ack: Tin đã gửi (Temp: $tempId -> Server: $serverId)")
         chatRepository?.let { repo ->

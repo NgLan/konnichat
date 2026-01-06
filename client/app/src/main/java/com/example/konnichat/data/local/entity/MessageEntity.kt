@@ -14,7 +14,7 @@ import java.util.Date
             entity = UserEntity::class,
             parentColumns = ["server_id"],
             childColumns = ["sender_id"],
-            onDelete = ForeignKey.CASCADE
+            onDelete = ForeignKey.NO_ACTION
         )
     ],
     indices = [

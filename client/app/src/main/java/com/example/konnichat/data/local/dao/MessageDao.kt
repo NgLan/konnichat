@@ -55,7 +55,7 @@ interface MessageDao {
      * Lấy tin nhắn Group kèm tên người gửi.
      */
     @Query("""
-        SELECT m.*, u.name as senderName 
+        SELECT m.*, u.name as senderName, u.avatar_url as senderAvatar
         FROM messages m
         LEFT JOIN users u ON m.sender_id = u.server_id
         WHERE m.receiver_id = :groupId AND m.chat_type = 'group'
