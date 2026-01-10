@@ -79,6 +79,9 @@ class NativeClientTest {
         const val CMD_RECALL_MESSAGE = 74
         const val CMD_RECALL_MESSAGE_RESP = 75
 
+        const val CMD_REACT_MESSAGE = 76
+        const val CMD_REACT_MESSAGE_RESP = 77
+
         const val CMD_NOTIFY_FRIEND_REQ = 80
         const val CMD_NOTIFY_REQ_ACCEPTED = 81
         const val CMD_NOTIFY_STATUS = 82
@@ -102,6 +105,7 @@ class NativeClientTest {
         const val STATUS_ERROR_CANNOT_REMOVE_SELF = 12
         const val STATUS_ERROR_NOT_ALLOWED = 13
         const val STATUS_ERR_NO_PERMISSION = 14
+        const val STATUS_ERR_MSG_NOT_FOUND = 15
 
         // sizes
         const val MAX_GROUP_NAME = 100
@@ -111,6 +115,7 @@ class NativeClientTest {
 
         // Action Types
         const val ACTION_RECALL = 1
+        const val ACTION_REACT = 2
     }
 
     @Before
@@ -3173,11 +3178,13 @@ class NativeClientTest {
         val latchUpdate = CountDownLatch(1)
         var updateAction = -1
         var updateMsgId = -1
+        var updateReactor = -1
 
         NativeClient.startListening(object : StubNativeEventListener() {
-            override fun onMessageUpdated(mid: Int, action: Int) {
+            override fun onMessageUpdated(mid: Int, action: Int, code: Int, uid: Int) {
                 updateMsgId = mid
                 updateAction = action
+                updateReactor = uid
                 latchUpdate.countDown()
             }
         })
@@ -3187,6 +3194,7 @@ class NativeClientTest {
         Assert.assertTrue("A không nhận được thông báo update", latchUpdate.await(5, TimeUnit.SECONDS))
         Assert.assertEquals(msgId, updateMsgId)
         Assert.assertEquals(ACTION_RECALL, updateAction)
+        Assert.assertEquals(idA, updateReactor)
 
         // 4. Verify History (Quan trọng: Server phải trả về text đã thay đổi)
         val latchHist = CountDownLatch(1)
@@ -3258,7 +3266,7 @@ class NativeClientTest {
         var bReceivedMsgId = -1
 
         NativeClient.startListening(object : StubNativeEventListener() {
-            override fun onMessageUpdated(mid: Int, action: Int) {
+            override fun onMessageUpdated(mid: Int, action: Int, code: Int, uid: Int) {
                 if (action == ACTION_RECALL) {
                     bReceivedMsgId = mid
                     latchBUpdate.countDown()
@@ -3371,7 +3379,7 @@ class NativeClientTest {
         // 2. A thu hồi ngay lập tức (B vẫn chưa online để đọc)
         val latchRecall = CountDownLatch(1)
         NativeClient.startListening(object : StubNativeEventListener() {
-            override fun onMessageUpdated(mid: Int, act: Int) {
+            override fun onMessageUpdated(mid: Int, act: Int, code: Int, uid: Int) {
                 latchRecall.countDown()
             }
         })
@@ -3401,6 +3409,211 @@ class NativeClientTest {
         // 4. Verify Content bị thay thế
         Assert.assertTrue(latchHist.await(5, TimeUnit.SECONDS))
         Assert.assertEquals("Tin nhắn đã bị thu hồi", content)
+    }
+
+    // ==========================================
+    // MODULE 17: REACT MESSAGE
+    // ==========================================
+
+    @Test
+    fun test47_ReactMessage_Private_Realtime() {
+        val time = System.currentTimeMillis()
+        val emailA = "reactA_$time@konni.com"
+        val emailB = "reactB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. A gửi tin cho B
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchSent = CountDownLatch(1)
+        var msgId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, ts: Long) {
+                msgId = serverId
+                latchSent.countDown()
+            }
+        })
+        NativeClient.sendMessage(idA, idB, "Love me", 1, "private")
+        latchSent.await(5, TimeUnit.SECONDS)
+
+        // 2. A thả tim (Code = 1: Like) vào tin nhắn của chính mình
+        val latchReact = CountDownLatch(1)
+        var reactCode = -1
+        var reactor = -1
+        var action = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageUpdated(mid: Int, act: Int, code: Int, uid: Int) {
+                if (mid == msgId) {
+                    action = act
+                    reactCode = code
+                    reactor = uid
+                    latchReact.countDown()
+                }
+            }
+        })
+        NativeClient.reactMessage(msgId, 1) // 1 = Like
+
+        // 3. Verify
+        Assert.assertTrue("A không nhận được update react", latchReact.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Action phải là REACT (2)", ACTION_REACT, action)
+        Assert.assertEquals("Code phải là 1", 1, reactCode)
+        Assert.assertEquals("Người thả tim là A", idA, reactor)
+    }
+
+    @Test
+    fun test48_ReactMessage_Group_Broadcast() {
+        // Kịch bản: A gửi tin vào nhóm. B thả tim tin đó. A nhận được thông báo.
+
+        val time = System.currentTimeMillis()
+        val emailA = "g_reactA_$time@konni.com"
+        val emailB = "g_reactB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. A tạo nhóm
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("React Group", intArrayOf(idB))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. A gửi tin
+        val latchSent = CountDownLatch(1)
+        var msgId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, ts: Long) {
+                msgId = serverId
+                latchSent.countDown()
+            }
+        })
+        NativeClient.sendMessage(idA, groupId, "React this", 1, "group")
+        latchSent.await(5, TimeUnit.SECONDS)
+
+        // 3. A lắng nghe
+        val latchUpdate = CountDownLatch(1)
+        var whoReacted = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageUpdated(mid: Int, act: Int, code: Int, uid: Int) {
+                if (mid == msgId && act == ACTION_REACT) {
+                    whoReacted = uid
+                    latchUpdate.countDown()
+                }
+            }
+        })
+
+        // 4. Fake B Login và thả tim (Code = 2: Love)
+        val threadB = Thread {
+            try {
+                val fb = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fb.login(emailB, pass)
+                Thread.sleep(500)
+                // Gửi lệnh React: msgId, code=2
+                fb.reactMessage(msgId, 2)
+                Thread.sleep(500)
+                fb.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadB.start()
+
+        // 5. Verify
+        Assert.assertTrue("A không thấy B thả tim", latchUpdate.await(8, TimeUnit.SECONDS))
+        Assert.assertEquals("Người thả tim phải là B", idB, whoReacted)
+    }
+
+    @Test
+    fun test49_RemoveReaction() {
+        // Kịch bản: Thả tim -> Thành công -> Bỏ tim (Code=0) -> Thành công.
+
+        val time = System.currentTimeMillis()
+        val email = "unreact_$time@konni.com"
+        val pass = "123"
+        NativeClient.registerUser("User", email, pass)
+        val id = helperGetUserId(email, pass)
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, pass)
+
+        // Gửi tin cho chính mình (Self chat)
+        val latchSent = CountDownLatch(1)
+        var msgId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, ts: Long) {
+                msgId = serverId
+                latchSent.countDown()
+            }
+        })
+        NativeClient.sendMessage(id, id, "Selfie", 1, "private")
+        latchSent.await(5, TimeUnit.SECONDS)
+
+        // 1. Thả tim
+        NativeClient.reactMessage(msgId, 1)
+        Thread.sleep(200)
+
+        // 2. Bỏ tim
+        val latchRemove = CountDownLatch(1)
+        var codeReceived = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageUpdated(mid: Int, act: Int, code: Int, uid: Int) {
+                if (mid == msgId && code == 0) {
+                    codeReceived = code
+                    latchRemove.countDown()
+                }
+            }
+        })
+        NativeClient.reactMessage(msgId, 0) // 0 = Remove
+
+        Assert.assertTrue("Không nhận được sự kiện bỏ tim", latchRemove.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals(0, codeReceived)
+    }
+
+    @Test
+    fun test50_ReactMessage_InvalidID() {
+        // Kịch bản: React tin nhắn không tồn tại -> Lỗi MSG_NOT_FOUND
+        val time = System.currentTimeMillis()
+        val email = "fail_react_$time@konni.com"
+        val pass = "123"
+        NativeClient.registerUser("FailReact", email, pass)
+
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(email, pass)
+
+        val latch = CountDownLatch(1)
+        var status = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, s: Int) {
+                if (cmd == CMD_REACT_MESSAGE_RESP) {
+                    status = s
+                    latch.countDown()
+                }
+            }
+        })
+
+        NativeClient.reactMessage(999999, 1) // Fake ID
+
+        Assert.assertTrue(latch.await(5, TimeUnit.SECONDS))
+        // STATUS_ERROR_MESSAGE_NOT_FOUND (Check lại file header xem bạn define số mấy, ví dụ 15)
+        Assert.assertNotEquals("Không được trả về SUCCESS", STATUS_SUCCESS, status)
     }
 
     // --- Helper Utility để lấy nhanh ID User ---
@@ -3463,7 +3676,12 @@ open class StubNativeEventListener : NativeEventListener {
         members: Array<GroupMemberDto>
     ) {}
 
-    override fun onMessageUpdated(messageId: Int, actionType: Int) {}
+    override fun onMessageUpdated(
+        messageId: Int,
+        actionType: Int,
+        reactionCode: Int,
+        reactorId: Int
+    ) {}
 }
 
 /**
@@ -3707,8 +3925,9 @@ class FakeTcpClient(ip: String, port: Int) {
     }
 
     fun recallMessage(msgId: Int) {
-        // Payload: message_id(4) + group_id(4) + action_type(4) + reaction_code(4) = 16 bytes
-        val payloadSize = 16
+        // Struct: msg_id(4) + group_id(4) + action(4) + reaction_code(4) + reactor_id(4)
+        // Tổng = 20 bytes
+        val payloadSize = 20
         val totalSize = 28 + payloadSize
         val buffer = ByteBuffer.allocate(totalSize)
         buffer.order(ByteOrder.LITTLE_ENDIAN)
@@ -3716,9 +3935,30 @@ class FakeTcpClient(ip: String, port: Int) {
         writeHeader(buffer, CMD_RECALL_MESSAGE, payloadSize)
 
         buffer.putInt(msgId)
-        buffer.putInt(0) // group_id (Fake gửi đại là 0)
+        buffer.putInt(0) // group_id
         buffer.putInt(1) // action_type = 1 (Recall)
-        buffer.putInt(0) // reaction_code
+        buffer.putInt(0) // reaction_code = 0
+        buffer.putInt(0) // reactor_id (Server sẽ tự điền, Client gửi 0)
+
+        output.write(buffer.array())
+        output.flush()
+    }
+
+    fun reactMessage(msgId: Int, code: Int) {
+        // Struct: msg_id(4) + group_id(4) + action(4) + reaction_code(4) + reactor_id(4)
+        // Tổng = 20 bytes
+        val payloadSize = 20
+        val totalSize = 28 + payloadSize
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        // CMD_REACT_MESSAGE = 76
+        writeHeader(buffer, 76, payloadSize)
+
+        buffer.putInt(msgId)
+        buffer.putInt(0) // group_id
+        buffer.putInt(2) // action_type = 2 (React)
+        buffer.putInt(code) // reaction_code
 
         output.write(buffer.array())
         output.flush()

@@ -92,7 +92,9 @@ typedef enum {
 
     CMD_RECALL_MESSAGE = 74,     // Thu hồi
     CMD_RECALL_MESSAGE_RESP = 75,
+
     CMD_REACT_MESSAGE = 76,      // Thả tim, like...
+    CMD_REACT_MESSAGE_RESP = 77,
 
     // 6. Notifications
     CMD_NOTIFY_FRIEND_REQ   = 80,   // Có lời mời kết bạn mới
@@ -128,7 +130,8 @@ typedef enum {
     STATUS_ERROR_NOT_GROUP_ADMIN = 11,   // Người dùng không phải admin nhóm
     STATUS_ERROR_CANNOT_REMOVE_SELF = 12,  // Không thể tự kick chính mình khỏi nhóm
     STATUS_ERROR_NOT_ALLOWED = 13,  // Hành động không được phép
-    STATUS_ERROR_NO_PERMISSION = 14 // Không có quyền thực hiện hành động
+    STATUS_ERROR_NO_PERMISSION = 14, // Không có quyền thực hiện hành động
+    STATUS_ERROR_MESSAGE_NOT_FOUND = 15 // Tin nhắn không tồn tại
 } StatusCode;
 
 // --- ĐỊNH NGHĨA TRẠNG THÁI QUAN HỆ ---
@@ -253,7 +256,8 @@ typedef struct __attribute__((packed)) {
     int32_t message_id;     // ID tin nhắn cần tương tác
     int32_t group_id;       // 0 nếu là chat 1-1, >0 nếu là chat nhóm
     int32_t action_type;    // 1: Recall, 2: React
-    int32_t reaction_code;  // 0: Nếu là Recall, 1: Heart, 2: Haha...
+    int32_t reaction_code;  // 0: None, 1: Heart, 2: Haha...
+    int32_t reactor_id;     // ID người thực hiện hành động
 } InteractionPayload;
 
 // 8. Request by ID (Dùng chung cho nhiều việc: GetHistory, FetchOffline...)

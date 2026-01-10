@@ -53,4 +53,5 @@ object NativeClient {
 
     external fun logoutUser()
     external fun recallMessage(messageId: Int)
+    external fun reactMessage(messageId: Int, reactionCode: Int)
 }

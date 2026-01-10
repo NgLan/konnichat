@@ -153,9 +153,9 @@ WHERE email IN (
 );
 
 -- Thêm bộ icon cơ bản
--- INSERT INTO Icons (code, image_url) VALUES 
--- ('like', 'ic_reaction_like'),
--- ('love', 'ic_reaction_love'),
--- ('haha', 'ic_reaction_haha'),
--- ('sad', 'ic_reaction_sad'),
--- ('angry', 'ic_reaction_angry'); 
+INSERT INTO icons (id, icon, image_url) VALUES 
+(1, 'like', 'ic_reaction_like'),
+(2, 'love', 'ic_reaction_love'),
+(3, 'haha', 'ic_reaction_haha'),
+(4, 'sad', 'ic_reaction_sad'),
+(5, 'angry', 'ic_reaction_angry');
