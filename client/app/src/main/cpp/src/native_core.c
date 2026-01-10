@@ -565,6 +565,19 @@ void client_logout()
     client_close();
 }
 
+int client_recall_message(int message_id) {
+    InteractionPayload payload;
+    memset(&payload, 0, sizeof(payload));
+    payload.message_id = message_id;
+    payload.action_type = 1; // Recall code
+
+    pthread_mutex_lock(&g_send_mutex);
+    int req_id = send_request(CMD_RECALL_MESSAGE, &payload, sizeof(payload));
+    pthread_mutex_unlock(&g_send_mutex);
+
+    return (req_id > 0) ? CLIENT_OK : ERR_NETWORK_SEND_FAILED;
+}
+
 // --- LOGIC XỬ LÝ GÓI TIN ĐẾN ---
 static void handle_incoming_packet(PacketHeader *header)
 {
@@ -653,7 +666,7 @@ static void handle_incoming_packet(PacketHeader *header)
         }
     }
 
-    // 6. UNFRIEND NOTIFICATION (NGUYÊN NHÂN CRASH CŨ)
+    // 6. UNFRIEND NOTIFICATION
     else if (header->command_type == CMD_NOTIFY_UNFRIENDED)
     {
         FriendReqPayload payload;
@@ -764,7 +777,8 @@ static void handle_incoming_packet(PacketHeader *header)
              header->command_type == CMD_ADD_MEMBER_RESP ||
              header->command_type == CMD_LEAVE_GROUP_RESP ||
              header->command_type == CMD_REMOVE_MEMBER_RESP ||
-             header->command_type == CMD_DISSOLVE_GROUP_RESP)
+             header->command_type == CMD_DISSOLVE_GROUP_RESP ||
+             header->command_type == CMD_RECALL_MESSAGE_RESP)
     {
         if (g_callbacks.on_req_response)
             g_callbacks.on_req_response(header->command_type, header->status_code);
@@ -980,6 +994,16 @@ static void handle_incoming_packet(PacketHeader *header)
                 if (g_callbacks.on_group_members_received) {
                     g_callbacks.on_group_members_received(resp_group_id, 0, NULL);
                 }
+            }
+        }
+    }
+
+    else if (header->command_type == CMD_NOTIFY_UPDATE_MSG) {
+        InteractionPayload notify;
+        if (recv_all(g_socket, &notify, sizeof(notify)) > 0) {
+            bytes_processed += sizeof(notify);
+            if (g_callbacks.on_message_update) {
+                g_callbacks.on_message_update(notify.message_id, notify.action_type);
             }
         }
     }

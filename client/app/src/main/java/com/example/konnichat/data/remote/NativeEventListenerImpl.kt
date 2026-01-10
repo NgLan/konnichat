@@ -324,6 +324,10 @@ object NativeEventListenerImpl : NativeEventListener {
         }
     }
 
+    override fun onMessageUpdated(messageId: Int, actionType: Int) {
+        TODO("Not yet implemented")
+    }
+
     override fun onConnectionClosed(reason: String) {
         Log.e(TAG, "Mất kết nối: $reason")
     }
