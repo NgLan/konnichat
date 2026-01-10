@@ -10,6 +10,7 @@ import com.example.konnichat.data.remote.ConnectionState
 import com.example.konnichat.data.remote.NativeEventListenerImpl
 import com.example.konnichat.core.exception.NativeException
 import com.example.konnichat.core.state.Resource
+import com.example.konnichat.core.utils.SecurityUtils
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.dto.UserDto
 import kotlinx.coroutines.Dispatchers
@@ -41,8 +42,9 @@ class AuthRepository (
     // Hàm Đăng nhập
     suspend fun login(email: String, pass: String): Resource<UserDto> = withContext(Dispatchers.IO) {
         try {
+            val hashedPass = SecurityUtils.hashSHA256(pass)
             // NativeClient.loginUser là hàm blocking, nó sẽ chờ server trả lời hoặc ném Exception
-            val user = NativeClient.loginUser(email, pass)
+            val user = NativeClient.loginUser(email, hashedPass)
             if (user != null) {
                 NativeClient.startListening(NativeEventListenerImpl)
                 NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
@@ -98,8 +100,9 @@ class AuthRepository (
     // Hàm Đăng ký
     suspend fun register(name: String, email: String, pass: String): Resource<Boolean> = withContext(Dispatchers.IO) {
         try {
+            val hashedPass = SecurityUtils.hashSHA256(pass)
             // Hàm này trả về status code (0 = Success) hoặc ném Exception
-            NativeClient.registerUser(name, email, pass)
+            NativeClient.registerUser(name, email, hashedPass)
             NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
             // Nếu không ném lỗi -> Thành công
             Resource.Success(true)
