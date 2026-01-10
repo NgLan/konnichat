@@ -20,6 +20,7 @@ import com.example.konnichat.data.repository.UserRepository
 import com.example.konnichat.ui.base.BaseActivity
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.example.konnichat.ui.chat.ChatActivity
+import  com.example.konnichat.ui.auth.AuthViewModel
 import com.example.konnichat.ui.group.CreateGroupActivity
 
 class HomeActivity : BaseActivity() {
@@ -30,6 +31,11 @@ class HomeActivity : BaseActivity() {
             (application as App).chatRepository, // Thêm cái này
             getSharedPreferences("konnichat_prefs", android.content.Context.MODE_PRIVATE) // Thêm cái này
         )
+    }
+
+    // Khai báo thêm AuthViewModel để xử lý Logout
+    private val authViewModel: AuthViewModel by viewModels {
+        com.example.konnichat.ui.auth.AuthViewModelFactory((application as App).authRepository)
     }
 
     private lateinit var bottomNav: BottomNavigationView
@@ -78,6 +84,16 @@ class HomeActivity : BaseActivity() {
             loadFragment(MessageListFragment())
             handleNavigationIntent(intent)
         }
+
+        authViewModel.logoutState.observe(this) { resource ->
+            if (resource is com.example.konnichat.core.state.Resource.Success) {
+                // Chuyển về màn hình Login và xóa sạch Stack các màn hình cũ
+                val intent = Intent(this, com.example.konnichat.ui.auth.LoginActivity::class.java)
+                intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+                startActivity(intent)
+                finish()
+            }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -97,6 +113,10 @@ class HomeActivity : BaseActivity() {
                 // Mở màn hình tạo nhóm
                 val intent = Intent(this, CreateGroupActivity::class.java)
                 startActivity(intent)
+                true
+            }
+            R.id.action_logout -> {
+                authViewModel.logout()
                 true
             }
             else -> super.onOptionsItemSelected(item)

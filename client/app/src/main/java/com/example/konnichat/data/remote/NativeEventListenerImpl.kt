@@ -416,9 +416,14 @@ object NativeEventListenerImpl : NativeEventListener {
 
     override fun onConnectionClosed(reason: String) {
         Log.e(TAG, "❌ Mất kết nối: $reason")
-        connectionState.postValue(ConnectionState.DISCONNECTED)
+        if (isUserLoggedOut) {
+            Log.d(TAG, "Chặn cập nhật trạng thái vì đang trong luồng Logout.")
+            connectionState.postValue(ConnectionState.CONNECTED) // Đảm bảo ẩn banner
+            return
+        }
 
-        // Bắt đầu kết nối lại sau 1s
+        // Chỉ khi không phải logout mới hiện thông báo đỏ và thử kết nối lại
+        connectionState.postValue(ConnectionState.DISCONNECTED)
         CoroutineScope(Dispatchers.IO).launch {
             delay(1000)
             startReconnectLoop()

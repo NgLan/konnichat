@@ -111,4 +111,28 @@ class AuthRepository (
             Resource.Error(message)
         }
     }
+
+    // Hàm Logout hoàn chỉnh
+    suspend fun logout() = withContext(Dispatchers.IO) {
+        try {
+            // 1. Chặn luồng tự động kết nối lại trước khi ngắt socket
+            NativeEventListenerImpl.isUserLoggedOut = true
+
+            NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
+
+            // 2. Gọi Native để báo Server và đóng socket
+            NativeClient.logoutUser()
+
+            // 3. Xóa sạch SharedPreferences (Email, Pass, ID...)
+            prefs.edit().clear().apply()
+
+            // 4. Xóa sạch toàn bộ bảng trong Database Local
+            db.clearAllTables()
+
+            // 5. Cập nhật trạng thái kết nối về DISCONNECTED
+//            NativeEventListenerImpl.connectionState.postValue(ConnectionState.DISCONNECTED)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
 }

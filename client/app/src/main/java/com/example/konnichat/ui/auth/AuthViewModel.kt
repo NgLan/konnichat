@@ -25,6 +25,9 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     private val _registerState = MutableLiveData<Resource<Boolean>>()
     val registerState: LiveData<Resource<Boolean>> = _registerState
 
+    private val _logoutState = MutableLiveData<Resource<Boolean>>()
+    val logoutState: LiveData<Resource<Boolean>> = _logoutState
+
     // Gọi hàm kết nối
     fun connectDefault() {
         _connectState.value = Resource.Loading()
@@ -78,6 +81,14 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         viewModelScope.launch {
             val result = repository.register(name, email, pass)
             _registerState.value = result
+        }
+    }
+
+    fun logout() {
+        _logoutState.value = Resource.Loading()
+        viewModelScope.launch {
+            repository.logout()
+            _logoutState.value = Resource.Success(true)
         }
     }
 }
