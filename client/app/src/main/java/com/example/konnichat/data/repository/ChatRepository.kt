@@ -337,12 +337,11 @@ class ChatRepository(
             // B3: Nếu Insert thất bại (rowId == -1) nghĩa là User đã có trong DB (có thể là Bạn hoặc Người lạ cũ)
             // Ta chỉ cập nhật thông tin mới nhất (Tên, Online...) mà KHÔNG đổi relationType
             if (rowId == -1L) {
-                userDao.updateUserInfoOnly(
+                userDao.updateAndVerifyUser(
                     id = dto.userId,
                     name = dto.name,
                     email = dto.email,
-                    isOnline = dto.isOnline,
-                    avatarUrl = null
+                    isOnline = dto.isOnline
                 )
             }
         }

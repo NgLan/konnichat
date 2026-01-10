@@ -20,6 +20,7 @@ data class UserEntity(
     @ColumnInfo(name = "is_online") val isOnline: Boolean,
     @ColumnInfo(name = "avatar_url") val avatarUrl: String?,
     @ColumnInfo(name = "relation_type") val relationType: Int = 0,
+    @ColumnInfo(name = "is_full_data") val isFullData: Boolean = false,
     @ColumnInfo(name = "created_at") override val createdAt: Date = Date(),
     @ColumnInfo(name = "updated_at") override val updatedAt: Date = Date()
 ) : HasCreatedAt, HasUpdatedAt

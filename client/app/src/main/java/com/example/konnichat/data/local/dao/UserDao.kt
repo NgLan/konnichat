@@ -79,4 +79,30 @@ interface UserDao {
     @Query("UPDATE users SET name = :name, email = :email, is_online = :isOnline, avatar_url = :avatarUrl WHERE server_id = :id")
     abstract suspend fun updateUserInfoOnly(id: Int, name: String, email: String, isOnline: Boolean, avatarUrl: String?)
 
+    @Query("""
+        UPDATE users 
+        SET name = :name, email = :email, is_online = :isOnline, is_full_data = 1, updated_at = :updateTime 
+        WHERE server_id = :id
+    """)
+    abstract suspend fun updateAndVerifyUser(id: Int, name: String, email: String, isOnline: Boolean, updateTime: java.util.Date = java.util.Date())
+
+    // [THÊM MỚI] Hàm Upsert dành riêng cho các nguồn dữ liệu tin cậy (Search/GroupInfo)
+    @Transaction
+    open suspend fun upsertVerifiedUser(user: UserEntity) {
+        val rowId = insertUserIgnore(user.copy(isFullData = true))
+        if (rowId == -1L) {
+            // Nếu User đã tồn tại (có thể là User tạm), ta nâng cấp họ lên chính thức
+            updateAndVerifyUser(user.serverId, user.name, user.email, user.isOnline)
+        }
+    }
+
+    // Sửa lại hàm update để chỉ cập nhật các trường thông tin, giữ nguyên flag nếu đã verify
+    @Query("""
+        UPDATE users 
+        SET name = :name, email = :email, is_online = :isOnline, 
+            is_full_data = CASE WHEN is_full_data = 1 THEN 1 ELSE :isFullData END 
+        WHERE server_id = :id
+    """)
+    abstract suspend fun updateKeepVerifyStatus(id: Int, name: String, email: String, isOnline: Boolean, isFullData: Int)
+
 }
