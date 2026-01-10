@@ -208,7 +208,7 @@ int client_init(const char *host, int port)
     set_socket_timeout(temp_sock, 5);
 
     // BƯỚC 3: Kết nối
-    if (connect(g_socket, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+    if (connect(temp_sock, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
         LOGE("Connect failed to %s:%d", host, port);
         close(temp_sock);
         return -3;
