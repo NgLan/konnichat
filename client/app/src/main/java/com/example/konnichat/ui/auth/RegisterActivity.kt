@@ -10,7 +10,9 @@ import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import com.example.konnichat.core.state.Resource
 import com.example.konnichat.App
-class RegisterActivity : AppCompatActivity() {
+import com.example.konnichat.ui.base.BaseActivity
+
+class RegisterActivity : BaseActivity() {
 
     private val viewModel: AuthViewModel by viewModels {
         AuthViewModelFactory((application as App).authRepository)

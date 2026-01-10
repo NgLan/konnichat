@@ -17,15 +17,32 @@ import com.example.konnichat.utils.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import androidx.lifecycle.MutableLiveData // [THÊM]
+import com.example.konnichat.core.Constants
+import com.example.konnichat.data.repository.AuthRepository
+import kotlinx.coroutines.delay
+
+// [THÊM] Enum trạng thái kết nối
+enum class ConnectionState {
+    CONNECTED,      // Đang kết nối tốt
+    CONNECTING,     // Đang thử kết nối lại
+    DISCONNECTED    // Mất mạng
+}
 
 @SuppressLint("StaticFieldLeak")
 object NativeEventListenerImpl : NativeEventListener {
     var userRepository: UserRepository? = null
-    var chatRepository: ChatRepository? = null // Tui đã thêm biến này để tránh lỗi
+    var chatRepository: ChatRepository? = null
+    var authRepository: AuthRepository? = null
+    // Tui đã thêm biến này để tránh lỗi
     var context: Context? = null
+
+    val connectionState = MutableLiveData<ConnectionState>(ConnectionState.DISCONNECTED)
+    var isUserLoggedOut = false
 
     // Biến tạm để check xem user có đang chat không (Bạn cần cập nhật biến này từ Activity)
     var currentChatTargetId: Int = -1
+    private var isReconnecting = false
 
     private const val TAG = "KONNI_EVENT"
 
@@ -34,6 +51,69 @@ object NativeEventListenerImpl : NativeEventListener {
         this.userRepository = userRepository
     }
 
+    // [SỬA] Hàm khởi động vòng lặp kết nối lại
+    private fun startReconnectLoop() {
+        if (isUserLoggedOut || isReconnecting) return
+        isReconnecting = true
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                Log.d(TAG, "🔄 Bắt đầu quy trình Reconnect...")
+
+
+                // Chuyển trạng thái -> UI hiện "Đang kết nối lại..."
+                connectionState.postValue(ConnectionState.CONNECTING)
+
+
+                var retryCount = 0
+                while (true) {
+                    if (isUserLoggedOut) break
+
+                    // 1. Thử Connect Socket
+                    Log.d(TAG, "🔄 Đang thử kết nối lại (Lần ${retryCount + 1})...")
+                    val res = NativeClient.connect(Constants.SERVER_HOST, Constants.SERVER_PORT)
+
+                    if (res == 0) { // Kết nối socket thành công
+                        Log.d(TAG, "✅ Socket đã kết nối lại! Chờ ổn định...")
+
+                        // [THÊM QUAN TRỌNG] Delay để socket kịp sẵn sàng ghi dữ liệu
+                        delay(1000)
+
+                        Log.d(TAG, "⏳ Đang Auto Login...")
+
+                        // 2. Thử Auto Login
+                        // Lưu ý: Lúc này chưa start listening thread nên loginUser (đồng bộ) sẽ hoạt động tốt
+                        val loginSuccess = authRepository?.autoLogin() == true
+
+                        if (loginSuccess) {
+                            Log.d(TAG, "✅ Auto Login thành công! Khôi phục trạng thái.")
+
+                            // [THÊM QUAN TRỌNG] Khởi động lại luồng đọc ở Native (vì luồng cũ đã chết khi disconnect)
+                            // Nếu không gọi dòng này, bạn sẽ login được nhưng KHÔNG NHẬN ĐƯỢC tin nhắn mới
+                            NativeClient.startListening(this@NativeEventListenerImpl)
+
+                            connectionState.postValue(ConnectionState.CONNECTED)
+
+                            // 3. Đồng bộ dữ liệu bị lỡ
+                            NativeClient.fetchOfflineMessages()
+                            break // Thoát vòng lặp
+                        } else {
+                            Log.e(TAG, "❌ Auto Login thất bại. Có thể mật khẩu đổi hoặc lỗi server.")
+                            // Nếu login fail thì có thể do session lỗi -> Thử lại sau
+                        }
+                    }
+
+                    // Nếu thất bại: Đợi tăng dần (Exponential Backoff)
+                    val delayTime = minOf((retryCount + 1) * 2000L, 10000L)
+                    delay(delayTime)
+                    retryCount++
+                }
+            } finally {
+                isReconnecting = false
+            }
+
+        }
+    }
     // --- 1. XỬ LÝ KẾT BẠN (TRỌNG TÂM) ---
 
     override fun onFriendRequestReceived(requestId: Int, senderId: Int, senderName: String) {
@@ -323,7 +403,7 @@ object NativeEventListenerImpl : NativeEventListener {
             }
         }
     }
-
+    
     override fun onMessageUpdated(
         messageId: Int,
         actionType: Int,
@@ -335,5 +415,16 @@ object NativeEventListenerImpl : NativeEventListener {
 
     override fun onConnectionClosed(reason: String) {
         Log.e(TAG, "Mất kết nối: $reason")
+    }
+
+    override fun onConnectionClosed(reason: String) {
+        Log.e(TAG, "❌ Mất kết nối: $reason")
+        connectionState.postValue(ConnectionState.DISCONNECTED)
+
+        // Bắt đầu kết nối lại sau 1s
+        CoroutineScope(Dispatchers.IO).launch {
+            delay(1000)
+            startReconnectLoop()
+        }
     }
 }

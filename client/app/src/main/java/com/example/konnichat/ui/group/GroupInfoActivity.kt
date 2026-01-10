@@ -9,8 +9,9 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.konnichat.App
 import com.example.konnichat.databinding.ActivityGroupInfoBinding
+import com.example.konnichat.ui.base.BaseActivity
 
-class GroupInfoActivity : AppCompatActivity() {
+class GroupInfoActivity : BaseActivity() {
 
     private lateinit var binding: ActivityGroupInfoBinding
     private lateinit var viewModel: GroupInfoViewModel

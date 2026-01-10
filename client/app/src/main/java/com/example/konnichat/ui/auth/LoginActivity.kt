@@ -13,12 +13,13 @@ import com.example.konnichat.core.state.Resource
 // Import HomeActivity khi bạn tạo nó sau này
  import com.example.konnichat.ui.home.HomeActivity
 import com.example.konnichat.App
+import com.example.konnichat.ui.base.BaseActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class LoginActivity : AppCompatActivity() {
+class LoginActivity : BaseActivity() {
 
     private val viewModel: AuthViewModel by viewModels {
         AuthViewModelFactory((application as App).authRepository)
