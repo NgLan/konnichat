@@ -48,6 +48,7 @@ class UserRepository(
                 age = null,
                 status = "active",
                 relationType = 1,
+                isFullData = true,
                 avatarUrl = null,
                 createdAt = Date(),
                 updatedAt = Date()
@@ -72,6 +73,19 @@ class UserRepository(
     // Hàm nhận dữ liệu từ Server (Native)
     suspend fun processSearchResults(dtos: Array<UserSearchDto>) {
         val uiModels = dtos.map { dto ->
+            val entity = UserEntity(
+                serverId = dto.userId,
+                name = dto.name,
+                email = dto.email,
+                isOnline = false, // Server Search mặc định trả về thông tin cơ bản
+                status = "active",
+                age = null,
+                avatarUrl = null,
+                relationType = dto.status, // Giữ nguyên trạng thái quan hệ từ Server
+                isFullData = true // Xác thực dữ liệu
+            )
+            userDao.upsertVerifiedUser(entity)
+
             UserSearchUiModel(
                 id = dto.userId,
                 name = dto.name,
@@ -133,6 +147,7 @@ class UserRepository(
             status = "active",
             avatarUrl = null,
             relationType = 1,
+            isFullData = true,
             createdAt = Date(),
             updatedAt = Date()
         )
