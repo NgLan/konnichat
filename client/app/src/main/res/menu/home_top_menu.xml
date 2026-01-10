@@ -6,4 +6,9 @@
         android:icon="@android:drawable/ic_input_add"
         android:title="Tạo nhóm"
         app:showAsAction="ifRoom" />
+
+    <item
+        android:id="@+id/action_logout"
+        android:title="Đăng xuất"
+        app:showAsAction="never" />
 </menu>
