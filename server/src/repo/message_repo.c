@@ -140,7 +140,7 @@ int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPa
     {
         // LOGIC GROUP: Lấy tất cả tin nhắn gửi vào Group này
         snprintf(query, sizeof(query),
-                 "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type "
+                 "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type, status "
                  "FROM messages "
                  "WHERE receiver_id = %d AND chat_type = 'group' "
                  "ORDER BY created_at DESC, id DESC LIMIT %d OFFSET %d",
@@ -150,7 +150,7 @@ int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPa
     {
         // LOGIC PRIVATE: 2 chiều A->B và B->A
         snprintf(query, sizeof(query),
-                 "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type "
+                 "SELECT id, sender_id, receiver_id, content, created_at, chat_type, msg_type, status "
                  "FROM messages "
                  "WHERE ((sender_id = %d AND receiver_id = %d) "
                  "   OR (sender_id = %d AND receiver_id = %d)) "
@@ -181,7 +181,19 @@ int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPa
             messages_out[count].message_id = atoi(row[0]);
             messages_out[count].sender_id = atoi(row[1]);
             messages_out[count].receiver_id = atoi(row[2]);
-            strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);
+
+            // Msg Type
+            messages_out[count].msg_type = row[6] ? atoi(row[6]) : 1;
+
+            char status[20];
+            if (row[7]) strcpy(status, row[7]); 
+            
+            if (strcmp(status, "revoked") == 0) {
+                strcpy(messages_out[count].content, "Tin nhắn đã bị thu hồi");
+                messages_out[count].msg_type = 1; // Về dạng text
+            } else {
+                strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);
+            }
 
             // Time
             messages_out[count].created_at = row[4] ? parse_mysql_time(row[4]) : 0;
@@ -192,9 +204,6 @@ int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPa
             else
                 strcpy(messages_out[count].chat_type, "private");
 
-            // Msg Type
-            messages_out[count].msg_type = row[6] ? atoi(row[6]) : 1;
-
             count++;
         }
         mysql_free_result(result);
@@ -202,6 +211,69 @@ int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPa
 
     db_release_conn(conn);
     return count;
+}
+
+int db_revoke_message(int msg_id, int user_id, int *out_receiver_id, char *out_chat_type)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    // 1. Kiểm tra quyền sở hữu và lấy thông tin routing
+    char query_check[256];
+    snprintf(query_check, sizeof(query_check),
+             "SELECT sender_id, receiver_id, chat_type FROM messages WHERE id = %d", msg_id);
+
+    if (mysql_query(conn, query_check))
+    {
+        db_release_conn(conn);
+        return 0;
+    }
+
+    MYSQL_RES *res = mysql_store_result(conn);
+    int is_owner = 0;
+    if (res)
+    {
+        MYSQL_ROW row = mysql_fetch_row(res);
+        if (row)
+        {
+            int sender_id = atoi(row[0]);
+            if (sender_id == user_id)
+            {
+                is_owner = 1;
+                *out_receiver_id = atoi(row[1]);
+                if (row[2])
+                    strcpy(out_chat_type, row[2]);
+            }
+        }
+        mysql_free_result(res);
+    }
+
+    if (!is_owner)
+    {
+        db_release_conn(conn);
+        return -1; // Không phải chính chủ
+    }
+
+    // 2. Update status -> 'revoked'
+    // KHÔNG XÓA MESSAGE, chỉ update status
+    char query_update[256];
+    snprintf(query_update, sizeof(query_update),
+             "UPDATE messages SET status = 'revoked' WHERE id = %d", msg_id);
+
+    int success = 0;
+    if (mysql_query(conn, query_update) == 0)
+    {
+        success = 1;
+        LOG_INFO("Revoke Msg Successfully");
+    }
+    else
+    {
+        LOG_ERROR("Revoke Msg Error: %s", mysql_error(conn));
+    }
+
+    db_release_conn(conn);
+    return success;
 }
 
 static uint64_t parse_mysql_time(const char *str)

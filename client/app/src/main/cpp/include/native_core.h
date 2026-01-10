@@ -46,6 +46,9 @@ typedef struct {
     void (*on_member_removed)(int group_id, int member_id, const char* member_name, int admin_id, const char* admin_name);
     void (*on_group_dissolved)(int group_id);
     void (*on_group_members_received)(int group_id, int count, GroupMemberInfo* members);
+    // msg_id: Tin nhắn bị đổi
+    // action: 1 = Recall
+    void (*on_message_update)(int message_id, int action_type);
     void (*on_disconnect)(const char* reason);
 } NativeCallbacks;
 
@@ -102,5 +105,7 @@ int client_dissolve_group(int group_id);
 int client_get_group_members(int group_id, int offset, int limit);
 
 void client_logout();
+
+int client_recall_message(int message_id);
 
 #endif // NATIVE_CORE_H

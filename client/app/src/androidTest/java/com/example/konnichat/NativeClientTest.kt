@@ -76,9 +76,13 @@ class NativeClientTest {
         const val CMD_GET_HISTORY = 70
         const val CMD_GET_HISTORY_RESP = 71
 
+        const val CMD_RECALL_MESSAGE = 74
+        const val CMD_RECALL_MESSAGE_RESP = 75
+
         const val CMD_NOTIFY_FRIEND_REQ = 80
         const val CMD_NOTIFY_REQ_ACCEPTED = 81
         const val CMD_NOTIFY_STATUS = 82
+        const val CMD_NOTIFY_UPDATE_MSG = 83
         const val CMD_NOTIFY_MSG_DELIVERED = 85
         const val CMD_NOTIFY_GROUP_CREATED = 86
         const val CMD_NOTIFY_MEMBERS_ADDED = 87
@@ -97,11 +101,16 @@ class NativeClientTest {
         const val STATUS_ERROR_NOT_GROUP_ADMIN = 11
         const val STATUS_ERROR_CANNOT_REMOVE_SELF = 12
         const val STATUS_ERROR_NOT_ALLOWED = 13
+        const val STATUS_ERR_NO_PERMISSION = 14
+
         // sizes
         const val MAX_GROUP_NAME = 100
 
         // Message Type
         const val MSG_TYPE_SYSTEM = 9
+
+        // Action Types
+        const val ACTION_RECALL = 1
     }
 
     @Before
@@ -3122,6 +3131,278 @@ class NativeClientTest {
         Assert.assertTrue("Sau khi Logout, Socket Client phải đóng", isSocketClosed)
     }
 
+    // ==========================================
+    // MODULE 16: RECALL MESSAGE
+    // ==========================================
+
+    @Test
+    fun test43_RecallMessage_Private_Flow() {
+        // Kịch bản:
+        // 1. A gửi tin cho B.
+        // 2. A thu hồi tin nhắn.
+        // 3. A nhận thông báo update realtime.
+        // 4. A lấy lại lịch sử -> Nội dung phải là "Tin nhắn đã bị thu hồi".
+
+        val time = System.currentTimeMillis()
+        val emailA = "recallA_$time@konni.com"
+        val emailB = "recallB_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. A Login
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        // 2. A Gửi tin và lấy MsgID
+        val latchSent = CountDownLatch(1)
+        var msgId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, ts: Long) {
+                msgId = serverId
+                latchSent.countDown()
+            }
+        })
+        NativeClient.sendMessage(idA, idB, "Mistake Message", 123, "private")
+        Assert.assertTrue(latchSent.await(5, TimeUnit.SECONDS))
+
+        // 3. A Thu hồi tin nhắn
+        val latchUpdate = CountDownLatch(1)
+        var updateAction = -1
+        var updateMsgId = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageUpdated(mid: Int, action: Int) {
+                updateMsgId = mid
+                updateAction = action
+                latchUpdate.countDown()
+            }
+        })
+        NativeClient.recallMessage(msgId)
+
+        // Verify Realtime Update
+        Assert.assertTrue("A không nhận được thông báo update", latchUpdate.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals(msgId, updateMsgId)
+        Assert.assertEquals(ACTION_RECALL, updateAction)
+
+        // 4. Verify History (Quan trọng: Server phải trả về text đã thay đổi)
+        val latchHist = CountDownLatch(1)
+        var historyContent = ""
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                if (messages.isNotEmpty()) {
+                    historyContent = messages[0].content
+                    latchHist.countDown()
+                }
+            }
+        })
+        NativeClient.getChatHistory(idB, false, 0, 10)
+
+        Assert.assertTrue(latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Tin nhắn đã bị thu hồi", historyContent)
+    }
+
+    @Test
+    fun test44_RecallMessage_Group_Broadcast() {
+        // Kịch bản: A gửi vào nhóm. A thu hồi. B (trong nhóm) phải nhận được sự kiện update.
+
+        val time = System.currentTimeMillis()
+        val emailA = "g_recall_A_$time@konni.com"
+        val emailB = "g_recall_B_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. A Login, Tạo nhóm có B
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchCreate = CountDownLatch(1)
+        var groupId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onGroupCreated(gid: Int, name: String) {
+                groupId = gid
+                latchCreate.countDown()
+            }
+        })
+        NativeClient.createGroup("Recall Group", intArrayOf(idB))
+        latchCreate.await(5, TimeUnit.SECONDS)
+
+        // 2. A gửi tin vào nhóm
+        val latchSent = CountDownLatch(1)
+        var msgId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, ts: Long) {
+                msgId = serverId
+                latchSent.countDown()
+            }
+        })
+        NativeClient.sendMessage(idA, groupId, "Bad Group Msg", 1, "group")
+        latchSent.await(5, TimeUnit.SECONDS)
+
+        NativeClient.disconnect() // A out
+        Thread.sleep(200)
+
+        // 3. B Login và lắng nghe
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchBUpdate = CountDownLatch(1)
+        var bReceivedMsgId = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageUpdated(mid: Int, action: Int) {
+                if (action == ACTION_RECALL) {
+                    bReceivedMsgId = mid
+                    latchBUpdate.countDown()
+                }
+            }
+        })
+
+        // 4. Fake A Login và gọi lệnh Recall (Giả lập A thao tác trên máy khác)
+        val threadA = Thread {
+            try {
+                val fakeA = FakeTcpClient(SERVER_IP, SERVER_PORT)
+                fakeA.login(emailA, pass)
+                Thread.sleep(500)
+                fakeA.recallMessage(msgId)
+                Thread.sleep(500)
+                fakeA.close()
+            } catch (e: Exception) { e.printStackTrace() }
+        }
+        threadA.start()
+
+        // 5. Verify B nhận được update
+        Assert.assertTrue("B không nhận được sự kiện thu hồi từ A", latchBUpdate.await(8, TimeUnit.SECONDS))
+        Assert.assertEquals(msgId, bReceivedMsgId)
+    }
+
+    @Test
+    fun test45_RecallMessage_Security_NotOwner() {
+        // Kịch bản: A gửi tin. B (Hacker) cố tình thu hồi tin của A -> Server chặn (Lỗi Permission).
+
+        val time = System.currentTimeMillis()
+        val emailA = "victim_r_$time@konni.com"
+        val emailB = "hacker_r_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("Victim", emailA, pass)
+        NativeClient.registerUser("Hacker", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. A gửi tin cho B
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchSent = CountDownLatch(1)
+        var msgId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, ts: Long) {
+                msgId = serverId
+                latchSent.countDown()
+            }
+        })
+        NativeClient.sendMessage(idA, idB, "Don't touch this", 1, "private")
+        latchSent.await(5, TimeUnit.SECONDS)
+        NativeClient.disconnect()
+        Thread.sleep(200)
+
+        // 2. B (Hacker) Login
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchFail = CountDownLatch(1)
+        var statusResp = -1
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onRequestResponse(cmd: Int, status: Int) {
+                if (cmd == CMD_RECALL_MESSAGE_RESP) {
+                    statusResp = status
+                    latchFail.countDown()
+                }
+            }
+        })
+
+        // B cố thu hồi tin của A
+        NativeClient.recallMessage(msgId)
+
+        // 3. Verify Lỗi
+        Assert.assertTrue("Không nhận được phản hồi recall", latchFail.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Phải trả về lỗi NO_PERMISSION", STATUS_ERR_NO_PERMISSION, statusResp)
+    }
+
+    @Test
+    fun test46_RecallMessage_Offline_Persistence() {
+        // Kịch bản: A gửi B. B offline. A thu hồi. B online lấy lịch sử -> Thấy "Tin nhắn đã bị thu hồi".
+
+        val time = System.currentTimeMillis()
+        val emailA = "offline_sender_$time@konni.com"
+        val emailB = "offline_rec_$time@konni.com"
+        val pass = "123"
+
+        NativeClient.registerUser("UserA", emailA, pass)
+        NativeClient.registerUser("UserB", emailB, pass)
+        val idA = helperGetUserId(emailA, pass)
+        val idB = helperGetUserId(emailB, pass)
+
+        // 1. A gửi tin
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailA, pass)
+
+        val latchSent = CountDownLatch(1)
+        var msgId = -1
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageSent(tempId: Int, serverId: Int, ts: Long) {
+                msgId = serverId
+                latchSent.countDown()
+            }
+        })
+        NativeClient.sendMessage(idA, idB, "Content will be hidden", 1, "private")
+        latchSent.await(5, TimeUnit.SECONDS)
+
+        // 2. A thu hồi ngay lập tức (B vẫn chưa online để đọc)
+        val latchRecall = CountDownLatch(1)
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onMessageUpdated(mid: Int, act: Int) {
+                latchRecall.countDown()
+            }
+        })
+        NativeClient.recallMessage(msgId)
+        latchRecall.await(5, TimeUnit.SECONDS)
+        NativeClient.disconnect()
+        Thread.sleep(500)
+
+        // 3. B Online và lấy lịch sử
+        Assert.assertEquals(0, NativeClient.connect(SERVER_IP, SERVER_PORT))
+        NativeClient.loginUser(emailB, pass)
+
+        val latchHist = CountDownLatch(1)
+        var content = ""
+
+        NativeClient.startListening(object : StubNativeEventListener() {
+            override fun onHistoryReceived(messages: Array<MessageDto>) {
+                if (messages.isNotEmpty()) {
+                    content = messages[0].content
+                    latchHist.countDown()
+                }
+            }
+        })
+
+        NativeClient.getChatHistory(idA, false, 0, 10)
+
+        // 4. Verify Content bị thay thế
+        Assert.assertTrue(latchHist.await(5, TimeUnit.SECONDS))
+        Assert.assertEquals("Tin nhắn đã bị thu hồi", content)
+    }
+
     // --- Helper Utility để lấy nhanh ID User ---
     private fun helperGetUserId(email: String, pass: String): Int {
         NativeClient.disconnect()
@@ -3181,6 +3462,8 @@ open class StubNativeEventListener : NativeEventListener {
         groupId: Int,
         members: Array<GroupMemberDto>
     ) {}
+
+    override fun onMessageUpdated(messageId: Int, actionType: Int) {}
 }
 
 /**
@@ -3203,6 +3486,8 @@ class FakeTcpClient(ip: String, port: Int) {
 
     private val CMD_RESPOND_FRIEND_REQ = 44
     private val CMD_UNFRIEND = 46
+
+    private val CMD_RECALL_MESSAGE = 74
 
     // Sizes
     private val MAX_EMAIL_LEN = 256
@@ -3416,6 +3701,24 @@ class FakeTcpClient(ip: String, port: Int) {
 
         writeHeader(buffer, CMD_DISSOLVE_GROUP, payloadSize)
         buffer.putInt(groupId)
+
+        output.write(buffer.array())
+        output.flush()
+    }
+
+    fun recallMessage(msgId: Int) {
+        // Payload: message_id(4) + group_id(4) + action_type(4) + reaction_code(4) = 16 bytes
+        val payloadSize = 16
+        val totalSize = 28 + payloadSize
+        val buffer = ByteBuffer.allocate(totalSize)
+        buffer.order(ByteOrder.LITTLE_ENDIAN)
+
+        writeHeader(buffer, CMD_RECALL_MESSAGE, payloadSize)
+
+        buffer.putInt(msgId)
+        buffer.putInt(0) // group_id (Fake gửi đại là 0)
+        buffer.putInt(1) // action_type = 1 (Recall)
+        buffer.putInt(0) // reaction_code
 
         output.write(buffer.array())
         output.flush()
