@@ -10,7 +10,7 @@
 // Client gửi Ping mỗi 15s
 #define HEARTBEAT_INTERVAL_SEC 15
 
-// Server đợi tối đa 45s (3 lần miss ping)
+// Server đợi tối đa 45s (3 lần miss ping) 
 #define HEARTBEAT_TIMEOUT_MS 45000
 
 #define MAX_EMAIL_LEN 256
@@ -27,7 +27,7 @@ typedef enum {
     // 0. System
     CMD_HEARTBEAT = 0,         // Ping/Pong giữ kết nối
 
-    // 1. Auth
+    // 1. Auth  
     CMD_REGISTER            = 10,
     CMD_REGISTER_RESP       = 11, // Phản hồi đăng ký
 
@@ -36,12 +36,12 @@ typedef enum {
 
     CMD_LOGOUT              = 14,
 
-    // 2. Chat 1-1
+    // 2. Chat 1-1 
     CMD_SEND_MESSAGE        = 20, // Client gửi tin
     CMD_SEND_MESSAGE_RESP   = 21, // Server xác nhận đã nhận (ACK)
-    CMD_RECEIVE_MESSAGE     = 22, // Server đẩy tin nhắn tới người nhận
+    CMD_RECEIVE_MESSAGE     = 22, // Server đẩy tin nhắn tới người nhận 
 
-    // 3. Chat Group
+    // 3. Chat Group 
     CMD_CREATE_GROUP        = 30,
     CMD_CREATE_GROUP_RESP   = 31,
 
@@ -63,7 +63,7 @@ typedef enum {
     CMD_GET_GROUP_MEMBERS   = 52,
     CMD_GET_GROUP_MEMBERS_RESP = 53,
 
-    // 4. Friend Management
+    // 4. Friend Management 
     CMD_GET_FRIEND_LIST     = 40,
     CMD_GET_FRIEND_LIST_RESP= 41,
 
@@ -83,7 +83,7 @@ typedef enum {
     CMD_SEARCH_USERS        = 60,
     CMD_SEARCH_USERS_RESP   = 61,
 
-    // 6. Advanced Features
+    // 6. Advanced Features 
     CMD_GET_HISTORY         = 70,
     CMD_GET_HISTORY_RESP    = 71,
 
@@ -91,7 +91,10 @@ typedef enum {
     CMD_FETCH_OFFLINE_MSGS_RESP = 73,
 
     CMD_RECALL_MESSAGE = 74,     // Thu hồi
-    CMD_REACT_MESSAGE = 75,      // Thả tim, like...
+    CMD_RECALL_MESSAGE_RESP = 75,
+
+    CMD_REACT_MESSAGE = 76,      // Thả tim, like...
+    CMD_REACT_MESSAGE_RESP = 77,
 
     // 6. Notifications
     CMD_NOTIFY_FRIEND_REQ   = 80,   // Có lời mời kết bạn mới
@@ -126,7 +129,9 @@ typedef enum {
     STATUS_ERROR_USER_NOT_IN_GROUP = 10,  // Người dùng không thuộc nhóm
     STATUS_ERROR_NOT_GROUP_ADMIN = 11,   // Người dùng không phải admin nhóm
     STATUS_ERROR_CANNOT_REMOVE_SELF = 12,  // Không thể tự kick chính mình khỏi nhóm
-    STATUS_ERROR_NOT_ALLOWED = 13  // Hành động không được phép
+    STATUS_ERROR_NOT_ALLOWED = 13,  // Hành động không được phép
+    STATUS_ERROR_NO_PERMISSION = 14, // Không có quyền thực hiện hành động
+    STATUS_ERROR_MESSAGE_NOT_FOUND = 15 // Tin nhắn không tồn tại
 } StatusCode;
 
 // --- ĐỊNH NGHĨA TRẠNG THÁI QUAN HỆ ---
@@ -144,7 +149,7 @@ typedef enum {
 // --- HEADER ---
 // Tổng kích thước: 4*5 + 8 = 28 bytes
 typedef struct __attribute__((packed)) {
-    int32_t version;        // Phiên bản protocol
+    int32_t version;        // Phiên bản protocol 
     int32_t command_type;   // Loại lệnh (CommandType)
     int32_t payload_size;   // Kích thước phần dữ liệu đi kèm
     int32_t request_id;     // ID định danh request (Do Client sinh ra, Server trả lại y nguyên)
@@ -174,13 +179,13 @@ typedef struct __attribute__((packed)) {
     int8_t is_online;       // 1: Online, 0: Offline
 } UserInfoPayload;
 
-// 3. Chat 1-1
+// 3. Chat 1-1 
 typedef struct __attribute__((packed)) {
     int32_t message_id;     // Server sinh ra (Gửi đi để 0, Nhận về sẽ có giá trị)
     int32_t sender_id;
     int32_t receiver_id;
     int32_t msg_type;       // 1: Text, 2: Image, 3: File...
-    char chat_type[16];     // 1: Private, 2: Group
+    char chat_type[16];     // 1: Private, 2: Group 
     char content[MAX_CONTENT_LEN];
     uint64_t created_at;    // Server Time
 } ChatPayload;
@@ -251,7 +256,8 @@ typedef struct __attribute__((packed)) {
     int32_t message_id;     // ID tin nhắn cần tương tác
     int32_t group_id;       // 0 nếu là chat 1-1, >0 nếu là chat nhóm
     int32_t action_type;    // 1: Recall, 2: React
-    int32_t reaction_code;  // 0: None, 1: Heart, 2: Haha... (Nếu là Recall thì bỏ qua)
+    int32_t reaction_code;  // 0: None, 1: Heart, 2: Haha...
+    int32_t reactor_id;     // ID người thực hiện hành động
 } InteractionPayload;
 
 // 8. Request by ID (Dùng chung cho nhiều việc: GetHistory, FetchOffline...)
@@ -279,7 +285,7 @@ typedef struct __attribute__((packed)) {
  * 1. Request: Client gửi lên Server (CMD_ADD_MEMBER)
  * 2. Notification: Server báo về Client (CMD_NOTIFY_MEMBERS_ADDED)
  *
- * Cấu trúc gói tin thực tế:
+ * Cấu trúc gói tin thực tế: 
  * [PacketHeader] + [AddGroupMemberPayload] + [int32_t member_ids[]]
  */
 typedef struct __attribute__((packed)) {
@@ -298,7 +304,7 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     int32_t group_id;
     int32_t member_id;              // ID người rời
-    char member_name[MAX_NAME_LEN]; // Tên người rời
+    char member_name[MAX_NAME_LEN]; // Tên người rời 
 } MemberLeftNotifyPayload;
 
 // Request (Client -> Server)

@@ -1235,6 +1235,137 @@ static void handle_get_group_members(int sock, PacketHeader *reqHeader, void *pa
     LOG_INFO("User %d fetched %d members of Group %d", current_user_id, count, group_id);
 }
 
+static void handle_recall_message(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    if (reqHeader->payload_size < sizeof(InteractionPayload))
+    {
+        LOG_WARN("User %d sent invalid recall message payload size", current_user_id);
+        send_response(sock, CMD_RECALL_MESSAGE_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
+    }
+
+    InteractionPayload *req = (InteractionPayload *)payload;
+
+    int receiver_id = 0;
+    char chat_type[16];
+
+    // 1. Gọi Repo xử lý DB
+    int result = db_revoke_message(req->message_id, current_user_id, &receiver_id, chat_type);
+
+    if (result == 1)
+    {
+        // Success
+
+        // A. Broadcast cho Receiver (hoặc Group)
+        InteractionPayload notify;
+        notify.message_id = req->message_id;
+        notify.action_type = 1; // 1 = Recall
+        notify.group_id = (strcmp(chat_type, "group") == 0) ? receiver_id : 0;
+        notify.reactor_id = current_user_id; 
+        notify.reaction_code = 0; 
+        
+        if (strcmp(chat_type, "private") == 0)
+        {
+            // Gửi cho người nhận (nếu online)
+            int target_sock = get_socket_by_user_id(receiver_id);
+            if (target_sock != -1)
+            {
+                send_response(target_sock, CMD_NOTIFY_UPDATE_MSG, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+            }
+            // Gửi lại cho chính mình (để cập nhật UI realtime)
+            send_response(sock, CMD_NOTIFY_UPDATE_MSG, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+        }
+        else if (strcmp(chat_type, "group") == 0)
+        {
+            // Chat nhóm: Gửi cho tất cả thành viên
+            int members[MAX_GROUP_MEMBERS];
+            int count = db_get_group_member_ids(receiver_id, members, MAX_GROUP_MEMBERS);
+            for (int i = 0; i < count; i++)
+            {
+                int target_sock = get_socket_by_user_id(members[i]);
+                if (target_sock != -1)
+                {
+                    send_response(target_sock, CMD_NOTIFY_UPDATE_MSG, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+                }
+            }
+        }
+    }
+    else if (result == -1)
+    {
+        // Fail - Không có quyền
+        send_response(sock, CMD_RECALL_MESSAGE_RESP, reqHeader->request_id, STATUS_ERROR_NO_PERMISSION, NULL, 0);
+        LOG_WARN("User %d has no permission to revoke msg %d", current_user_id, req->message_id);
+    }
+    else
+    {
+        // Fail
+        send_response(sock, CMD_RECALL_MESSAGE_RESP, reqHeader->request_id, STATUS_ERROR_UNKNOWN, NULL, 0);
+        LOG_WARN("Revoke failed for msg %d by user %d", req->message_id, current_user_id);
+    }
+}
+
+static void handle_react_message(int sock, PacketHeader *reqHeader, void *payload, int current_user_id)
+{
+    if (reqHeader->payload_size < sizeof(InteractionPayload))
+    {
+        LOG_WARN("User %d sent invalid react message payload size", current_user_id);
+        send_response(sock, CMD_REACT_MESSAGE_RESP, reqHeader->request_id, STATUS_ERROR_INVALID_PARAM, NULL, 0);
+        return;
+    }
+
+    InteractionPayload *req = (InteractionPayload *)payload;
+
+    int receiver_id = 0;
+    char chat_type[16];
+
+    // 1. Lấy thông tin tin nhắn để biết nó thuộc về ai/nhóm nào
+    if (db_get_message_routing(req->message_id, &receiver_id, chat_type) == 0)
+    {
+        LOG_WARN("Message %d not found", req->message_id);
+        send_response(sock, CMD_REACT_MESSAGE_RESP, reqHeader->request_id, STATUS_ERROR_MESSAGE_NOT_FOUND, NULL, 0);
+        return;
+    }
+
+    // 2. Thực hiện lưu DB
+    if (db_react_message(current_user_id, req->message_id, req->reaction_code))
+    {
+
+        // 3. Chuẩn bị Notify Payload
+        InteractionPayload notify;
+        notify.message_id = req->message_id;
+        notify.action_type = 2; // 2 = React
+        notify.reaction_code = req->reaction_code;
+        notify.reactor_id = current_user_id; // Cho biết ai là người react
+        notify.group_id = (strcmp(chat_type, "group") == 0) ? receiver_id : 0;
+
+        // 4. Broadcast
+        if (strcmp(chat_type, "private") == 0)
+        {
+            // Chat riêng: Gửi cho người kia và chính mình
+            int target_sock = get_socket_by_user_id(receiver_id);
+            if (target_sock != -1)
+                send_response(target_sock, CMD_NOTIFY_UPDATE_MSG, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+
+            // Gửi lại cho mình (để update UI realtime)
+            send_response(sock, CMD_NOTIFY_UPDATE_MSG, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+        }
+        else if (strcmp(chat_type, "group") == 0)
+        {
+            // Chat nhóm: Gửi cho tất cả thành viên
+            int members[MAX_GROUP_MEMBERS]; 
+            int count = db_get_group_member_ids(receiver_id, members, MAX_GROUP_MEMBERS);
+            for (int i = 0; i < count; i++)
+            {
+                int target_sock = get_socket_by_user_id(members[i]);
+                if (target_sock != -1)
+                {
+                    send_response(target_sock, CMD_NOTIFY_UPDATE_MSG, 0, STATUS_SUCCESS, &notify, sizeof(notify));
+                }
+            }
+        }
+    }
+}
+
 // --- MAIN THREAD LOOP ---
 void *handle_client(void *socket_desc)
 {
@@ -1373,6 +1504,12 @@ void *handle_client(void *socket_desc)
             break;
         case CMD_GET_GROUP_MEMBERS:
             handle_get_group_members(sock, &header, payload, current_user_id);
+            break;
+        case CMD_RECALL_MESSAGE:
+            handle_recall_message(sock, &header, payload, current_user_id);
+            break;
+        case CMD_REACT_MESSAGE:
+            handle_react_message(sock, &header, payload, current_user_id);
             break;
 
         default:

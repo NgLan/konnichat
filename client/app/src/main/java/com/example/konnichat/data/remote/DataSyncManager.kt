@@ -154,4 +154,13 @@ class DataSyncManager(private val db: AppDatabase) : NativeEventListener {
     ) {
         TODO("Not yet implemented")
     }
+
+    override fun onMessageUpdated(
+        messageId: Int,
+        actionType: Int,
+        reactionCode: Int,
+        reactorId: Int
+    ) {
+        TODO("Not yet implemented")
+    }
 }

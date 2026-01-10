@@ -29,6 +29,7 @@ static jmethodID m_onGroupList;
 static jmethodID m_onMemberRemoved;
 static jmethodID m_onGroupDissolved;
 static jmethodID m_onGroupMembers;
+static jmethodID m_onMsgUpdate;
 
 static jclass c_UserDto;
 static jmethodID m_UserDtoInit;
@@ -435,6 +436,14 @@ void jni_on_group_members_received(int group_id, int count, GroupMemberInfo* mem
     (*env)->DeleteLocalRef(env, jArray);
 }
 
+void jni_on_msg_update(int message_id, int action_type, int reaction_code, int reactor_id) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    (*env)->CallVoidMethod(env, g_listener, m_onMsgUpdate,
+                           (jint)message_id, (jint)action_type, (jint)reaction_code, (jint)reactor_id);
+}
+
 // --- Helper ném lỗi ---
 void throw_unified_error(JNIEnv *env, int result_code) {
     jclass exClass = g_UnknownException;
@@ -529,6 +538,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onMemberRemoved = (*env)->GetMethodID(env, lClass, "onMemberRemoved", "(IILjava/lang/String;ILjava/lang/String;)V");
     m_onGroupDissolved = (*env)->GetMethodID(env, lClass, "onGroupDissolved", "(I)V");
     m_onGroupMembers = (*env)->GetMethodID(env, lClass, "onGroupMembersReceived", "(I[Lcom/example/konnichat/data/remote/dto/GroupMemberDto;)V");
+    m_onMsgUpdate = (*env)->GetMethodID(env, lClass, "onMessageUpdated", "(IIII)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
     // Cache UserDto
@@ -616,6 +626,7 @@ void Java_com_example_konnichat_data_remote_NativeClient_startListening(JNIEnv *
     cbs.on_member_removed = jni_on_member_removed;
     cbs.on_group_dissolved = jni_on_group_dissolved;
     cbs.on_group_members_received = jni_on_group_members_received;
+    cbs.on_message_update = jni_on_msg_update;
     cbs.on_disconnect = jni_on_disconnect;
     // 3. Start C Thread
     start_reader_thread(cbs);
@@ -846,4 +857,14 @@ Java_com_example_konnichat_data_remote_NativeClient_getGroupMembers(JNIEnv *env,
 JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_logoutUser(JNIEnv *env, jobject thiz) {
     client_logout();
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_recallMessage(JNIEnv *env, jobject thiz, jint msgId) {
+    client_recall_message(msgId);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_reactMessage(JNIEnv *env, jobject thiz, jint msgId, jint code) {
+    client_react_message(msgId, code);
 }

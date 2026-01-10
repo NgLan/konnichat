@@ -47,4 +47,5 @@ interface NativeEventListener {
     // 4. Hiện Toast: "Nhóm đã bị giải tán".
     fun onGroupDissolved(groupId: Int)
     fun onGroupMembersReceived(groupId: Int, members: Array<GroupMemberDto>)
+    fun onMessageUpdated(messageId: Int, actionType: Int, reactionCode: Int, reactorId: Int)
 }

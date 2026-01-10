@@ -52,4 +52,6 @@ object NativeClient {
     external fun getGroupMembers(groupId: Int, offset: Int, limit: Int)
 
     external fun logoutUser()
+    external fun recallMessage(messageId: Int)
+    external fun reactMessage(messageId: Int, reactionCode: Int)
 }
