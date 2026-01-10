@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.ViewModelProvider
 import com.example.konnichat.core.state.Resource
+import com.example.konnichat.core.utils.ValidationUtils
 import com.example.konnichat.data.remote.dto.UserDto
 import com.example.konnichat.data.repository.AuthRepository
 import kotlinx.coroutines.launch
@@ -50,8 +51,26 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
 
     // Gọi hàm đăng ký
     fun register(name: String, email: String, pass: String) {
+
         if (name.isBlank() || email.isBlank() || pass.isBlank()) {
             _registerState.value = Resource.Error("Vui lòng nhập đầy đủ thông tin")
+            return
+        }
+
+        if (!ValidationUtils.isValidName(name)) {
+            _registerState.value = Resource.Error("Tên không hợp lệ (Tối đa 63 ký tự)")
+            return
+        }
+
+        // 2. Validate Email
+        if (!ValidationUtils.isValidEmail(email)) {
+            _registerState.value = Resource.Error("Email không đúng định dạng hoặc quá dài")
+            return
+        }
+
+        // 3. Validate Password
+        if (!ValidationUtils.isValidPassword(pass)) {
+            _registerState.value = Resource.Error("Mật khẩu ít nhất 8 ký tự, gồm chữ hoa, thường, số và ký tự đặc biệt")
             return
         }
 
