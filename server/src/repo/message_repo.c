@@ -186,12 +186,16 @@ int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPa
             messages_out[count].msg_type = row[6] ? atoi(row[6]) : 1;
 
             char status[20];
-            if (row[7]) strcpy(status, row[7]); 
-            
-            if (strcmp(status, "revoked") == 0) {
+            if (row[7])
+                strcpy(status, row[7]);
+
+            if (strcmp(status, "revoked") == 0)
+            {
                 strcpy(messages_out[count].content, "Tin nhắn đã bị thu hồi");
                 messages_out[count].msg_type = 1; // Về dạng text
-            } else {
+            }
+            else
+            {
                 strncpy(messages_out[count].content, row[3], MAX_CONTENT_LEN - 1);
             }
 
@@ -270,6 +274,77 @@ int db_revoke_message(int msg_id, int user_id, int *out_receiver_id, char *out_c
     else
     {
         LOG_ERROR("Revoke Msg Error: %s", mysql_error(conn));
+    }
+
+    db_release_conn(conn);
+    return success;
+}
+
+// Hàm Routing (Lấy thông tin tin nhắn để biết gửi notify cho ai)
+int db_get_message_routing(int msg_id, int *out_receiver_id, char *out_chat_type)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    char query[256];
+    snprintf(query, sizeof(query), "SELECT receiver_id, chat_type FROM messages WHERE id = %d", msg_id);
+
+    int found = 0;
+    if (mysql_query(conn, query) == 0)
+    {
+        MYSQL_RES *res = mysql_store_result(conn);
+        if (res)
+        {
+            MYSQL_ROW row = mysql_fetch_row(res);
+            if (row)
+            {
+                *out_receiver_id = atoi(row[0]);
+                if (row[1])
+                    strcpy(out_chat_type, row[1]);
+                found = 1;
+            }
+            mysql_free_result(res);
+        }
+    }
+    db_release_conn(conn);
+    return found;
+}
+
+// 2. Hàm React
+int db_react_message(int user_id, int msg_id, int reaction_code)
+{
+    MYSQL *conn = db_get_conn();
+    if (!conn)
+        return 0;
+
+    char query[512];
+    int success = 0;
+
+    if (reaction_code == 0)
+    {
+        // CASE: Bỏ reaction -> DELETE
+        snprintf(query, sizeof(query),
+                 "DELETE FROM reactions WHERE user_id = %d AND message_id = %d",
+                 user_id, msg_id);
+    }
+    else
+    {
+        // CASE: Thả reaction mới hoặc đổi reaction -> UPSERT
+        snprintf(query, sizeof(query),
+                 "INSERT INTO reactions (user_id, message_id, icon_id, created_at) "
+                 "VALUES (%d, %d, %d, NOW()) "
+                 "ON DUPLICATE KEY UPDATE icon_id = %d, created_at = NOW()",
+                 user_id, msg_id, reaction_code, reaction_code);
+    }
+
+    if (mysql_query(conn, query))
+    {
+        LOG_ERROR("React Message DB Error: %s", mysql_error(conn));
+    }
+    else
+    {
+        success = 1;
     }
 
     db_release_conn(conn);

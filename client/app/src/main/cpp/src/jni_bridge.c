@@ -436,10 +436,12 @@ void jni_on_group_members_received(int group_id, int count, GroupMemberInfo* mem
     (*env)->DeleteLocalRef(env, jArray);
 }
 
-void jni_on_msg_update(int message_id, int action_type) {
+void jni_on_msg_update(int message_id, int action_type, int reaction_code, int reactor_id) {
     JNIEnv *env = get_jni_env();
     if (!env || !g_listener) return;
-    (*env)->CallVoidMethod(env, g_listener, m_onMsgUpdate, (jint)message_id, (jint)action_type);
+
+    (*env)->CallVoidMethod(env, g_listener, m_onMsgUpdate,
+                           (jint)message_id, (jint)action_type, (jint)reaction_code, (jint)reactor_id);
 }
 
 // --- Helper ném lỗi ---
@@ -536,7 +538,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     m_onMemberRemoved = (*env)->GetMethodID(env, lClass, "onMemberRemoved", "(IILjava/lang/String;ILjava/lang/String;)V");
     m_onGroupDissolved = (*env)->GetMethodID(env, lClass, "onGroupDissolved", "(I)V");
     m_onGroupMembers = (*env)->GetMethodID(env, lClass, "onGroupMembersReceived", "(I[Lcom/example/konnichat/data/remote/dto/GroupMemberDto;)V");
-    m_onMsgUpdate = (*env)->GetMethodID(env, lClass, "onMessageUpdated", "(II)V");
+    m_onMsgUpdate = (*env)->GetMethodID(env, lClass, "onMessageUpdated", "(IIII)V");
     m_onDisconnect = (*env)->GetMethodID(env, lClass, "onConnectionClosed",
                                          "(Ljava/lang/String;)V");
     // Cache UserDto
@@ -860,4 +862,9 @@ Java_com_example_konnichat_data_remote_NativeClient_logoutUser(JNIEnv *env, jobj
 JNIEXPORT void JNICALL
 Java_com_example_konnichat_data_remote_NativeClient_recallMessage(JNIEnv *env, jobject thiz, jint msgId) {
     client_recall_message(msgId);
+}
+
+JNIEXPORT void JNICALL
+Java_com_example_konnichat_data_remote_NativeClient_reactMessage(JNIEnv *env, jobject thiz, jint msgId, jint code) {
+    client_react_message(msgId, code);
 }

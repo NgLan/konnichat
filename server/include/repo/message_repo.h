@@ -18,4 +18,14 @@ int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPa
  */
 int db_revoke_message(int msg_id, int user_id, int *out_receiver_id, char *out_chat_type);
 
+/**
+ * @brief Thả tim hoặc đổi tim.
+ * @param reaction_code: 0 để xóa, >0 để thêm/sửa.
+ * @return 1: Success, 0: Fail
+ */
+int db_react_message(int user_id, int msg_id, int reaction_code);
+
+// Hàm helper để lấy thông tin routing
+int db_get_message_routing(int msg_id, int *out_receiver_id, char *out_chat_type);
+
 #endif
