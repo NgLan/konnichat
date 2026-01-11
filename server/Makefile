@@ -10,6 +10,7 @@ LIBS = -lpthread -lmysqlclient
 # Danh sách thư mục
 SRC_DIR = src
 REPO_DIR = src/repo
+UTILS_DIR = src/utils
 
 # Danh sách file nguồn 
 SRCS = $(SRC_DIR)/main.c \
@@ -21,7 +22,8 @@ SRCS = $(SRC_DIR)/main.c \
        $(REPO_DIR)/user_repo.c \
        $(REPO_DIR)/friend_repo.c \
        $(REPO_DIR)/message_repo.c \
-       $(REPO_DIR)/group_repo.c
+       $(REPO_DIR)/group_repo.c \
+       $(UTILS_DIR)/logger.c
 
 # Tạo danh sách file object (.o) tương ứng
 OBJS = $(SRCS:.c=.o)
@@ -44,6 +46,6 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(SRC_DIR)/*.o $(REPO_DIR)/*.o $(TARGET)
+	rm -f $(SRC_DIR)/*.o $(REPO_DIR)/*.o $(UTILS_DIR)/*.o $(TARGET)
 
 .PHONY: all clean

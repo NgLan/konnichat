@@ -13,6 +13,7 @@
 int main()
 {
     // 1. Khởi tạo các module nền tảng
+    init_logger("server.log"); 
     LOG_INFO("Starting KonniChat Server...");
     init_database();
     db_reset_all_users_offline();
@@ -21,6 +22,6 @@ int main()
 
     // 2. Khởi động TCP Server (Chạy chính, block)
     start_tcp_server();
-
+    close_logger();
     return 0;
 }
