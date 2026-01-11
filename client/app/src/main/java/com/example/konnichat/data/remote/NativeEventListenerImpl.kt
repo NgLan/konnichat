@@ -446,7 +446,18 @@ object NativeEventListenerImpl : NativeEventListener {
         reactionCode: Int,
         reactorId: Int
     ) {
-        TODO("Not yet implemented")
+        // actionType: 1 = Recall, 2 = React
+        if (actionType == 1) {
+            Log.d(TAG, "♻️ Tin nhắn $messageId đã bị thu hồi bởi user $reactorId")
+            chatRepository?.let { repo ->
+                CoroutineScope(Dispatchers.IO).launch {
+                    repo.handleMessageRevoked(messageId)
+                }
+            }
+        } else if (actionType == 2) {
+            // Xử lý Reaction (Thả tim) - Để sau
+            Log.d(TAG, "Reaction update: $messageId code=$reactionCode")
+        }
     }
 
 

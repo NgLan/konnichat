@@ -14,7 +14,10 @@ import com.example.konnichat.data.local.entity.MessageEntity
 import java.text.SimpleDateFormat
 import java.util.Locale
 
-class ChatAdapter(private val currentUserId: Int) :
+class ChatAdapter(
+    private val currentUserId: Int,
+    private val onMessageLongClick: (MessageWithSender) -> Unit
+) :
 
     ListAdapter<MessageWithSender, RecyclerView.ViewHolder>(MessageDiffCallback()) {
 
@@ -72,6 +75,13 @@ class ChatAdapter(private val currentUserId: Int) :
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         val item = getItem(position)
 
+        if (holder !is SystemMessageViewHolder) {
+            holder.itemView.setOnLongClickListener {
+                onMessageLongClick(item)
+                true // Trả về true để tiêu thụ sự kiện
+            }
+        }
+
         when (holder) {
             is SentMessageViewHolder -> holder.bind(item.message)
             // [SỬA] Truyền nguyên cục item (MessageWithSender) thay vì chỉ item.message
@@ -95,6 +105,23 @@ class ChatAdapter(private val currentUserId: Int) :
 
             // Đảm bảo hiện thời gian (vì trong XML có thể set gone)
             tvTime.visibility = View.VISIBLE
+
+            if (msg.status == "revoked") {
+                tvContent.text = "Tin nhắn đã bị thu hồi"
+
+                // 1. Đổi background sang loại có viền, nền trong suốt
+                tvContent.setBackgroundResource(R.drawable.bg_message_revoked)
+
+                // 2. Chữ màu xám
+                tvContent.setTextColor(android.graphics.Color.GRAY)
+
+                // 3. Chữ in nghiêng
+                tvContent.setTypeface(null, android.graphics.Typeface.ITALIC)
+            } else {
+                tvContent.text = msg.content
+                tvContent.setTextColor(android.graphics.Color.WHITE) // Màu gốc (check lại layout xml của bạn)
+                tvContent.setTypeface(null, android.graphics.Typeface.NORMAL)
+            }
         }
     }
 
@@ -130,6 +157,21 @@ class ChatAdapter(private val currentUserId: Int) :
                 // Chat 1-1 thì ẩn tên và avatar đi cho giống Messenger (hoặc để nguyên tùy ý thích)
                 tvSenderName.visibility = View.GONE
                 imgAvatar.visibility = View.VISIBLE // Vẫn hiện avatar cho đẹp
+            }
+
+            if (msg.status == "revoked") {
+                tvContent.text = "Tin nhắn đã bị thu hồi"
+                tvContent.setBackgroundResource(R.drawable.bg_message_revoked)
+
+                // 2. Màu xám
+                tvContent.setTextColor(android.graphics.Color.GRAY)
+
+                // 3. In nghiêng
+                tvContent.setTypeface(null, android.graphics.Typeface.ITALIC)
+            } else {
+                tvContent.text = msg.content
+                tvContent.setTextColor(android.graphics.Color.BLACK) // Màu gốc
+                tvContent.setTypeface(null, android.graphics.Typeface.NORMAL)
             }
 
             // [THÊM] Hiển thị Avatar (Placeholder)
