@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.lifecycle.MutableLiveData // [THÊM]
 import com.example.konnichat.core.Constants
 import com.example.konnichat.data.repository.AuthRepository
+import com.example.konnichat.ui.chat.ChatActivity
 import kotlinx.coroutines.delay
 
 // [THÊM] Enum trạng thái kết nối
@@ -275,16 +276,34 @@ object NativeEventListenerImpl : NativeEventListener {
                         notifyContent = msg.content
                     }
 
+                    val isMuted = if (msg.chatType == "group") {
+                        // Check mute cho Group
+                        chatRepository?.isGroupMuted(msg.receiverId) ?: false
+                    } else {
+                        // Check mute cho User (Private)
+                        userRepository?.isUserMuted(msg.senderId) ?: false
+                    }
+
+                    val isCurrentChatOpen = if (msg.chatType == "group") {
+                        // Nếu là nhóm: So sánh ID nhóm (receiverId) với ID màn hình đang mở
+                        msg.receiverId == ChatActivity.sCurrentTargetId
+                    } else {
+                        // Nếu là cá nhân: So sánh ID người gửi (senderId) với ID màn hình đang mở
+                        msg.senderId == ChatActivity.sCurrentTargetId
+                    }
+
                     // 5. Hiển thị thông báo
-                    NotificationHelper.showNotification(
-                        ctx,
-                        title = notifyTitle,
-                        content = notifyContent,
-                        type = "MESSAGE",
-                        targetId = targetId,   // ID để mở lại đoạn chat (GroupId hoặc FriendId)
-                        targetName = notifyTitle, // Tên hiển thị trên Toolbar khi mở chat
-                        chatType = if (isGroup) "group" else "private"
-                    )
+                    if (!isMuted && !isCurrentChatOpen) {
+                        NotificationHelper.showNotification(
+                            ctx,
+                            title = notifyTitle,
+                            content = notifyContent,
+                            type = "MESSAGE",
+                            targetId = targetId,   // ID để mở lại đoạn chat (GroupId hoặc FriendId)
+                            targetName = notifyTitle, // Tên hiển thị trên Toolbar khi mở chat
+                            chatType = if (isGroup) "group" else "private"
+                        )
+                    }
                 }
             }
         }

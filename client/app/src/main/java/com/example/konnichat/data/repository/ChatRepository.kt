@@ -1,5 +1,6 @@
 package com.example.konnichat.data.repository
 
+import android.content.SharedPreferences
 import android.util.Log
 import com.example.konnichat.data.local.dao.ConversationDao
 import com.example.konnichat.data.local.dao.MessageDao // [NEW] Thêm DAO
@@ -24,7 +25,8 @@ class ChatRepository(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val groupDao: GroupDao,
-    private val userDao: UserDao
+    private val userDao: UserDao,
+    private val prefs: SharedPreferences
 ) {
 
     // Hàm lấy danh sách hội thoại (Realtime Local)
@@ -436,5 +438,14 @@ class ChatRepository(
     }
     fun checkGroupMembership(groupId: Int, userId: Int): Flow<Boolean> {
         return groupDao.isUserInGroupFlow(groupId, userId)
+    }
+
+    fun isGroupMuted(groupId: Int): Boolean {
+        // Sử dụng key định dạng: MUTE_GROUP_12
+        return prefs.getBoolean("MUTE_GROUP_$groupId", false)
+    }
+
+    fun setGroupMute(groupId: Int, isMuted: Boolean) {
+        prefs.edit().putBoolean("MUTE_GROUP_$groupId", isMuted).apply()
     }
 }

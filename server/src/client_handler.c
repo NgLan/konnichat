@@ -1316,7 +1316,7 @@ static void handle_react_message(int sock, PacketHeader *reqHeader, void *payloa
     InteractionPayload *req = (InteractionPayload *)payload;
 
     int receiver_id = 0;
-    char chat_type[16];
+    char chat_type[16]; 
 
     // 1. Lấy thông tin tin nhắn để biết nó thuộc về ai/nhóm nào
     if (db_get_message_routing(req->message_id, &receiver_id, chat_type) == 0)
