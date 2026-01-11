@@ -284,8 +284,16 @@ object NativeEventListenerImpl : NativeEventListener {
                         userRepository?.isUserMuted(msg.senderId) ?: false
                     }
 
+                    val isCurrentChatOpen = if (msg.chatType == "group") {
+                        // Nếu là nhóm: So sánh ID nhóm (receiverId) với ID màn hình đang mở
+                        msg.receiverId == ChatActivity.sCurrentTargetId
+                    } else {
+                        // Nếu là cá nhân: So sánh ID người gửi (senderId) với ID màn hình đang mở
+                        msg.senderId == ChatActivity.sCurrentTargetId
+                    }
+
                     // 5. Hiển thị thông báo
-                    if (!isMuted && msg.senderId != ChatActivity.sCurrentTargetId) {
+                    if (!isMuted && !isCurrentChatOpen) {
                         NotificationHelper.showNotification(
                             ctx,
                             title = notifyTitle,
