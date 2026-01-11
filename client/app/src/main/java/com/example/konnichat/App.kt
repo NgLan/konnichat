@@ -26,11 +26,13 @@ class App : Application() {
     lateinit var syncManager: DataSyncManager
         private set
 
+    private val sharedPrefs by lazy {
+        applicationContext.getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
+    }
     // SỬA Ở ĐÂY: Truyền SharedPreferences vào UserRepository
     val userRepository by lazy {
         // Tên file "konnichat_prefs" phải KHỚP với tên file bên LoginActivity
-        val prefs = applicationContext.getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
-        UserRepository(db.userDao(),db.messageDao(), prefs)
+        UserRepository(db.userDao(),db.messageDao(), sharedPrefs)
     }
 
     val chatRepository by lazy {
@@ -38,13 +40,13 @@ class App : Application() {
             db.conversationDao(),
             db.messageDao(),
             db.groupDao(),
-            db.userDao()
+            db.userDao(),
+            sharedPrefs
         )
     }
 
     val authRepository by lazy {
-        val prefs = applicationContext.getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
-        AuthRepository(db.userDao(), db, prefs)
+        AuthRepository(db.userDao(), db, sharedPrefs)
     }
 
     override fun onCreate() {

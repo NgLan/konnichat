@@ -78,22 +78,26 @@ class ChatViewModel(
         // 5. Trả về LiveData từ DB Local
         return chatRepository.getMessages(myId, friendId, chatType).asLiveData()
     }
-    private fun checkMuteStatus(targetId: Int) {
-        // Vì SharedPreferences đọc nhanh nên có thể không cần coroutine,
-        // nhưng để an toàn cứ dùng postValue
-        val muted = userRepository.isUserMuted(targetId)
-        _isMuted.postValue(muted)
+    fun checkMuteStatus(targetId: Int) {
+        val muted = if (currentChatType == "group") {
+            chatRepository.isGroupMuted(targetId)
+        } else {
+            userRepository.isUserMuted(targetId)
+        }
+        _isMuted.value = muted
     }
 
     fun toggleMute(targetId: Int) {
-        val current = _isMuted.value ?: false
-        val newState = !current
+        val currentStatus = _isMuted.value ?: false
+        val newStatus = !currentStatus
 
-        // Lưu vào Prefs
-        userRepository.setUserMute(targetId, newState)
+        if (currentChatType == "group") {
+            chatRepository.setGroupMute(targetId, newStatus)
+        } else {
+            userRepository.setUserMute(targetId, newStatus)
+        }
 
-        // Update UI
-        _isMuted.value = newState
+        _isMuted.value = newStatus
     }
 
     // Gửi tin nhắn
@@ -144,4 +148,6 @@ class ChatViewModel(
             }
         }
     }
+
+
 }

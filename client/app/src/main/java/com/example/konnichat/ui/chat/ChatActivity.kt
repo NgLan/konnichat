@@ -69,6 +69,27 @@ class ChatActivity : BaseActivity() {
         viewModel.currentChatType = chatType
         setupUI(targetName)
         setupObserver()
+
+        viewModel.checkMuteStatus(targetUserId)
+
+        // [THÊM MỚI] Quan sát LiveData để đổi Icon nút Mute
+        viewModel.isMuted.observe(this) { isMuted ->
+            if (isMuted) {
+                // Bạn có thể thay bằng icon ic_notifications_off nếu có
+                binding.btnMute.setImageResource(android.R.drawable.ic_lock_silent_mode)
+                binding.btnMute.alpha = 0.5f // Làm mờ nút khi đang mute
+            } else {
+                binding.btnMute.setImageResource(android.R.drawable.stat_notify_chat)
+                binding.btnMute.alpha = 1.0f
+            }
+        }
+
+        // [THÊM MỚI] Gắn sự kiện click
+        binding.btnMute.setOnClickListener {
+            viewModel.toggleMute(targetUserId)
+            val msg = if (viewModel.isMuted.value == true) "Đã tắt thông báo" else "Đã bật thông báo"
+            Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+        }
     }
 
     private fun setupUI(name: String) {
