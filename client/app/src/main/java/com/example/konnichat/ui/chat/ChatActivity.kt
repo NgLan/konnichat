@@ -257,35 +257,67 @@ class ChatActivity : BaseActivity() {
         // 1. Nếu tin đã bị thu hồi hoặc là tin hệ thống -> Không làm gì
         if (msg.status == "revoked" || msg.msgType == 9) return
 
-        // 2. Kiểm tra quyền: Chỉ người gửi mới được thu hồi tin của mình
-        if (msg.senderId == myUserId) {
-            val options = arrayOf("Thu hồi tin nhắn", "Copy (Sao chép)") // Thêm tính năng copy cho đỡ trống
+        val dialogView = layoutInflater.inflate(R.layout.dialog_reaction_selector, null)
+        val dialog = AlertDialog.Builder(this)
+            .setTitle("Chọn cảm xúc")
+            .setView(dialogView)
+            .setPositiveButton("Đóng", null)
+            .create()
 
-            AlertDialog.Builder(this)
-                .setItems(options) { dialog, which ->
-                    when (which) {
-                        0 -> { // Thu hồi
-                            // Check lại lần nữa cho chắc (chỉ thu hồi được tin đã lên Server)
-                            if (msg.serverId > 0) {
-                                viewModel.recallMessage(item)
-                            } else {
-                                Toast.makeText(this, "Tin nhắn chưa gửi xong, không thể thu hồi", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                        1 -> { // Copy (Optional)
-                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                            val clip = android.content.ClipData.newPlainText("Chat", msg.content)
-                            clipboard.setPrimaryClip(clip)
-                            Toast.makeText(this, "Đã sao chép", Toast.LENGTH_SHORT).show()
-                        }
-                    }
-                }
-                .show()
-        } else {
-            val options = arrayOf("Copy (Sao chép)")
-            // Nếu nhấn vào tin người khác -> Chỉ hiện Copy
-            // ... (Logic tương tự nhưng bỏ option Thu hồi)
+        val onReact = View.OnClickListener { v ->
+            val code = when (v.id) {
+                R.id.btnLike -> 1
+                R.id.btnLove -> 2
+                R.id.btnHaha -> 3
+                R.id.btnWow  -> 4
+                R.id.btnSad  -> 5
+                R.id.btnAngry -> 6
+                R.id.btnRemove -> 0 // Mã 0 để gỡ reaction
+                else -> 0
+            }
+            viewModel.reactToMessage(item, code)
+            dialog.dismiss()
         }
+
+        dialogView.findViewById<View>(R.id.btnLike).setOnClickListener(onReact)
+        dialogView.findViewById<View>(R.id.btnLove).setOnClickListener(onReact)
+        dialogView.findViewById<View>(R.id.btnHaha).setOnClickListener(onReact)
+        dialogView.findViewById<View>(R.id.btnWow).setOnClickListener(onReact)
+        dialogView.findViewById<View>(R.id.btnSad).setOnClickListener(onReact)
+        dialogView.findViewById<View>(R.id.btnAngry).setOnClickListener(onReact)
+        dialogView.findViewById<View>(R.id.btnRemove).setOnClickListener(onReact)
+
+        dialog.show()
+
+//        // 2. Kiểm tra quyền: Chỉ người gửi mới được thu hồi tin của mình
+//        if (msg.senderId == myUserId) {
+//            val options = arrayOf("Thu hồi tin nhắn", "Copy (Sao chép)") // Thêm tính năng copy cho đỡ trống
+//
+//            AlertDialog.Builder(this)
+//                .setItems(options) { dialog, which ->
+//                    when (which) {
+//                        0 -> { // Thu hồi
+//                            // Check lại lần nữa cho chắc (chỉ thu hồi được tin đã lên Server)
+//                            if (msg.serverId > 0) {
+//                                viewModel.recallMessage(item)
+//                            } else {
+//                                Toast.makeText(this, "Tin nhắn chưa gửi xong, không thể thu hồi", Toast.LENGTH_SHORT).show()
+//                            }
+//                        }
+//                        1 -> { // Copy (Optional)
+//                            val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+//                            val clip = android.content.ClipData.newPlainText("Chat", msg.content)
+//                            clipboard.setPrimaryClip(clip)
+//                            Toast.makeText(this, "Đã sao chép", Toast.LENGTH_SHORT).show()
+//                        }
+//                    }
+//                }
+//                .show()
+//        } else {
+//            val options = arrayOf("Copy (Sao chép)")
+//            // Nếu nhấn vào tin người khác -> Chỉ hiện Copy
+//            // ... (Logic tương tự nhưng bỏ option Thu hồi)
+//        }
     }
 }
 

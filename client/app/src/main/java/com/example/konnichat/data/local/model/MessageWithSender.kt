@@ -2,7 +2,9 @@ package com.example.konnichat.data.local.model
 
 import androidx.room.ColumnInfo
 import androidx.room.Embedded
+import androidx.room.Relation
 import com.example.konnichat.data.local.entity.MessageEntity
+import com.example.konnichat.data.local.entity.ReactionEntity
 
 /**
  * Class này dùng để hiển thị lên UI, bao gồm:
@@ -15,6 +17,11 @@ data class MessageWithSender(
     @ColumnInfo(name = "senderName")
     val senderName: String?, // Tên người gửi (Có thể null nếu user chưa sync về)
     @ColumnInfo(name = "senderAvatar")
-    val senderAvatar: String?
+    val senderAvatar: String?,
 
+    @Relation(
+    parentColumn = "server_id",  // Tên cột ID trong bảng messages (MessageEntity)
+    entityColumn = "message_id"  // Tên cột ID tin nhắn trong bảng reactions (ReactionEntity)
+    )
+    val reactions: List<ReactionEntity>? = null
 )

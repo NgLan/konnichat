@@ -17,12 +17,37 @@ class App : Application() {
 
     // Database dùng chung toàn App (Singleton pattern đơn giản)
     val db by lazy {
-        Room.databaseBuilder(
-            applicationContext,
-            AppDatabase::class.java, "konnichat-db"
-        ).build()
-    }
+        Room.databaseBuilder(applicationContext, AppDatabase::class.java, "konnichat-db")
+            .addCallback(object : androidx.room.RoomDatabase.Callback() {
+                // Dùng onOpen thay vì onCreate để đảm bảo chạy mỗi lần mở app
+                override fun onOpen(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                    super.onOpen(db)
+                    // Kiểm tra nếu bảng icons rỗng thì mới insert
+                    val cursor = db.query("SELECT count(*) FROM icons")
+                    cursor.moveToFirst()
+                    val count = cursor.getInt(0)
+                    cursor.close()
 
+                    if (count == 0) {
+                        val now = System.currentTimeMillis()
+                        // Dùng transaction cho an toàn
+                        db.beginTransaction()
+                        try {
+                            db.execSQL("INSERT OR REPLACE INTO icons (server_id, code, image_url, created_at) VALUES (1, 'like', '', $now)")
+                            db.execSQL("INSERT OR REPLACE INTO icons (server_id, code, image_url, created_at) VALUES (2, 'love', '', $now)")
+                            db.execSQL("INSERT OR REPLACE INTO icons (server_id, code, image_url, created_at) VALUES (3, 'haha', '', $now)")
+                            db.execSQL("INSERT OR REPLACE INTO icons (server_id, code, image_url, created_at) VALUES (4, 'wow', '', $now)")
+                            db.execSQL("INSERT OR REPLACE INTO icons (server_id, code, image_url, created_at) VALUES (5, 'sad', '', $now)")
+                            db.execSQL("INSERT OR REPLACE INTO icons (server_id, code, image_url, created_at) VALUES (6, 'angry', '', $now)")
+                            db.setTransactionSuccessful()
+                        } finally {
+                            db.endTransaction()
+                        }
+                    }
+                }
+            })
+            .build()
+    }
     lateinit var syncManager: DataSyncManager
         private set
 
@@ -41,6 +66,7 @@ class App : Application() {
             db.messageDao(),
             db.groupDao(),
             db.userDao(),
+            db.reactionDao(),
             sharedPrefs
         )
     }

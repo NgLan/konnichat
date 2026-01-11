@@ -15,17 +15,19 @@ import com.example.konnichat.data.remote.dto.GroupMemberDto
 import kotlinx.coroutines.flow.Flow
 import java.util.Date
 import androidx.room.Transaction
+import com.example.konnichat.data.local.dao.ReactionDao
 import com.example.konnichat.data.local.model.MessageWithSender
 import com.example.konnichat.data.local.dao.UserDao // [THÊM] Import UserDao
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.local.model.GroupMemberWithUser
-
+import  com.example.konnichat.data.local.entity.ReactionEntity
 
 class ChatRepository(
     private val conversationDao: ConversationDao,
     private val messageDao: MessageDao,
     private val groupDao: GroupDao,
     private val userDao: UserDao,
+    private val reactionDao: ReactionDao,
     private val prefs: SharedPreferences
 ) {
 
@@ -468,4 +470,58 @@ class ChatRepository(
         messageDao.markMessageAsRevoked(messageId)
         Log.d("ChatRepo", "Đã đánh dấu tin nhắn $messageId là REVOKED trong DB")
     }
+
+    suspend fun reactToMessage(messageId: Int, code: Int) {
+        try {
+            // messageId phải là ServerID
+            NativeClient.reactMessage(messageId, code)
+        } catch (e: Exception) {
+            Log.e("ChatRepo", "Lỗi gửi reaction: ${e.message}")
+            throw e
+        }
+    }
+
+    // 2. Xử lý khi nhận cập nhật Reaction từ Server (Gọi từ Listener)
+    @Transaction
+    suspend fun handleReactionUpdate(messageId: Int, reactorId: Int, code: Int) {
+        val existingUser = userDao.getUserById(reactorId)
+        if (existingUser == null) {
+            val placeholderUser = UserEntity(
+                serverId = reactorId,
+                email = "temp_reactor_$reactorId@konnichat.com",
+                name = "Người dùng $reactorId",
+                isOnline = false,
+                status = "active",
+                age = null,
+                avatarUrl = null,
+                relationType = 0,
+                createdAt = Date(),
+                updatedAt = Date()
+            )
+            // Insert User tạm vào DB để tránh lỗi Foreign Key
+            userDao.insertUser(placeholderUser)
+            Log.d("ChatRepo", "⚠️ Đã tạo User tạm (ID: $reactorId) để lưu Reaction.")
+        }
+        if (code == 0) {
+            // Code 0 nghĩa là xóa reaction (Remove)
+            reactionDao.deleteReaction(messageId, reactorId)
+            Log.d("ChatRepo", "Đã xóa reaction của user $reactorId tại tin nhắn $messageId")
+        } else {
+            // Code > 0: Tạo hoặc Update reaction
+            val reaction = ReactionEntity(
+//                serverId = 0, // ID tự sinh hoặc không quan trọng nếu dùng composite key (nhưng Entity bạn đang để server_id là PK)
+                // Lưu ý: Nếu Server không trả về ID riêng cho row reaction này, bạn có thể tự sinh hash
+                // Hoặc tốt nhất sửa Entity để (message_id + user_id) làm khoá chính phức hợp.
+                // Ở đây tôi tạm dùng hash để tạo ID giả định tránh trùng lặp
+                serverId = (messageId.toString() + reactorId.toString()).hashCode(),
+                userId = reactorId,
+                iconId = code,
+                messageId = messageId,
+                createdAt = Date()
+            )
+            reactionDao.insertReaction(reaction)
+            Log.d("ChatRepo", "Đã lưu reaction $code của user $reactorId cho tin nhắn $messageId")
+        }
+    }
+
 }

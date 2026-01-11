@@ -164,4 +164,17 @@ class ChatViewModel(
         }
     }
 
+    fun reactToMessage(message: MessageWithSender, reactionCode: Int) {
+        val serverId = message.message.serverId
+        if (serverId <= 0) return // Chỉ react được tin đã lên server
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                chatRepository.reactToMessage(serverId, reactionCode)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
+
 }

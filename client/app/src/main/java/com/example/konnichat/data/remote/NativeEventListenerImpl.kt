@@ -455,8 +455,54 @@ object NativeEventListenerImpl : NativeEventListener {
                 }
             }
         } else if (actionType == 2) {
-            // Xử lý Reaction (Thả tim) - Để sau
-            Log.d(TAG, "Reaction update: $messageId code=$reactionCode")
+            // --- [CODE MỚI] XỬ LÝ REACTION ---
+            Log.d(TAG, "Reaction update: Msg $messageId, User $reactorId, Code $reactionCode")
+
+            chatRepository?.let { repo ->
+                CoroutineScope(Dispatchers.IO).launch {
+                    // 1. Cập nhật DB
+                    repo.handleReactionUpdate(messageId, reactorId, reactionCode)
+
+                    // 2. Logic Thông báo (Notification)
+                    // Chỉ thông báo nếu:
+                    // - Người thả tim KHÔNG phải là mình (reactorId != myUserId)
+                    // - KHÔNG đang chat với người đó (check currentChatTargetId)
+
+                    // Lấy MyID từ SharePrefs (cách nhanh nhất hiện tại)
+                    val prefs = context?.getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
+                    val myUserId = prefs?.getInt("USER_ID", -1) ?: -1
+
+                    if (reactorId != myUserId && reactorId != ChatActivity.sCurrentTargetId) {
+                        // Lấy tên người thả tim để hiện thông báo
+                        val reactorInfo = userRepository?.getFriendById(reactorId)
+                        val reactorName = reactorInfo?.name ?: "Ai đó"
+
+                        val emoji = when(reactionCode) {
+                            1 -> "👍"
+                            2 -> "❤️"
+                            3 -> "😂"
+                            4 -> "😮"
+                            5 -> "😢"
+                            6 -> "😡"
+                            else -> "cảm xúc"
+                        }
+
+                        // Chỉ hiện thông báo nếu là thả tim (code > 0), bỏ tim thì thôi
+                        if (reactionCode > 0) {
+                            context?.let { ctx ->
+                                NotificationHelper.showNotification(
+                                    ctx,
+                                    title = "Tương tác mới",
+                                    content = "$reactorName đã thả $emoji vào tin nhắn của bạn",
+                                    type = "MESSAGE", // Bấm vào mở màn hình chat
+                                    targetId = reactorId, // Mở chat với người này (hoặc group nếu logic phức tạp hơn)
+                                    targetName = reactorName
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

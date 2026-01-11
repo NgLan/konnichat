@@ -11,6 +11,7 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.konnichat.R
 import com.example.konnichat.data.local.model.MessageWithSender
 import com.example.konnichat.data.local.entity.MessageEntity
+import com.example.konnichat.data.local.entity.ReactionEntity
 import java.text.SimpleDateFormat
 import java.util.Locale
 
@@ -83,7 +84,7 @@ class ChatAdapter(
         }
 
         when (holder) {
-            is SentMessageViewHolder -> holder.bind(item.message)
+            is SentMessageViewHolder -> holder.bind(item.message, item.reactions.orEmpty())
             // [SỬA] Truyền nguyên cục item (MessageWithSender) thay vì chỉ item.message
             is ReceivedMessageViewHolder -> holder.bind(item)
             is SystemMessageViewHolder -> holder.bind(item)
@@ -91,12 +92,13 @@ class ChatAdapter(
     }
 
     // --- ViewHolder cho tin nhắn gửi đi ---
-    class SentMessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+    inner class SentMessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         // Ánh xạ đúng ID trong item_chat_sent.xml
         private val tvContent: TextView = itemView.findViewById(R.id.tvContent)
         private val tvTime: TextView = itemView.findViewById(R.id.tvTime)
+        private val tvReaction: TextView = itemView.findViewById(R.id.tvReaction)
 
-        fun bind(msg: MessageEntity) {
+        fun bind(msg: MessageEntity, reactions: List<ReactionEntity>) {
             tvContent.text = msg.content
 
             // Format ngày giờ: 14:30
@@ -122,18 +124,32 @@ class ChatAdapter(
                 tvContent.setTextColor(android.graphics.Color.WHITE) // Màu gốc (check lại layout xml của bạn)
                 tvContent.setTypeface(null, android.graphics.Typeface.NORMAL)
             }
+
+            bindReactions(tvReaction, reactions)
+        }
+    }
+
+    private fun getEmojiByCode(code: Int): String {
+        return when(code) {
+            1 -> "👍"
+            2 -> "❤️"
+            3 -> "😂"
+            4 -> "😮"
+            5 -> "😢"
+            6 -> "😡"
+            else -> "❤️"
         }
     }
 
     // --- ViewHolder cho tin nhắn nhận được ---
-    class ReceivedMessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+    inner class ReceivedMessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         // Ánh xạ đúng ID trong item_chat_received.xml
         private val tvContent: TextView = itemView.findViewById(R.id.tvContent)
         private val tvTime: TextView = itemView.findViewById(R.id.tvTime)
 
         private val tvSenderName: TextView = itemView.findViewById(R.id.tvSenderName)
         private val imgAvatar: ImageView = itemView.findViewById(R.id.imgAvatar)
-
+        private val tvReaction: TextView = itemView.findViewById(R.id.tvReaction) // Đã thêm vào XML
         fun bind(item: MessageWithSender) { // Lưu ý: Truyền cả item (MessageWithSender) vào
             val msg = item.message
 
@@ -173,11 +189,28 @@ class ChatAdapter(
                 tvContent.setTextColor(android.graphics.Color.BLACK) // Màu gốc
                 tvContent.setTypeface(null, android.graphics.Typeface.NORMAL)
             }
-
+            bindReactions(tvReaction, item.reactions.orEmpty())
             // [THÊM] Hiển thị Avatar (Placeholder)
             imgAvatar.setImageResource(com.example.konnichat.R.mipmap.ic_launcher_round)
         }
     }
+
+    private fun bindReactions(tvReaction: TextView, reactions: List<ReactionEntity>) {
+        if (reactions.isNotEmpty()) {
+            tvReaction.visibility = View.VISIBLE
+            val lastReaction = reactions.last()
+            val emoji = getEmojiByCode(lastReaction.iconId)
+
+            if (reactions.size > 1) {
+                tvReaction.text = "$emoji ${reactions.size}"
+            } else {
+                tvReaction.text = emoji
+            }
+        } else {
+            tvReaction.visibility = View.GONE
+        }
+    }
+
 
     class SystemMessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvContent: TextView = itemView.findViewById(R.id.tvSystemMessage)
@@ -191,6 +224,7 @@ class ChatAdapter(
             tvContent.text = fullText
         }
     }
+
 
     // --- DiffUtil để tối ưu hiệu năng RecyclerView ---
 //    class MessageDiffCallback : DiffUtil.ItemCallback<MessageEntity>() {
