@@ -39,13 +39,36 @@ class AuthRepository (
         }
     }
 
+    private fun ensureConnection(): Boolean {
+        // Nếu đang CONNECTED thì thôi, không connect lại để tránh đóng socket đang chạy
+        if (NativeEventListenerImpl.connectionState.value == ConnectionState.CONNECTED) {
+            return true
+        }
+
+        // Nếu DISCONNECTED hoặc CONNECTING, thử connect lại
+        val res = NativeClient.connect(Constants.SERVER_HOST, Constants.SERVER_PORT)
+        return if (res == 0) {
+            NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
+            true
+        } else {
+            false
+        }
+    }
+
     // Hàm Đăng nhập
     suspend fun login(email: String, pass: String): Resource<UserDto> = withContext(Dispatchers.IO) {
         try {
+
+            if (!ensureConnection()) {
+                return@withContext Resource.Error("Không thể kết nối đến máy chủ.")
+            }
+
             val hashedPass = SecurityUtils.hashSHA256(pass)
             // NativeClient.loginUser là hàm blocking, nó sẽ chờ server trả lời hoặc ném Exception
             val user = NativeClient.loginUser(email, hashedPass)
             if (user != null) {
+                NativeEventListenerImpl.isUserLoggedOut = false
+
                 NativeClient.startListening(NativeEventListenerImpl)
                 NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
                 NativeEventListenerImpl.isUserLoggedOut = false // Reset cờ logout
@@ -88,6 +111,9 @@ class AuthRepository (
             try {
                 // Gọi login native nhưng không cần xóa DB hay insert lại User (vì đã có rồi)
                 val user = NativeClient.loginUser(email, pass)
+                if (user != null) {
+                    NativeEventListenerImpl.isUserLoggedOut = false
+                }
                 return@withContext user != null
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -100,6 +126,9 @@ class AuthRepository (
     // Hàm Đăng ký
     suspend fun register(name: String, email: String, pass: String): Resource<Boolean> = withContext(Dispatchers.IO) {
         try {
+            if (!ensureConnection()) {
+                return@withContext Resource.Error("Không thể kết nối đến máy chủ.")
+            }
             val hashedPass = SecurityUtils.hashSHA256(pass)
             // Hàm này trả về status code (0 = Success) hoặc ném Exception
             NativeClient.registerUser(name, email, hashedPass)
@@ -130,7 +159,7 @@ class AuthRepository (
             db.clearAllTables()
 
             // 5. Cập nhật trạng thái kết nối về DISCONNECTED
-//            NativeEventListenerImpl.connectionState.postValue(ConnectionState.DISCONNECTED)
+            NativeEventListenerImpl.connectionState.postValue(ConnectionState.DISCONNECTED)
         } catch (e: Exception) {
             e.printStackTrace()
         }
