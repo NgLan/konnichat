@@ -13,6 +13,7 @@
 #include <stdint.h>
 
 static uint64_t parse_mysql_time(const char *str);
+static int32_t map_msg_status_str_to_int(const char *status_str);
 
 /**
  * @brief Saves a new message to DB.
@@ -185,11 +186,12 @@ int db_get_chat_history(int current_user_id, int target_id, int is_group, ChatPa
             // Msg Type
             messages_out[count].msg_type = row[6] ? atoi(row[6]) : 1;
 
-            char status[20];
+            char status_str[20] = "sent";
             if (row[7])
-                strcpy(status, row[7]);
+                strcpy(status_str, row[7]);
+            messages_out[count].status = map_msg_status_str_to_int(status_str);
 
-            if (strcmp(status, "revoked") == 0)
+            if (messages_out[count].status == MSG_STATUS_REVOKED)
             {
                 strcpy(messages_out[count].content, "Tin nhắn đã bị thu hồi");
                 messages_out[count].msg_type = 1; // Về dạng text
@@ -374,4 +376,19 @@ static uint64_t parse_mysql_time(const char *str)
 
     // Nhân 1000 để ra milliseconds
     return (uint64_t)t * 1000;
+}
+
+static int32_t map_msg_status_str_to_int(const char *status_str)
+{
+    if (status_str == NULL)
+        return MSG_STATUS_SENT;
+    if (strcmp(status_str, "sent") == 0)
+        return MSG_STATUS_SENT;
+    if (strcmp(status_str, "delivered") == 0)
+        return MSG_STATUS_DELIVERED;
+    if (strcmp(status_str, "read") == 0)
+        return MSG_STATUS_READ;
+    if (strcmp(status_str, "revoked") == 0)
+        return MSG_STATUS_REVOKED;
+    return MSG_STATUS_SENT; // Default
 }

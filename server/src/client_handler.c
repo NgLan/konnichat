@@ -397,7 +397,7 @@ static void handle_send_message(int sock, PacketHeader *reqHeader, void *payload
     ChatPayload respPayload = *msg;
     respPayload.message_id = new_msg_id;  // ID thật trong DB
     respPayload.created_at = server_time; // Thời gian thật
-
+    respPayload.status = MSG_STATUS_SENT;
     send_response(sock, CMD_SEND_MESSAGE_RESP, reqHeader->request_id, STATUS_SUCCESS,
                   &respPayload, sizeof(ChatPayload));
 

@@ -212,12 +212,8 @@ void jni_on_msg_sent(int temp_req_id, int server_msg_id, uint64_t server_time) {
                            (jint)temp_req_id, (jint)server_msg_id, (jlong)server_time);
 }
 
-// Khi nhận tin mới
-void jni_on_message(ChatPayload *msg) {
-    JNIEnv *env = get_jni_env();
-    if (!env || !g_listener) return;
-
-    // Convert ChatPayload -> MessageDto
+// Helper tạo MessageDto
+jobject create_message_dto(JNIEnv *env, ChatPayload *msg) {
     jstring jContent = (*env)->NewStringUTF(env, msg->content);
     jstring jChatType = (*env)->NewStringUTF(env, msg->chat_type);
 
@@ -228,12 +224,23 @@ void jni_on_message(ChatPayload *msg) {
                                      jContent,
                                      (jlong)msg->created_at,
                                      msg->msg_type,
-                                     jChatType);
-
-    (*env)->CallVoidMethod(env, g_listener, m_onMsgReceived, jMsg);
+                                     jChatType,
+                                     msg->status);
 
     (*env)->DeleteLocalRef(env, jContent);
     (*env)->DeleteLocalRef(env, jChatType);
+    return jMsg;
+}
+
+// Khi nhận tin mới
+void jni_on_message(ChatPayload *msg) {
+    JNIEnv *env = get_jni_env();
+    if (!env || !g_listener) return;
+
+    // Convert ChatPayload -> MessageDto
+    jobject jMsg = create_message_dto(env, msg);
+
+    (*env)->CallVoidMethod(env, g_listener, m_onMsgReceived, jMsg);
     (*env)->DeleteLocalRef(env, jMsg);
 }
 
@@ -256,27 +263,8 @@ void jni_on_history_received(int count, ChatPayload *messages) {
         messages[i].content[MAX_CONTENT_LEN - 1] = '\0';
         messages[i].chat_type[15] = '\0';
 
-        jstring jContent = (*env)->NewStringUTF(env, messages[i].content);
-        jstring jChatType;
-        if (strlen(messages[i].chat_type) > 0) {
-            jChatType = (*env)->NewStringUTF(env, messages[i].chat_type);
-        } else {
-            jChatType = (*env)->NewStringUTF(env, "private"); // Fallback
-        }
-
-        jobject jMsg = (*env)->NewObject(env, c_MessageDto, m_MessageDtoInit,
-                                         messages[i].message_id,
-                                         messages[i].sender_id,
-                                         messages[i].receiver_id,
-                                         jContent,
-                                         (jlong)messages[i].created_at,
-                                         messages[i].msg_type,
-                                         jChatType);
-
+        jobject jMsg = create_message_dto(env, &messages[i]);
         (*env)->SetObjectArrayElement(env, jArray, i, jMsg);
-
-        (*env)->DeleteLocalRef(env, jContent);
-        (*env)->DeleteLocalRef(env, jChatType);
         (*env)->DeleteLocalRef(env, jMsg);
     }
 
@@ -553,7 +541,7 @@ jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 
     jclass mClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/MessageDto");
     c_MessageDto = (jclass) (*env)->NewGlobalRef(env, mClass);
-    m_MessageDtoInit = (*env)->GetMethodID(env, c_MessageDto, "<init>", "(IIILjava/lang/String;JILjava/lang/String;)V");
+    m_MessageDtoInit = (*env)->GetMethodID(env, c_MessageDto, "<init>", "(IIILjava/lang/String;JILjava/lang/String;I)V");
 
     jclass pClass = (*env)->FindClass(env, "com/example/konnichat/data/remote/dto/PendingRequestDto");
     c_PendingRequestDto = (jclass) (*env)->NewGlobalRef(env, pClass);

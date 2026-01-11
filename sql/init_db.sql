@@ -113,18 +113,19 @@ CREATE TABLE reactions (
 
 -- INSERT DỮ LIỆU MẪU
 -- 1. Tạo 10 User
+-- Tất cả mật khẩu là Pass@1234
 INSERT INTO Users (email, password, name, is_online, avatar_url) VALUES 
-('an.nguyen@test.com', 'Pass@1234', 'Nguyễn Văn An', 1, 'default_avt'),
-('bich.tran@test.com', 'Pass@1234', 'Trần Thị Bích', 0, 'default_avt'),
-('cuong.le@test.com', 'Pass@1234', 'Lê Hùng Cường', 1, 'default_avt'),
-('dung.pham@test.com', 'Pass@1234', 'Phạm Thùy Dung', 1, 'default_avt'),
-('em.hoang@test.com', 'Pass@1234', 'Hoàng Văn Em', 0, 'default_avt'),
-('phuong.vu@test.com', 'Pass@1234', 'Vũ Lan Phương', 1, 'default_avt'),
-('giang.dang@test.com', 'Pass@1234', 'Đặng Trường Giang', 0, 'default_avt'),
-('hoa.bui@test.com', 'Pass@1234', 'Bùi Thị Hoa', 0, 'default_avt'),
-('khanh.do@test.com', 'Pass@1234', 'Đỗ Duy Khánh', 1, 'default_avt'),
-('lan.nguyen@test.com', 'Pass@1234', 'Nguyễn Ngọc Lan', 0, 'default_avt'),
-('linh.ngo@test.com', 'Pass@1234', 'Ngô Mỹ Linh', 1, 'default_avt');
+('an.nguyen@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Nguyễn Văn An', 1, 'default_avt'),
+('bich.tran@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Trần Thị Bích', 0, 'default_avt'),
+('cuong.le@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Lê Hùng Cường', 1, 'default_avt'),
+('dung.pham@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Phạm Thùy Dung', 1, 'default_avt'),
+('em.hoang@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Hoàng Văn Em', 0, 'default_avt'),
+('phuong.vu@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Vũ Lan Phương', 1, 'default_avt'),
+('giang.dang@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Đặng Trường Giang', 0, 'default_avt'),
+('hoa.bui@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Bùi Thị Hoa', 0, 'default_avt'),
+('khanh.do@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Đỗ Duy Khánh', 1, 'default_avt'),
+('lan.nguyen@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Nguyễn Ngọc Lan', 0, 'default_avt'),
+('linh.ngo@test.com', '1d95a4c6d681ede5b18c89b21ceb46bfea7b8e4d8f824107615a2ee297493710', 'Ngô Mỹ Linh', 1, 'default_avt');
 
 -- 2. Kết bạn
 -- (Câu lệnh này tự động lấy ID của các email vừa tạo để add vào bảng Friends)

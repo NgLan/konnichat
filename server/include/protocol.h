@@ -1,14 +1,14 @@
 #ifndef PROTOCOL_H
 #define PROTOCOL_H
 
-#include <stdint.h> 
+#include <stdint.h>
 
 // --- CẤU HÌNH CHUNG ---
 #define SERVER_PORT 8080
 #define SERVER_PROTOCOL_VERSION 1
 
 // Client gửi Ping mỗi 15s
-#define HEARTBEAT_INTERVAL_SEC 15 
+#define HEARTBEAT_INTERVAL_SEC 15
 
 // Server đợi tối đa 45s (3 lần miss ping) 
 #define HEARTBEAT_TIMEOUT_MS 45000
@@ -19,7 +19,7 @@
 #define MAX_CONTENT_LEN 1024
 #define MAX_GROUP_NAME 100
 #define MAX_GROUP_MEMBERS 20
-#define MAX_AVATAR_LEN 256 
+#define MAX_AVATAR_LEN 256
 #define MAX_ROLE_LEN 20
 
 // --- DANH SÁCH LỆNH ---
@@ -30,7 +30,7 @@ typedef enum {
     // 1. Auth  
     CMD_REGISTER            = 10,
     CMD_REGISTER_RESP       = 11, // Phản hồi đăng ký
-    
+
     CMD_LOGIN               = 12,
     CMD_LOGIN_RESP          = 13, // Phản hồi đăng nhập
 
@@ -75,7 +75,7 @@ typedef enum {
 
     CMD_UNFRIEND            = 46,
     CMD_UNFRIEND_RESP       = 47,
-    
+
     CMD_GET_PENDING_REQS    = 48,
     CMD_GET_PENDING_REQS_RESP = 49,
 
@@ -106,19 +106,19 @@ typedef enum {
 
     CMD_NOTIFY_GROUP_CREATED = 86,
     CMD_NOTIFY_MEMBERS_ADDED = 87,
-    CMD_NOTIFY_MEMBER_LEFT   = 88, 
+    CMD_NOTIFY_MEMBER_LEFT   = 88,
     CMD_NOTIFY_MEMBER_REMOVED = 89,
     CMD_NOTIFY_GROUP_DISSOLVED = 90,
 
-    // 99. Error 
-    CMD_ERROR_UNKNOWN       = 999            
+    // 99. Error
+    CMD_ERROR_UNKNOWN       = 999
 } CommandType;
 
 // --- MÃ TRẠNG THÁI ---
 typedef enum {
     STATUS_SUCCESS = 0,
     STATUS_ERROR_UNKNOWN = 1,
-    STATUS_ERROR_AUTH = 2,       
+    STATUS_ERROR_AUTH = 2,
     STATUS_ERROR_USER_NOT_FOUND = 3,
     STATUS_ERROR_DB = 4,
     STATUS_ERROR_INVALID_PARAM = 5,
@@ -144,7 +144,14 @@ typedef enum {
 #define MSG_TYPE_TEXT 1
 #define MSG_TYPE_IMAGE 2
 #define MSG_TYPE_FILE 3
-#define MSG_TYPE_SYSTEM 9 
+#define MSG_TYPE_SYSTEM 9
+
+// --- MESSAGE STATUS CONSTANTS ---
+#define MSG_STATUS_SENDING   0
+#define MSG_STATUS_SENT      1
+#define MSG_STATUS_DELIVERED 2
+#define MSG_STATUS_READ      3
+#define MSG_STATUS_REVOKED   4
 
 // --- HEADER ---
 // Tổng kích thước: 4*5 + 8 = 28 bytes
@@ -188,6 +195,7 @@ typedef struct __attribute__((packed)) {
     char chat_type[16];     // 1: Private, 2: Group 
     char content[MAX_CONTENT_LEN];
     uint64_t created_at;    // Server Time
+    int32_t status;
 } ChatPayload;
 
 typedef struct __attribute__((packed)) {
@@ -206,7 +214,7 @@ typedef struct __attribute__((packed)) {
 // 5. Group Management
 typedef struct __attribute__((packed)) {
     char group_name[MAX_GROUP_NAME];
-    int32_t member_count; 
+    int32_t member_count;
 } CreateGroupReqPayload;
 
 typedef struct __attribute__((packed)) {
@@ -316,8 +324,8 @@ typedef struct __attribute__((packed)) {
 // Response Item (Server -> Client)
 typedef struct __attribute__((packed)) {
     int32_t group_id;
-    char group_name[MAX_GROUP_NAME]; 
-    char avatar_url[MAX_AVATAR_LEN]; 
+    char group_name[MAX_GROUP_NAME];
+    char avatar_url[MAX_AVATAR_LEN];
 } GroupInfoPayload;
 
 // Request (Client Admin -> Server)

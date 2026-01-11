@@ -146,6 +146,13 @@ typedef enum {
 #define MSG_TYPE_FILE 3
 #define MSG_TYPE_SYSTEM 9
 
+// --- MESSAGE STATUS CONSTANTS ---
+#define MSG_STATUS_SENDING   0
+#define MSG_STATUS_SENT      1
+#define MSG_STATUS_DELIVERED 2
+#define MSG_STATUS_READ      3
+#define MSG_STATUS_REVOKED   4
+
 // --- HEADER ---
 // Tổng kích thước: 4*5 + 8 = 28 bytes
 typedef struct __attribute__((packed)) {
@@ -188,6 +195,7 @@ typedef struct __attribute__((packed)) {
     char chat_type[16];     // 1: Private, 2: Group 
     char content[MAX_CONTENT_LEN];
     uint64_t created_at;    // Server Time
+    int32_t status;
 } ChatPayload;
 
 typedef struct __attribute__((packed)) {
