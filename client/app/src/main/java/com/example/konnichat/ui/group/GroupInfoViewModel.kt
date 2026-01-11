@@ -64,6 +64,17 @@ class GroupInfoViewModel(
             }
         }
     }
+
+    // Thêm vào class GroupInfoViewModel
+    fun dissolveGroup() {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                chatRepository.dissolveGroup(groupId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+    }
 }
 
 class GroupInfoViewModelFactory(

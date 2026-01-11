@@ -10,6 +10,9 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import com.example.konnichat.App
 import com.example.konnichat.databinding.ActivityGroupInfoBinding
 import com.example.konnichat.ui.base.BaseActivity
+import android.view.Menu
+import android.view.MenuItem
+import com.example.konnichat.R
 
 class GroupInfoActivity : BaseActivity() {
 
@@ -51,6 +54,7 @@ class GroupInfoActivity : BaseActivity() {
 
         viewModel.isAdmin.observe(this) { isAdmin ->
             adapter.setAdminStatus(isAdmin)
+            invalidateOptionsMenu()
         }
     }
 
@@ -77,4 +81,45 @@ class GroupInfoActivity : BaseActivity() {
             .setNegativeButton("Hủy", null)
             .show()
     }
+
+    // --- [THÊM MỚI] 1. Khởi tạo Menu ---
+    override fun onCreateOptionsMenu(menu: Menu?): Boolean {
+        menuInflater.inflate(R.menu.chat_group_menu, menu)
+        return true
+    }
+
+    // --- [THÊM MỚI] 2. Điều chỉnh menu dựa trên quyền Admin ---
+    override fun onPrepareOptionsMenu(menu: Menu?): Boolean {
+        // Chỉ hiện nút Giải tán nếu là Admin
+        menu?.findItem(R.id.action_dissolve_group)?.isVisible = viewModel.isAdmin.value == true
+
+        // Ẩn nút "Thêm thành viên" và "Xem thành viên" vì đang ở trong màn hình Info rồi
+        menu?.findItem(R.id.action_add_member)?.isVisible = false
+        menu?.findItem(R.id.action_view_members)?.isVisible = false
+
+        return super.onPrepareOptionsMenu(menu)
+    }
+
+    // --- [THÊM MỚI] 3. Xử lý click ---
+    override fun onOptionsItemSelected(item: MenuItem): Boolean {
+        return when (item.itemId) {
+            R.id.action_dissolve_group -> {
+                showDissolveConfirmation()
+                true
+            }
+            else -> super.onOptionsItemSelected(item)
+        }
+    }
+
+    private fun showDissolveConfirmation() {
+        AlertDialog.Builder(this)
+            .setTitle("Giải tán nhóm")
+            .setMessage("Bạn có chắc chắn muốn giải tán nhóm này không? Mọi tin nhắn và thành viên sẽ bị xóa.")
+            .setPositiveButton("Giải tán") { _, _ ->
+                viewModel.dissolveGroup()
+            }
+            .setNegativeButton("Hủy", null)
+            .show()
+    }
 }
+

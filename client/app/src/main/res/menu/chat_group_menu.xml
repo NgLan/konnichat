@@ -7,6 +7,11 @@
         app:showAsAction="never" />
     <item
         android:id="@+id/action_view_members"
-        android:title="Xem thành viên"
+        android:title="Thông tin nhóm"
+        app:showAsAction="never" />
+    <item
+        android:id="@+id/action_dissolve_group"
+        android:title="Giải tán nhóm"
+        android:visible="false"
         app:showAsAction="never" />
 </menu>
