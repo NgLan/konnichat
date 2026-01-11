@@ -59,6 +59,12 @@ open class BaseActivity : AppCompatActivity() {
 
         // Lắng nghe trạng thái toàn cục từ NativeEventListenerImpl
         NativeEventListenerImpl.connectionState.observe(this) { state ->
+
+            if (NativeEventListenerImpl.isUserLoggedOut) {
+                statusBanner?.visibility = View.GONE
+                return@observe
+            }
+
             when (state) {
                 ConnectionState.CONNECTED -> {
                     statusBanner?.visibility = View.GONE
