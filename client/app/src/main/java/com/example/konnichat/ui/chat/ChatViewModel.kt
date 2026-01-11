@@ -149,5 +149,19 @@ class ChatViewModel(
         }
     }
 
+    fun recallMessage(message: MessageWithSender) {
+        val serverId = message.message.serverId
+        // Chỉ thu hồi được tin nhắn đã gửi lên server (serverId > 0)
+        if (serverId <= 0) return
+
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                chatRepository.recallMessage(serverId)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                // Có thể postValue lỗi ra LiveData để UI hiện Toast nếu cần
+            }
+        }
+    }
 
 }

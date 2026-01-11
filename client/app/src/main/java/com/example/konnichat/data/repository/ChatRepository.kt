@@ -138,6 +138,8 @@ class ChatRepository(
             Log.d("ChatRepo", "⚠️ Đã tạo User tạm (ID: ${dto.senderId}) để nhận tin nhắn.")
         }
 
+        val status = if (dto.content == "Tin nhắn đã bị thu hồi") "revoked" else "sent"
+
         // 3. Sau khi đảm bảo User tồn tại, mới lưu tin nhắn
         val entity = MessageEntity(
             serverId = dto.id,
@@ -145,7 +147,7 @@ class ChatRepository(
             receiverId = dto.receiverId,
             chatType = dto.chatType,
             content = dto.content,
-            status = "sent",
+            status = status,
             createdAt = Date(dto.timestamp)
         )
         messageDao.insertMessage(entity)
@@ -447,5 +449,23 @@ class ChatRepository(
 
     fun setGroupMute(groupId: Int, isMuted: Boolean) {
         prefs.edit().putBoolean("MUTE_GROUP_$groupId", isMuted).apply()
+    }
+
+    // 1. Gửi lệnh thu hồi (Gọi từ UI -> ViewModel -> Repo -> Native)
+    suspend fun recallMessage(messageId: Int) {
+        // messageId ở đây phải là ServerID
+        try {
+            NativeClient.recallMessage(messageId)
+        } catch (e: Exception) {
+            Log.e("ChatRepo", "Lỗi gửi lệnh recall: ${e.message}")
+            throw e
+        }
+    }
+
+    // 2. Xử lý khi nhận tín hiệu update từ Server (Callback -> Repo -> DAO)
+    suspend fun handleMessageRevoked(messageId: Int) {
+        // Cập nhật DB Local: đổi status -> revoked, content -> "Tin nhắn đã bị thu hồi"
+        messageDao.markMessageAsRevoked(messageId)
+        Log.d("ChatRepo", "Đã đánh dấu tin nhắn $messageId là REVOKED trong DB")
     }
 }

@@ -69,4 +69,9 @@ interface MessageDao {
 
     @Query("DELETE FROM messages WHERE (sender_id = :userId OR receiver_id = :userId) AND chat_type = 'private'")
     suspend fun deletePrivateChat(userId: Int)
+
+    // Thêm vào trong interface MessageDao
+    // [SỬA LẠI] serverId -> server_id
+    @Query("UPDATE messages SET status = 'revoked', content = 'Tin nhắn đã bị thu hồi' WHERE server_id = :serverId")
+    suspend fun markMessageAsRevoked(serverId: Int)
 }
