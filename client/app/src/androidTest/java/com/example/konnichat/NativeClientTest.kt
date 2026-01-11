@@ -116,6 +116,13 @@ class NativeClientTest {
         // Action Types
         const val ACTION_RECALL = 1
         const val ACTION_REACT = 2
+
+        // --- MESSAGE STATUS CONSTANTS ---
+        const val MSG_STATUS_SENDING = 0
+        const val MSG_STATUS_SENT    = 1
+        const val MSG_STATUS_DELIVERED = 2
+        const val MSG_STATUS_READ    = 3
+        const val MSG_STATUS_REVOKED = 4
     }
 
     @Before
@@ -1172,6 +1179,7 @@ class NativeClientTest {
         Assert.assertTrue("Timeout Page 1", historyLatch.await(5, TimeUnit.SECONDS))
         Assert.assertEquals(4, historyList.size)
         Assert.assertEquals("Msg_10", historyList[0].content)
+        Assert.assertEquals("Tin nhắn lịch sử phải có status là SENT (1)", MSG_STATUS_SENT, historyList[0].status)
         Assert.assertEquals("Msg_7", historyList[3].content)
 
         // PAGE 2: Lấy 4 tin tiếp theo
@@ -3394,11 +3402,13 @@ class NativeClientTest {
 
         val latchHist = CountDownLatch(1)
         var content = ""
+        var status = 0
 
         NativeClient.startListening(object : StubNativeEventListener() {
             override fun onHistoryReceived(messages: Array<MessageDto>) {
                 if (messages.isNotEmpty()) {
                     content = messages[0].content
+                    status = messages[0].status
                     latchHist.countDown()
                 }
             }
@@ -3409,6 +3419,7 @@ class NativeClientTest {
         // 4. Verify Content bị thay thế
         Assert.assertTrue(latchHist.await(5, TimeUnit.SECONDS))
         Assert.assertEquals("Tin nhắn đã bị thu hồi", content)
+        Assert.assertEquals("Status phải là REVOKED (4)", MSG_STATUS_REVOKED, status)
     }
 
     // ==========================================
