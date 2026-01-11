@@ -10,6 +10,12 @@ import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import com.example.konnichat.data.remote.ConnectionState
 import com.example.konnichat.data.remote.NativeEventListenerImpl
+import com.example.konnichat.ui.home.HomeActivity
+import android.content.Intent
+import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.flow.collectLatest
+
 
 open class BaseActivity : AppCompatActivity() {
 
@@ -17,6 +23,7 @@ open class BaseActivity : AppCompatActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setupNavigationObserver()
     }
 
     override fun onStart() {
@@ -67,6 +74,35 @@ open class BaseActivity : AppCompatActivity() {
                     statusBanner?.visibility = View.VISIBLE
                 }
                 else -> { statusBanner?.visibility = View.GONE }
+            }
+        }
+    }
+
+    private fun setupNavigationObserver() {
+        lifecycleScope.launchWhenStarted {
+            // Chỉ rõ kiểu dữ liệu (command: NativeEventListenerImpl.NavCommand) để tránh lỗi infer type
+            NativeEventListenerImpl.navigationEvent.collectLatest { command: NativeEventListenerImpl.NavCommand ->
+                val currentTargetId = when (this@BaseActivity) {
+                    is com.example.konnichat.ui.chat.ChatActivity -> {
+                        this@BaseActivity.intent.getIntExtra("TARGET_ID", -1)
+                    }
+                    is com.example.konnichat.ui.group.GroupInfoActivity -> {
+                        this@BaseActivity.intent.getIntExtra("GROUP_ID", -1)
+                    }
+                    else -> -1
+                }
+
+                // Bây giờ các biến targetId và reason sẽ được nhận diện đúng từ object command
+                if (currentTargetId != -1 && currentTargetId == command.targetId) {
+                    // Sửa lỗi Unresolved reference 'show' bằng cách gọi .show() đúng cú pháp
+                    Toast.makeText(this@BaseActivity, command.reason, Toast.LENGTH_LONG).show()
+
+                    val intent = Intent(this@BaseActivity, HomeActivity::class.java)
+                    intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                    startActivity(intent)
+
+                    finish()
+                }
             }
         }
     }

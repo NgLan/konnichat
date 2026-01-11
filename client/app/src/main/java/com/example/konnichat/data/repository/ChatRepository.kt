@@ -306,6 +306,7 @@ class ChatRepository(
 
     // [THÊM MỚI] Xử lý khi nhóm bị giải tán
     suspend fun handleGroupDissolved(groupId: Int) {
+        groupDao.deleteMembersByGroupId(groupId)
         // Xóa toàn bộ nhóm khỏi DB
         groupDao.deleteGroup(groupId)
         Log.d("ChatRepo", "Nhóm $groupId đã bị giải tán bởi Admin, đã xóa khỏi máy.")

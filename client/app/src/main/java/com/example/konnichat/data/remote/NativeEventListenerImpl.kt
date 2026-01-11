@@ -17,6 +17,8 @@ import com.example.konnichat.utils.NotificationHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import androidx.lifecycle.MutableLiveData // [THÊM]
 import com.example.konnichat.core.Constants
 import com.example.konnichat.data.repository.AuthRepository
@@ -39,6 +41,19 @@ object NativeEventListenerImpl : NativeEventListener {
 
     val connectionState = MutableLiveData<ConnectionState>(ConnectionState.DISCONNECTED)
     var isUserLoggedOut = false
+
+    data class NavCommand(val targetId: Int, val chatType: String, val reason: String)
+
+    // [THÊM MỚI] Đường ống phát tín hiệu (SharedFlow)
+    private val _navigationEvent = kotlinx.coroutines.flow.MutableSharedFlow<NavCommand>()
+    val navigationEvent = _navigationEvent.asSharedFlow()
+
+    // [THÊM MỚI] Hàm helper để phát lệnh
+    private fun emitNavCommand(targetId: Int, chatType: String, reason: String) {
+        CoroutineScope(Dispatchers.Main).launch {
+            _navigationEvent.emit(NavCommand(targetId, chatType, reason))
+        }
+    }
 
     // Biến tạm để check xem user có đang chat không (Bạn cần cập nhật biến này từ Activity)
     var currentChatTargetId: Int = -1
@@ -200,6 +215,7 @@ object NativeEventListenerImpl : NativeEventListener {
             CoroutineScope(Dispatchers.IO).launch {
                 repo.deleteFriend(exFriendId)
                 repo.updateSearchStatusToNone(exFriendId)
+                emitNavCommand(exFriendId, "private", "Quan hệ bạn bè đã kết thúc")
             }
         }
     }
@@ -388,6 +404,7 @@ object NativeEventListenerImpl : NativeEventListener {
         chatRepository?.let { repo ->
             CoroutineScope(Dispatchers.IO).launch {
                 repo.handleGroupDissolved(groupId)
+                emitNavCommand(groupId, "group", "Nhóm này đã bị giải tán")
             }
         }
     }

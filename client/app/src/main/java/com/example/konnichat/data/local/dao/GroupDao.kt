@@ -55,4 +55,7 @@ interface GroupDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = :groupId AND member_id = :userId)")
     fun isUserInGroupFlow(groupId: Int, userId: Int): Flow<Boolean>
+
+    @Query("DELETE FROM group_members WHERE group_id = :groupId")
+    suspend fun deleteMembersByGroupId(groupId: Int)
 }
