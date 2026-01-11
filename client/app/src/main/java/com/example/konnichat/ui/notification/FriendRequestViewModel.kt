@@ -19,13 +19,13 @@ class FriendRequestViewModel(private val userRepository: UserRepository) : ViewM
         }
     }
 
-    fun respond(requestId: Int, senderId: Int, accept: Boolean) {
+    fun respond(requestId: Int, senderId: Int, senderName: String, accept: Boolean) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
                 if (accept) {
                     // 1. Nếu ĐỒNG Ý: Gọi hàm repository (vừa tạo ở bước trước)
                     // Hàm này sẽ: Gọi Server + Update User đó thành "Bạn bè" (relation_type=1) + Xóa request
-                    userRepository.acceptFriendRequest(requestId, senderId)
+                    userRepository.acceptFriendRequest(requestId, senderId, senderName)
                 } else {
                     // 2. Nếu TỪ CHỐI:
                     // Xóa UI

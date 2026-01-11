@@ -42,10 +42,10 @@ class FriendRequestFragment : Fragment() {
         rv.layoutManager = LinearLayoutManager(context)
 
         val adapter = FriendRequestAdapter(
-            onAccept = { req -> viewModel.respond(req.requestId, req.senderId, true) },
+            onAccept = { req -> viewModel.respond(req.requestId, req.senderId,req.senderName, true) },
 
             // [SỬA] Truyền thêm req.senderId (dù từ chối không dùng đến nhưng hàm yêu cầu)
-            onDeny = { req -> viewModel.respond(req.requestId, req.senderId, false) }
+            onDeny = { req -> viewModel.respond(req.requestId, req.senderId, req.senderName, false) }
         )
         rv.adapter = adapter
 

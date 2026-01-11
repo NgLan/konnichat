@@ -235,14 +235,29 @@ class UserRepository(
         prefs.edit().putBoolean("MUTE_NOTIFY_$userId", isMuted).apply()
     }
 
-    suspend fun acceptFriendRequest(requestId: Int, senderId: Int) {
+    suspend fun acceptFriendRequest(requestId: Int, senderId: Int, senderName: String) {
         // 1. Gọi Server báo là đã đồng ý
         NativeClient.respondFriendRequest(requestId, true)
 
+        val newFriend = UserEntity(
+            serverId = senderId,
+            name = senderName,          // Dùng tên lấy từ lời mời
+            email = "",                 // Email tạm thời rỗng (sẽ update sau khi sync)
+            isOnline = true,            // Tạm thời coi là Online vì vừa tương tác
+            status = "active",
+            age = null,
+            avatarUrl = null,
+            relationType = 1,           // 1 = BẠN BÈ
+            isFullData = false,         // Đánh dấu là data chưa full (để sau này sync lại)
+            createdAt = Date(),
+            updatedAt = Date()
+        )
+
+        userDao.insertUser(newFriend)
         // 2. [QUAN TRỌNG] Cập nhật DB Local ngay lập tức
         // Chuyển người gửi (A) từ trạng thái '0' (Stranger) sang '1' (Friend)
         // Việc này sẽ làm User A xuất hiện ngay lập tức trong danh sách bạn bè của B
-        userDao.makeFriendLocalUser(senderId)
+//        userDao.makeFriendLocalUser(senderId)
 
         // 3. Xóa lời mời khỏi danh sách chờ (để update UI tab Notification)
         removePendingRequest(requestId)
