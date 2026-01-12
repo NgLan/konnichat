@@ -232,6 +232,13 @@ class ChatRepository(
             )
             groupDao.insertGroup(placeholderGroup)
             Log.d("ChatRepo", "⚠️ Đã tạo Group tạm (ID: $groupId) để tránh lỗi crash.")
+            // Gọi server lấy danh sách nhóm để cập nhật lại Tên thật và Avatar cho nhóm tạm
+            try {
+                // Lấy 100 nhóm đầu tiên để sync lại thông tin nhóm vừa vào
+                NativeClient.getGroupList(0, 100)
+            } catch (e: Exception) {
+                Log.e("ChatRepo", "Lỗi khi request cập nhật info nhóm: ${e.message}")
+            }
         }
 
         memberIds.forEach { memberId ->
