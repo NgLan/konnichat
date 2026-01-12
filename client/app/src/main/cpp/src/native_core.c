@@ -107,15 +107,16 @@ static int recv_and_validate_header(PacketHeader *header, int expected_cmd) {
     if (g_socket == -1)
         return ERR_NETWORK_CONN_FAILED;
 
-    LOGI("Dang cho doc Header...");
+    LOGI("[NativeCore] Dang cho doc Header (Cmd mong doi: %d)...", expected_cmd);
     int n = recv_all(g_socket, header, sizeof(PacketHeader));
     if (n <= 0) {
-        LOGE("Socket Error or Closed while waiting for CMD %d", expected_cmd);
+        LOGE("[NativeCore] Socket Error or Closed (recv returns %d)", n);
         return ERR_NETWORK_RECV_FAILED;
     }
 
+    LOGI("[NativeCore] Nhan Header: Cmd=%d, Status=%d, Size=%d, ReqID=%d", header->command_type, header->status_code, header->payload_size, header->request_id);
     if (header->command_type != expected_cmd) {
-        LOGE("Protocol Mismatch! Expected %d but got %d", expected_cmd, header->command_type);
+        LOGE("[NativeCore] Protocol Mismatch! Expected %d but got %d", expected_cmd, header->command_type);
         discard_payload(g_socket, header->payload_size);
         return ERR_PROTOCOL_MISMATCH;
     }

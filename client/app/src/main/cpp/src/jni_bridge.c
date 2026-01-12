@@ -478,6 +478,10 @@ void throw_unified_error(JNIEnv *env, int result_code) {
                 exClass = g_UserExistException;
                 msg = "Email này đã được đăng ký";
                 break;
+            case STATUS_ERROR_ALREADY_LOGGED_IN:
+                exClass = g_AuthException;
+                msg = "Tài khoản đang đăng nhập ở thiết bị khác";
+                break;
             case STATUS_ERROR_DB:
                 exClass = g_ServerException;
                 msg = "Lỗi xử lý Database phía Server";
