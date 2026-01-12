@@ -134,11 +134,6 @@ static void trim_string(char *str) {
     memmove(str, ptr, len + 1);
 }
 
-// --- INIT & CONNECT ---
-// --- INIT & CONNECT ---
-// File: native_core.c
-
-// --- HELPER MỚI THÊM ---
 // Hàm để thay đổi timeout của socket linh hoạt
 static void set_socket_timeout(int sock, int seconds) {
     struct timeval timeout;
@@ -148,6 +143,7 @@ static void set_socket_timeout(int sock, int seconds) {
     setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
 }
 
+// --- INIT & CONNECT ---
 int client_init(const char *host, int port)
 {
     // 1. DỌN DẸP TRIỆT ĐỂ TRẠNG THÁI CŨ
