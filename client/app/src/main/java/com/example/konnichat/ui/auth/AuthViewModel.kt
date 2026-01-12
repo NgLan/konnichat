@@ -1,5 +1,6 @@
 package com.example.konnichat.ui.auth
 
+import android.util.Log
 import androidx.lifecycle.LiveData
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.ViewModel
@@ -13,9 +14,9 @@ import kotlinx.coroutines.launch
 
 class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
 
-    // LiveData cho trạng thái Kết nối (Dùng ở Splash)
-    private val _connectState = MutableLiveData<Resource<Boolean>>()
-    val connectState: LiveData<Resource<Boolean>> = _connectState
+    companion object {
+        private const val TAG = "[AuthVM]"
+    }
 
     // LiveData cho trạng thái Login
     private val _loginState = MutableLiveData<Resource<UserDto>>()
@@ -28,12 +29,35 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     private val _logoutState = MutableLiveData<Resource<Boolean>>()
     val logoutState: LiveData<Resource<Boolean>> = _logoutState
 
+    // LiveData cho trạng thái AutoLogin
+    private val _autoLoginState = MutableLiveData<Resource<Boolean>>()
+    val autoLoginState: LiveData<Resource<Boolean>> = _autoLoginState
     // Gọi hàm kết nối
-    fun connectDefault() {
-        _connectState.value = Resource.Loading()
+    fun checkAutoLogin() {
+        Log.d(TAG, "🚀 checkAutoLogin: Bắt đầu quy trình...")
+        _autoLoginState.value = Resource.Loading()
         viewModelScope.launch {
-            val result = repository.connectToServer()
-            _connectState.value = result
+            // 1. Kết nối Socket trước
+            Log.d(TAG, "⏳ Đang kết nối Socket...")
+            val connectResult = repository.connectToServer()
+
+            if (connectResult is Resource.Success) {
+                Log.d(TAG, "✅ Kết nối OK. Đang thử Auto Login...")
+                // 2. Nếu kết nối OK -> Thử Auto Login (Lấy user/pass từ SharedPreferences gửi lên)
+                val isLoggedIn = repository.autoLogin()
+                if (isLoggedIn) {
+                    Log.i(TAG, "🎉 Auto Login thành công -> Báo View chuyển Home.")
+                    _autoLoginState.value = Resource.Success(true)
+                } else {
+                    Log.w(TAG, "⚠️ Auto Login thất bại (sai pass hoặc chưa lưu) -> Báo View chuyển Login.")
+                    // Kết nối được nhưng không login được (chưa lưu pass hoặc pass sai) -> Về màn Login
+                    _autoLoginState.value = Resource.Success(false)
+                }
+            } else {
+                Log.e(TAG, "❌ Kết nối Socket thất bại: ${connectResult.message}")
+                // Lỗi mạng -> Báo lỗi để hiện nút Retry
+                _autoLoginState.value = Resource.Error(connectResult.message ?: "Lỗi kết nối")
+            }
         }
     }
 

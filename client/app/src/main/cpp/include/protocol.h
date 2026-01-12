@@ -122,16 +122,17 @@ typedef enum {
     STATUS_ERROR_USER_NOT_FOUND = 3,
     STATUS_ERROR_DB = 4,
     STATUS_ERROR_INVALID_PARAM = 5,
-    STATUS_ERROR_ALREADY_EXIST = 6,
-    STATUS_ERROR_ALREADY_FRIEND = 7,  // Đã là bạn rồi
-    STATUS_ERROR_REQ_PENDING = 8,      // Đã gửi rồi, đừng spam
-    STATUS_ERROR_GROUP_FULL = 9,       // Nhóm đã đầy
-    STATUS_ERROR_USER_NOT_IN_GROUP = 10,  // Người dùng không thuộc nhóm
-    STATUS_ERROR_NOT_GROUP_ADMIN = 11,   // Người dùng không phải admin nhóm
-    STATUS_ERROR_CANNOT_REMOVE_SELF = 12,  // Không thể tự kick chính mình khỏi nhóm
-    STATUS_ERROR_NOT_ALLOWED = 13,  // Hành động không được phép
-    STATUS_ERROR_NO_PERMISSION = 14, // Không có quyền thực hiện hành động
-    STATUS_ERROR_MESSAGE_NOT_FOUND = 15 // Tin nhắn không tồn tại
+    STATUS_ERROR_ALREADY_EXIST = 6,     // Đăng ký trùng email
+    STATUS_ERROR_ALREADY_FRIEND = 7,    // Đã là bạn rồi
+    STATUS_ERROR_REQ_PENDING = 8,       // Đã gửi rồi, đừng spam
+    STATUS_ERROR_GROUP_FULL = 9,        // Nhóm đã đầy
+    STATUS_ERROR_USER_NOT_IN_GROUP = 10,// Người dùng không thuộc nhóm
+    STATUS_ERROR_NOT_GROUP_ADMIN = 11,  // Người dùng không phải admin nhóm
+    STATUS_ERROR_CANNOT_REMOVE_SELF = 12,   // Không thể tự kick chính mình khỏi nhóm
+    STATUS_ERROR_NOT_ALLOWED = 13,      // Hành động không được phép
+    STATUS_ERROR_NO_PERMISSION = 14,    // Không có quyền thực hiện hành động
+    STATUS_ERROR_MESSAGE_NOT_FOUND = 15,// Tin nhắn không tồn tại
+    STATUS_ERROR_ALREADY_LOGGED_IN = 16 // Đã đăng nhập ở thiết bị khác
 } StatusCode;
 
 // --- ĐỊNH NGHĨA TRẠNG THÁI QUAN HỆ ---

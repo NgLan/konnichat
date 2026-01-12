@@ -297,14 +297,21 @@ static int handle_login(int sock, PacketHeader *reqHeader, void *payload)
 
     if (userId > 0)
     {
-        // 1. Send Success Response
+        // Kiểm tra xem user này có đang online ở socket khác không?
+        int existing_sock = get_socket_by_user_id(userId);
+        if (existing_sock != -1) {
+            LOG_WARN("User %d is already logged in on socket %d. Rejecting new login.", userId, existing_sock);
+            
+            send_response(sock, CMD_LOGIN_RESP, reqHeader->request_id, STATUS_ERROR_ALREADY_LOGGED_IN, NULL, 0);
+            return -1;
+        }
+
+        // Nếu chưa online -> Cho phép Login
         send_response(sock, CMD_LOGIN_RESP, reqHeader->request_id, STATUS_SUCCESS, &userInfo, sizeof(UserInfoPayload));
 
-        // 2. Update State
+        // Update State
         db_update_user_status(userId, 1);
         add_connected_client(sock, userId);
-
-        // 3. Notify Friends
         notify_friends_status(userId, 1);
 
         LOG_INFO("User %d logged in.", userId);

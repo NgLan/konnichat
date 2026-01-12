@@ -1909,7 +1909,7 @@ class NativeClientTest {
 
         val time = System.currentTimeMillis()
         val emailA = "leaver_$time@konni.com"
-        val emailB = "stayer_$time@konni.com"
+        val emailB = "stayer_$time@konni.cohm"
         val pass = "123"
 
         NativeClient.registerUser("UserA", emailA, pass)

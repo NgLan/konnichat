@@ -1,6 +1,7 @@
 package com.example.konnichat.data.repository
 
 import android.content.SharedPreferences
+import android.util.Log
 import com.example.konnichat.core.Constants
 import com.example.konnichat.data.local.AppDatabase
 import com.example.konnichat.data.local.dao.UserDao
@@ -22,19 +23,27 @@ class AuthRepository (
     private val prefs: SharedPreferences
 ){
 
+    companion object {
+        private const val TAG = "[AuthRepo]"
+    }
+
     // Hàm kết nối đến Server (Dùng cho Splash Screen)
     // Chạy trên luồng IO để không chặn UI
     suspend fun connectToServer(): Resource<Boolean> = withContext(Dispatchers.IO) {
+        Log.d(TAG, "Bắt đầu kết nối đến ${Constants.SERVER_HOST}:${Constants.SERVER_PORT}")
         try {
             // Gọi hàm C: connect. Hàm này trả về 0 nếu thành công.
             val result = NativeClient.connect(Constants.SERVER_HOST, Constants.SERVER_PORT)
             if (result == 0) {
+                Log.i(TAG, "Kết nối Socket thành công.")
                 NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
                 Resource.Success(true)
             } else {
+                Log.e(TAG, "Kết nối thất bại. Mã lỗi Native: $result")
                 Resource.Error("Kết nối thất bại. Mã lỗi: $result")
             }
         } catch (e: Exception) {
+            Log.e(TAG, "Exception khi kết nối: ${e.message}")
             Resource.Error("Lỗi kết nối: ${e.message}")
         }
     }
@@ -74,7 +83,7 @@ class AuthRepository (
                 NativeEventListenerImpl.isUserLoggedOut = false // Reset cờ logout
                 prefs.edit()
                     .putString("SAVED_EMAIL", email)
-                    .putString("SAVED_PASS", pass)
+                    .putString("SAVED_PASS", hashedPass)
                     .putInt("USER_ID", user.id) // Lưu luôn ID để tiện dùng
                     .apply()
 
@@ -107,20 +116,31 @@ class AuthRepository (
         val email = prefs.getString("SAVED_EMAIL", null)
         val pass = prefs.getString("SAVED_PASS", null)
 
-        if (email != null && pass != null) {
+        Log.d(TAG, "AutoLogin: Kiểm tra credentials đã lưu...")
+
+        if (email.isNullOrEmpty() || pass.isNullOrEmpty()) {
+            Log.w(TAG, "Không tìm thấy email/pass đã lưu. Hủy AutoLogin.")
+            return@withContext false
+        } else {
+            Log.d(TAG, "Tìm thấy credentials cho: $email. Đang gọi Native Login...")
             try {
                 // Gọi login native nhưng không cần xóa DB hay insert lại User (vì đã có rồi)
                 val user = NativeClient.loginUser(email, pass)
                 if (user != null) {
+                    Log.i(TAG, "AutoLogin THÀNH CÔNG cho User ID: ${user.id}")
                     NativeEventListenerImpl.isUserLoggedOut = false
+                    NativeClient.startListening(NativeEventListenerImpl)
+                    return@withContext true
+                } else {
+                    Log.e(TAG, "AutoLogin thất bại: Native trả về null (lỗi logic lạ).")
+                    return@withContext false
                 }
-                return@withContext user != null
             } catch (e: Exception) {
+                Log.e(TAG, "AutoLogin Exception: ${e.message}")
                 e.printStackTrace()
                 return@withContext false
             }
         }
-        return@withContext false
     }
 
     // Hàm Đăng ký
@@ -160,7 +180,9 @@ class AuthRepository (
 
             // 5. Cập nhật trạng thái kết nối về DISCONNECTED
             NativeEventListenerImpl.connectionState.postValue(ConnectionState.DISCONNECTED)
+            Log.i(TAG, "Đăng xuất hoàn tất.")
         } catch (e: Exception) {
+            Log.e(TAG, "Lỗi khi đăng xuất: ${e.message}")
             e.printStackTrace()
         }
     }
