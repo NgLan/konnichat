@@ -849,17 +849,16 @@ static void handle_add_members(int sock, PacketHeader *reqHeader, void *payload,
         for (int i = 0; i < total_mem; i++)
         {
             int mem_id = all_members[i];
-
-            // Không gửi notify ngược lại cho người thực hiện (vì đã nhận RESP ở trên)
-            if (mem_id == current_user_id)
-                continue;
-
             int target_sock = get_socket_by_user_id(mem_id);
+
             if (target_sock != -1)
             {
                 // 1. Gửi Notify (Cập nhật danh sách thành viên)
-                send_response(target_sock, CMD_NOTIFY_MEMBERS_ADDED, 0, STATUS_SUCCESS,
-                              payload, expected_size);
+                // KHÔNG gửi cho Sender vì đã nhận RESP ở trên
+                if (mem_id != current_user_id) {
+                    send_response(target_sock, CMD_NOTIFY_MEMBERS_ADDED, 0, STATUS_SUCCESS,
+                                  payload, expected_size);
+                }
 
                 // 2. Gửi Tin nhắn hệ thống (Cập nhật khung chat)
                 if (msg_id > 0)
