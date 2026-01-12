@@ -138,7 +138,14 @@ class ChatRepository(
             Log.d("ChatRepo", "⚠️ Đã tạo User tạm (ID: ${dto.senderId}) để nhận tin nhắn.")
         }
 
-        val status = if (dto.content == "Tin nhắn đã bị thu hồi") "revoked" else "sent"
+        val status = when (dto.status) {
+            4 -> "revoked"
+            2 -> "delivered"
+            3 -> "read"
+            else -> "sent"
+        }
+
+        val finalContent = if (status == "revoked") "Tin nhắn đã bị thu hồi" else dto.content
 
         // 3. Sau khi đảm bảo User tồn tại, mới lưu tin nhắn
         val entity = MessageEntity(
@@ -146,7 +153,7 @@ class ChatRepository(
             senderId = dto.senderId,
             receiverId = dto.receiverId,
             chatType = dto.chatType,
-            content = dto.content,
+            content = finalContent,
             status = status,
             createdAt = Date(dto.timestamp)
         )

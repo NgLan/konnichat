@@ -74,4 +74,7 @@ interface MessageDao {
     // [SỬA LẠI] serverId -> server_id
     @Query("UPDATE messages SET status = 'revoked', content = 'Tin nhắn đã bị thu hồi' WHERE server_id = :serverId")
     suspend fun markMessageAsRevoked(serverId: Int)
+
+    @Query("UPDATE messages SET content = :content WHERE server_id = :id")
+    suspend fun updateMessageContent(id: Int, content: String)
 }

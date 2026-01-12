@@ -119,6 +119,8 @@ class ChatAdapter(
                 tvContent.setTypeface(null, android.graphics.Typeface.ITALIC)
             } else {
                 tvContent.text = msg.content
+                tvContent.setBackgroundResource(R.drawable.bg_message_sent)
+
                 tvContent.setTextColor(android.graphics.Color.WHITE) // Màu gốc (check lại layout xml của bạn)
                 tvContent.setTypeface(null, android.graphics.Typeface.NORMAL)
             }
@@ -133,6 +135,8 @@ class ChatAdapter(
 
         private val tvSenderName: TextView = itemView.findViewById(R.id.tvSenderName)
         private val imgAvatar: ImageView = itemView.findViewById(R.id.imgAvatar)
+
+        private val layoutBubble: View = itemView.findViewById(R.id.layoutBubble)
 
         fun bind(item: MessageWithSender) { // Lưu ý: Truyền cả item (MessageWithSender) vào
             val msg = item.message
@@ -161,7 +165,7 @@ class ChatAdapter(
 
             if (msg.status == "revoked") {
                 tvContent.text = "Tin nhắn đã bị thu hồi"
-                tvContent.setBackgroundResource(R.drawable.bg_message_revoked)
+                layoutBubble.setBackgroundResource(R.drawable.bg_message_revoked)
 
                 // 2. Màu xám
                 tvContent.setTextColor(android.graphics.Color.GRAY)
@@ -170,6 +174,9 @@ class ChatAdapter(
                 tvContent.setTypeface(null, android.graphics.Typeface.ITALIC)
             } else {
                 tvContent.text = msg.content
+
+                layoutBubble.setBackgroundResource(R.drawable.bg_message_received)
+
                 tvContent.setTextColor(android.graphics.Color.BLACK) // Màu gốc
                 tvContent.setTypeface(null, android.graphics.Typeface.NORMAL)
             }
