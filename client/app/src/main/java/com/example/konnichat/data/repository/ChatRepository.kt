@@ -118,8 +118,13 @@ class ChatRepository(
 
     // [NEW] Lưu tin nhắn từ Network (Socket trả về)
     suspend fun saveMessageFromNetwork(dto: MessageDto) {
-        val existingUser = userDao.getUserById(dto.senderId)
+        val existingMsg = messageDao.getMessageById(dto.id) // dto.id là ServerID
+        if (existingMsg != null) {
+            Log.d("ChatRepo", "Tin nhắn ${dto.id} đã tồn tại. Bỏ qua insert.")
+            return
+        }
 
+        val existingUser = userDao.getUserById(dto.senderId)
         if (existingUser == null) {
             // 2. Nếu chưa có -> Tạo User tạm để thỏa mãn khóa ngoại
             val placeholderUser = UserEntity(
@@ -153,6 +158,7 @@ class ChatRepository(
             senderId = dto.senderId,
             receiverId = dto.receiverId,
             chatType = dto.chatType,
+            msgType = dto.type,
             content = finalContent,
             status = status,
             createdAt = Date(dto.timestamp)
@@ -166,8 +172,35 @@ class ChatRepository(
     }
 
     // 2. Gọi Native để thêm thành viên
-    fun addMembersToGroup(groupId: Int, userIds: IntArray) {
-        NativeClient.addMembersToGroup(groupId, userIds)
+    suspend fun addMembersToGroup(groupId: Int, userIds: IntArray) {
+        try {
+            // 1. Gửi lệnh xuống Server (Nếu mạng lỗi sẽ throw Exception và dừng luôn)
+            NativeClient.addMembersToGroup(groupId, userIds)
+
+            // 2. Lấy tên các thành viên vừa thêm từ Local DB để tạo nội dung tin nhắn
+            // Kết quả sẽ dạng: "đã thêm Nguyễn Văn A, Trần Thị B"
+            val namesList = mutableListOf<String>()
+            for (uid in userIds) {
+                val user = userDao.getUserById(uid)
+                if (user != null) {
+                    namesList.add(user.name)
+                } else {
+                    namesList.add("User $uid") // Fallback nếu chưa có tên
+                }
+            }
+
+            // Ghép danh sách tên thành chuỗi cách nhau bởi dấu phẩy
+            val namesString = namesList.joinToString(", ")
+            val content = "đã thêm $namesString"
+
+            // 3. Tự chèn tin nhắn hệ thống vào Local DB để hiển thị ngay lập tức
+            insertLocalSystemMessage(groupId, content)
+
+        } catch (e: Exception) {
+            Log.e("ChatRepo", "Lỗi thêm thành viên: ${e.message}")
+            // Ném lỗi tiếp để ViewModel biết mà hiện thông báo lỗi (nếu cần)
+            throw e
+        }
     }
 
     // 3. Callback: Lưu thông tin nhóm vào DB khi tạo thành công
@@ -179,7 +212,29 @@ class ChatRepository(
             notification = "active", // Mặc định bật thông báo
             createdAt = Date()
         )
+
         groupDao.insertGroup(group)
+        val myUserId = prefs.getInt("USER_ID", -1)
+        if (myUserId != -1) {
+            insertLocalSystemMessage(groupId, "đã tạo nhóm", myUserId)
+        }
+    }
+
+    suspend fun insertLocalSystemMessage(groupId: Int, content: String, senderId: Int? = null) {
+        val myUserId = senderId ?: prefs.getInt("USER_ID", -1)
+        if (myUserId == -1) return
+
+        val sysMsg = MessageEntity(
+            serverId = -System.currentTimeMillis().toInt(), // ID âm
+            senderId = myUserId,
+            receiverId = groupId,
+            chatType = "group",
+            msgType = 9, // [QUAN TRỌNG] SYSTEM TYPE
+            content = content,
+            status = "sent",
+            createdAt = Date()
+        )
+        messageDao.insertMessage(sysMsg)
     }
 
     @Transaction
@@ -293,6 +348,7 @@ class ChatRepository(
         // 2. Nếu thành công -> Xóa dữ liệu local
         groupDao.deleteGroup(groupId)
         Log.d("ChatRepo", "Đã rời và xóa nhóm $groupId")
+        insertLocalSystemMessage(groupId, "đã rời nhóm")
     }
 
     suspend fun dissolveGroup(groupId: Int) {
@@ -309,17 +365,17 @@ class ChatRepository(
 
         // 2. Chèn tin nhắn hệ thống: "Nguyễn Văn A đã rời nhóm"
         // Server ID cho tin hệ thống tự sinh này có thể dùng số âm hoặc hash để tránh trùng
-        val systemMsg = MessageEntity(
-            serverId = -System.currentTimeMillis().toInt(), // ID tạm
-            senderId = memberId, // Người rời là người gửi tin này
-            receiverId = groupId,
-            chatType = "group",
-            msgType = 9, // TYPE_SYSTEM
-            content = "đã rời nhóm",
-            status = "sent",
-            createdAt = Date()
-        )
-        messageDao.insertMessage(systemMsg)
+//        val systemMsg = MessageEntity(
+//            serverId = -System.currentTimeMillis().toInt(), // ID tạm
+//            senderId = memberId, // Người rời là người gửi tin này
+//            receiverId = groupId,
+//            chatType = "group",
+//            msgType = 9, // TYPE_SYSTEM
+//            content = "đã rời nhóm",
+//            status = "sent",
+//            createdAt = Date()
+//        )
+//        messageDao.insertMessage(systemMsg)
     }
 
     // [THÊM MỚI] Xử lý khi nhóm bị giải tán
@@ -398,7 +454,29 @@ class ChatRepository(
     }
 
     suspend fun kickMember(groupId: Int, targetId: Int) {
-        NativeClient.kickMember(groupId, targetId)
+        try {
+            // 1. Lấy tên người bị kick trước để làm nội dung tin nhắn
+            val targetUser = userDao.getUserById(targetId)
+            val targetName = targetUser?.name ?: "thành viên"
+
+            // 2. Gửi lệnh lên Server (Nếu lỗi sẽ văng Exception và dừng tại đây)
+            NativeClient.kickMember(groupId, targetId)
+
+            // 3. Nếu thành công -> Tự cập nhật Local DB ngay lập tức
+
+            // A. Xóa thành viên khỏi danh sách nhóm trong máy mình
+            groupDao.deleteMember(groupId, targetId)
+
+            // B. Chèn tin nhắn hệ thống: "đã mời Nguyễn Văn A ra khỏi nhóm"
+            val content = "đã mời $targetName ra khỏi nhóm"
+            insertLocalSystemMessage(groupId, content)
+
+            Log.d("ChatRepo", "Đã kick $targetName và cập nhật local.")
+
+        } catch (e: Exception) {
+            Log.e("ChatRepo", "Lỗi kick member: ${e.message}")
+            throw e
+        }
     }
 
     // [THÊM MỚI] Xử lý sự kiện Member Removed từ Server
@@ -436,20 +514,24 @@ class ChatRepository(
             // 1. Xóa thành viên đó khỏi DB Local
             groupDao.deleteMember(groupId, memberId)
 
+            if (adminId == myUserId) {
+                insertLocalSystemMessage(groupId, "đã mời $memberName ra khỏi nhóm")
+            }
+
             // 2. Tạo tin nhắn hệ thống báo cho mình biết
-            val content = "đã mời $memberName ra khỏi nhóm"
-            val systemMsg = MessageEntity(
-                serverId = -System.currentTimeMillis().toInt(),
-                senderId = adminId,
-                receiverId = groupId,
-                chatType = "group",
-                msgType = 9, // TYPE_SYSTEM
-                content = content,
-                status = "sent",
-                createdAt = Date()
-            )
-            messageDao.insertMessage(systemMsg)
-            Log.d("ChatRepo", "Đã cập nhật DB: $memberName bị kick khỏi nhóm $groupId")
+//            val content = "đã mời $memberName ra khỏi nhóm"
+//            val systemMsg = MessageEntity(
+//                serverId = -System.currentTimeMillis().toInt(),
+//                senderId = adminId,
+//                receiverId = groupId,
+//                chatType = "group",
+//                msgType = 9, // TYPE_SYSTEM
+//                content = content,
+//                status = "sent",
+//                createdAt = Date()
+//            )
+//            messageDao.insertMessage(systemMsg)
+            Log.d("ChatRepo", "Đã xóa member $memberName khỏi nhóm $groupId (Local)")
         }
     }
     fun checkGroupMembership(groupId: Int, userId: Int): Flow<Boolean> {

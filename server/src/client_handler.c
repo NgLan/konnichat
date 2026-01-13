@@ -299,9 +299,10 @@ static int handle_login(int sock, PacketHeader *reqHeader, void *payload)
     {
         // Kiểm tra xem user này có đang online ở socket khác không?
         int existing_sock = get_socket_by_user_id(userId);
-        if (existing_sock != -1) {
+        if (existing_sock != -1)
+        {
             LOG_WARN("User %d is already logged in on socket %d. Rejecting new login.", userId, existing_sock);
-            
+
             send_response(sock, CMD_LOGIN_RESP, reqHeader->request_id, STATUS_ERROR_ALREADY_LOGGED_IN, NULL, 0);
             return -1;
         }
@@ -731,6 +732,9 @@ static void handle_create_group(int sock, PacketHeader *reqHeader, void *payload
         {
             int target_id = member_ids[i];
 
+            if (target_id == current_user_id)
+                continue;
+
             // Không gửi thông báo cho chính mình (vì đã nhận ACK ở trên)
             if (target_id == current_user_id)
                 continue;
@@ -849,13 +853,17 @@ static void handle_add_members(int sock, PacketHeader *reqHeader, void *payload,
         for (int i = 0; i < total_mem; i++)
         {
             int mem_id = all_members[i];
+            if (mem_id == current_user_id)
+                continue;
+
             int target_sock = get_socket_by_user_id(mem_id);
 
             if (target_sock != -1)
             {
                 // 1. Gửi Notify (Cập nhật danh sách thành viên)
                 // KHÔNG gửi cho Sender vì đã nhận RESP ở trên
-                if (mem_id != current_user_id) {
+                if (mem_id != current_user_id)
+                {
                     send_response(target_sock, CMD_NOTIFY_MEMBERS_ADDED, 0, STATUS_SUCCESS,
                                   payload, expected_size);
                 }
@@ -953,6 +961,8 @@ static void handle_leave_group(int sock, PacketHeader *reqHeader, void *payload,
             for (int i = 0; i < count; i++)
             {
                 int target_id = member_ids[i];
+                if (target_id == current_user_id)
+                    continue;
                 // Người rời đã nhận resp ở trên rồi, không cần notify nữa
                 if (target_id == current_user_id)
                     continue;
@@ -1095,7 +1105,11 @@ static void handle_remove_member(int sock, PacketHeader *reqHeader, void *payloa
         // C1. Gửi cho các thành viên còn lại (Active)
         for (int i = 0; i < count; i++)
         {
-            int mem_sock = get_socket_by_user_id(member_ids[i]);
+            int mem_id = member_ids[i];
+            if (mem_id == current_user_id)
+                continue;
+
+            int mem_sock = get_socket_by_user_id(mem_id);
             if (mem_sock != -1)
             {
                 // Notify List
@@ -1267,9 +1281,9 @@ static void handle_recall_message(int sock, PacketHeader *reqHeader, void *paylo
         notify.message_id = req->message_id;
         notify.action_type = 1; // 1 = Recall
         notify.group_id = (strcmp(chat_type, "group") == 0) ? receiver_id : 0;
-        notify.reactor_id = current_user_id; 
-        notify.reaction_code = 0; 
-        
+        notify.reactor_id = current_user_id;
+        notify.reaction_code = 0;
+
         if (strcmp(chat_type, "private") == 0)
         {
             // Gửi cho người nhận (nếu online)
@@ -1322,7 +1336,7 @@ static void handle_react_message(int sock, PacketHeader *reqHeader, void *payloa
     InteractionPayload *req = (InteractionPayload *)payload;
 
     int receiver_id = 0;
-    char chat_type[16]; 
+    char chat_type[16];
 
     // 1. Lấy thông tin tin nhắn để biết nó thuộc về ai/nhóm nào
     if (db_get_message_routing(req->message_id, &receiver_id, chat_type) == 0)
@@ -1358,7 +1372,7 @@ static void handle_react_message(int sock, PacketHeader *reqHeader, void *payloa
         else if (strcmp(chat_type, "group") == 0)
         {
             // Chat nhóm: Gửi cho tất cả thành viên
-            int members[MAX_GROUP_MEMBERS]; 
+            int members[MAX_GROUP_MEMBERS];
             int count = db_get_group_member_ids(receiver_id, members, MAX_GROUP_MEMBERS);
             for (int i = 0; i < count; i++)
             {
