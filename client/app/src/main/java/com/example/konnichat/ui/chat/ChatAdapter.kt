@@ -39,27 +39,29 @@ class ChatAdapter(
         val item = getItem(position)
         val msg = item.message
 
-        // [THÊM] Kiểm tra msgType hệ thống
-        if (msg.msgType == 9) return VIEW_TYPE_SYSTEM
+        // Kiểm tra msgType hệ thống
+        if (msg.msgType == VIEW_TYPE_SYSTEM) return VIEW_TYPE_SYSTEM
 
+        // Nếu không phải hệ thống, check xem là mình gửi hay người khác
         return if (msg.senderId == currentUserId) VIEW_TYPE_SENT else VIEW_TYPE_RECEIVED
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): RecyclerView.ViewHolder {
         val inflater = LayoutInflater.from(parent.context)
-        return if (viewType == VIEW_TYPE_SENT) {
-            // Layout tin nhắn mình gửi (Bên phải)
-            val view = inflater.inflate(R.layout.item_chat_sent, parent, false)
-            SentMessageViewHolder(view)
-        } else if (viewType == VIEW_TYPE_RECEIVED) {
-            // Layout tin nhắn họ gửi (Bên trái)
-            val view = inflater.inflate(R.layout.item_chat_received, parent, false)
-            ReceivedMessageViewHolder(view)
-        } else if (viewType == VIEW_TYPE_SYSTEM){
-            val view = inflater.inflate(R.layout.item_chat_system, parent, false)
-            SystemMessageViewHolder(view)
-        } else {
-            throw IllegalArgumentException("Unknown viewType")
+        return when (viewType) {
+            VIEW_TYPE_SENT -> {
+                val view = inflater.inflate(R.layout.item_chat_sent, parent, false)
+                SentMessageViewHolder(view)
+            }
+            VIEW_TYPE_RECEIVED -> {
+                val view = inflater.inflate(R.layout.item_chat_received, parent, false)
+                ReceivedMessageViewHolder(view)
+            }
+            VIEW_TYPE_SYSTEM -> {
+                val view = inflater.inflate(R.layout.item_chat_system, parent, false)
+                SystemMessageViewHolder(view)
+            }
+            else -> throw IllegalArgumentException("Unknown viewType: $viewType")
         }
     }
 
@@ -75,6 +77,7 @@ class ChatAdapter(
     override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
         val item = getItem(position)
 
+        // Chỉ cho phép nhân giữ (để thu hồi/xóa) với tin nhắn thường
         if (holder !is SystemMessageViewHolder) {
             holder.itemView.setOnLongClickListener {
                 onMessageLongClick(item)
@@ -84,9 +87,8 @@ class ChatAdapter(
 
         when (holder) {
             is SentMessageViewHolder -> holder.bind(item.message)
-            // [SỬA] Truyền nguyên cục item (MessageWithSender) thay vì chỉ item.message
             is ReceivedMessageViewHolder -> holder.bind(item)
-            is SystemMessageViewHolder -> holder.bind(item)
+            is SystemMessageViewHolder -> holder.bind(item, currentUserId)
         }
     }
 
@@ -121,7 +123,7 @@ class ChatAdapter(
                 tvContent.text = msg.content
                 tvContent.setBackgroundResource(R.drawable.bg_message_sent)
 
-                tvContent.setTextColor(android.graphics.Color.WHITE) // Màu gốc (check lại layout xml của bạn)
+                tvContent.setTextColor(android.graphics.Color.WHITE)
                 tvContent.setTypeface(null, android.graphics.Typeface.NORMAL)
             }
         }
@@ -129,7 +131,6 @@ class ChatAdapter(
 
     // --- ViewHolder cho tin nhắn nhận được ---
     class ReceivedMessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        // Ánh xạ đúng ID trong item_chat_received.xml
         private val tvContent: TextView = itemView.findViewById(R.id.tvContent)
         private val tvTime: TextView = itemView.findViewById(R.id.tvTime)
 
@@ -138,27 +139,27 @@ class ChatAdapter(
 
         private val layoutBubble: View = itemView.findViewById(R.id.layoutBubble)
 
-        fun bind(item: MessageWithSender) { // Lưu ý: Truyền cả item (MessageWithSender) vào
+        fun bind(item: MessageWithSender) {
             val msg = item.message
 
             tvContent.text = msg.content
 
+            // Format giờ
             val sdf = SimpleDateFormat("HH:mm", Locale.getDefault())
             tvTime.text = sdf.format(msg.createdAt)
 
-            // [THÊM] Hiển thị Tên người gửi
-            // item.senderName lấy từ bảng Users nhờ câu lệnh JOIN trong DAO
+            // Hiển thị Tên người gửi
             val displayName = item.senderName ?: "User ${msg.senderId}"
             tvSenderName.text = displayName
 
-            // [THÊM] Logic ẩn/hiện tên:
-            // Nếu là chat Group: Luôn hiện tên (hoặc logic tùy bạn)
-            // Nếu là chat Private: Có thể ẩn tên đi cho gọn (vì chỉ chat với 1 người)
+            // Logic ẩn/hiện tên:
+            // Nếu là chat Group: Luôn hiện tên
+            // Nếu là chat Private: Ẩn tên (vì chỉ chat với 1 người)
             if (msg.chatType == "group") {
                 tvSenderName.visibility = View.VISIBLE
                 imgAvatar.visibility = View.VISIBLE
             } else {
-                // Chat 1-1 thì ẩn tên và avatar đi cho giống Messenger (hoặc để nguyên tùy ý thích)
+                // Chat 1-1 thì ẩn tên
                 tvSenderName.visibility = View.GONE
                 imgAvatar.visibility = View.VISIBLE // Vẫn hiện avatar cho đẹp
             }
@@ -181,20 +182,26 @@ class ChatAdapter(
                 tvContent.setTypeface(null, android.graphics.Typeface.NORMAL)
             }
 
-            // [THÊM] Hiển thị Avatar (Placeholder)
-            imgAvatar.setImageResource(com.example.konnichat.R.mipmap.ic_launcher_round)
+            // Hiển thị Avatar
+            imgAvatar.setImageResource(R.mipmap.ic_launcher_round)
         }
     }
 
+    // --- ViewHolder: Tin nhắn hệ thống (Căn giữa, màu xám) ---
     class SystemMessageViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
         private val tvContent: TextView = itemView.findViewById(R.id.tvSystemMessage)
 
-        fun bind(item: MessageWithSender) {
-            // Logic ghép tên: "Nguyễn Văn A" + " " + "đã tạo nhóm"
-            val senderName = item.senderName ?: "Người dùng ${item.message.senderId}"
-            val content = item.message.content
+        fun bind(item: MessageWithSender, currentUserId: Int) {
+            val msg = item.message
+            val senderName = if (msg.senderId == currentUserId) {
+                "Bạn"
+            } else {
+                item.senderName ?: "Người dùng ${msg.senderId}"
+            }
 
-            val fullText = "$senderName $content"
+            // Server gửi nội dung dạng: "đã tạo nhóm", "đã mời A ra khỏi nhóm"
+            // Ta ghép lại: "Nguyễn Văn A đã tạo nhóm" hoặc "Bạn đã tạo nhóm"
+            val fullText = "$senderName ${msg.content}"
             tvContent.text = fullText
         }
     }
@@ -215,11 +222,15 @@ class ChatAdapter(
 //        }
 //    }
 
+    // --- DiffUtil ---
     class MessageDiffCallback : DiffUtil.ItemCallback<MessageWithSender>() {
         override fun areItemsTheSame(oldItem: MessageWithSender, newItem: MessageWithSender): Boolean {
+            // Ưu tiên so sánh Server ID
             if (oldItem.message.serverId > 0 && newItem.message.serverId > 0) {
                 return oldItem.message.serverId == newItem.message.serverId
             }
+
+            // Fallback so sánh timestamp + content
             return oldItem.message.createdAt.time == newItem.message.createdAt.time
                     && oldItem.message.content == newItem.message.content
         }
