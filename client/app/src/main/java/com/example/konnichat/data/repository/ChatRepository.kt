@@ -19,6 +19,7 @@ import com.example.konnichat.data.local.model.MessageWithSender
 import com.example.konnichat.data.local.dao.UserDao // [THÊM] Import UserDao
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.local.model.GroupMemberWithUser
+import com.example.konnichat.data.local.prefs.SessionManager
 
 
 class ChatRepository(
@@ -26,7 +27,7 @@ class ChatRepository(
     private val messageDao: MessageDao,
     private val groupDao: GroupDao,
     private val userDao: UserDao,
-    private val prefs: SharedPreferences
+    private val sessionManager: SessionManager
 ) {
 
     // Hàm lấy danh sách hội thoại (Realtime Local)
@@ -34,20 +35,18 @@ class ChatRepository(
         return conversationDao.getConversationList(myUserId)
     }
 
-    // [NEW] Lấy tin nhắn Realtime từ DB
+    // Lấy tin nhắn Realtime từ DB
     fun getMessages(myUserId: Int, targetId: Int, chatType: String): Flow<List<MessageWithSender>> {
         return if (chatType == "group") {
             // Nếu là nhóm -> Gọi hàm DAO nhóm
-//            messageDao.getGroupMessages(targetId)
             messageDao.getGroupMessagesWithSender(targetId)
         } else {
             // Nếu là private -> Gọi hàm DAO cũ
-//            messageDao.getMessagesBetween(myUserId, targetId)
             messageDao.getMessagesBetweenWithSender(myUserId, targetId)
         }
     }
 
-    // [NEW] Gửi tin nhắn
+    // Gửi tin nhắn
     suspend fun sendMessage(myUserId: Int, receiverId: Int, content: String, chatType: String) {
         // Tạo tempId dương để gửi qua Socket (C chỉ nhận int)
         val tempId = (System.currentTimeMillis() % Int.MAX_VALUE).toInt()
@@ -76,7 +75,7 @@ class ChatRepository(
         }
     }
 
-    // [MỚI] Xử lý khi tin nhắn đã gửi thành công (Server ACK)
+    // Xử lý khi tin nhắn đã gửi thành công (Server ACK)
     // Logic: Xóa tin tạm (ID âm) -> Chèn tin thật (ID dương)
     @Transaction
     suspend fun handleMessageSentAck(tempId: Int, serverId: Int, serverTime: Long) {
@@ -105,18 +104,18 @@ class ChatRepository(
             Log.w("ChatRepo", "Could not find temp message with ID $localId to swap")
         }
     }
-    // [MỚI] Xử lý update status delivered
+    // Xử lý update status delivered
     suspend fun updateMessageStatus(serverId: Int, status: String) {
         messageDao.updateMessageStatus(serverId, status)
     }
 
-    // [NEW] Load lịch sử cũ hơn
+    // Load lịch sử cũ hơn
     fun loadHistory(targetId: Int, isGroup: Boolean, offset: Int, limit: Int) {
         // Gọi Native, dữ liệu trả về sẽ vào callback onHistoryReceived -> lưu DB -> Flow update UI
         NativeClient.getChatHistory(targetId, isGroup, offset, limit)
     }
 
-    // [NEW] Lưu tin nhắn từ Network (Socket trả về)
+    // Lưu tin nhắn từ Network (Socket trả về)
     suspend fun saveMessageFromNetwork(dto: MessageDto) {
         val existingMsg = messageDao.getMessageById(dto.id) // dto.id là ServerID
         if (existingMsg != null) {
@@ -214,14 +213,14 @@ class ChatRepository(
         )
 
         groupDao.insertGroup(group)
-        val myUserId = prefs.getInt("USER_ID", -1)
+        val myUserId = sessionManager.getUserId()
         if (myUserId != -1) {
             insertLocalSystemMessage(groupId, "đã tạo nhóm", myUserId)
         }
     }
 
     suspend fun insertLocalSystemMessage(groupId: Int, content: String, senderId: Int? = null) {
-        val myUserId = senderId ?: prefs.getInt("USER_ID", -1)
+        val myUserId = senderId ?: sessionManager.getUserId()
         if (myUserId == -1) return
 
         val sysMsg = MessageEntity(
@@ -320,8 +319,6 @@ class ChatRepository(
 
         // 3. Sau khi đảm bảo Group đã tồn tại, mới lưu danh sách thành viên
         saveGroupMembersFromNetwork(groupId, memberIds)
-
-        // (Optional) Tạo tin nhắn hệ thống báo "A đã thêm B vào nhóm" nếu muốn
     }
 
     suspend fun getGroupMemberIds(groupId: Int): List<Int> {
@@ -362,23 +359,9 @@ class ChatRepository(
     suspend fun handleMemberLeft(groupId: Int, memberId: Int, memberName: String) {
         // 1. Xóa thành viên khỏi bảng group_members
         groupDao.deleteMember(groupId, memberId)
-
-        // 2. Chèn tin nhắn hệ thống: "Nguyễn Văn A đã rời nhóm"
-        // Server ID cho tin hệ thống tự sinh này có thể dùng số âm hoặc hash để tránh trùng
-//        val systemMsg = MessageEntity(
-//            serverId = -System.currentTimeMillis().toInt(), // ID tạm
-//            senderId = memberId, // Người rời là người gửi tin này
-//            receiverId = groupId,
-//            chatType = "group",
-//            msgType = 9, // TYPE_SYSTEM
-//            content = "đã rời nhóm",
-//            status = "sent",
-//            createdAt = Date()
-//        )
-//        messageDao.insertMessage(systemMsg)
     }
 
-    // [THÊM MỚI] Xử lý khi nhóm bị giải tán
+    // Xử lý khi nhóm bị giải tán
     suspend fun handleGroupDissolved(groupId: Int) {
         groupDao.deleteMembersByGroupId(groupId)
         // Xóa toàn bộ nhóm khỏi DB
@@ -479,8 +462,6 @@ class ChatRepository(
         }
     }
 
-    // [THÊM MỚI] Xử lý sự kiện Member Removed từ Server
-// [SỬA ĐỔI] Xử lý sự kiện Member Removed từ Server
     @Transaction
     suspend fun handleMemberRemoved(
         groupId: Int,
@@ -488,7 +469,7 @@ class ChatRepository(
         memberName: String,
         adminId: Int,
         adminName: String,
-        myUserId: Int // [THÊM THAM SỐ] Cần biết ID của mình để so sánh
+        myUserId: Int
     ) {
         if (memberId == myUserId) {
             // --- TRƯỜNG HỢP 1: CHÍNH TÔI BỊ KICK ---
@@ -518,19 +499,6 @@ class ChatRepository(
                 insertLocalSystemMessage(groupId, "đã mời $memberName ra khỏi nhóm")
             }
 
-            // 2. Tạo tin nhắn hệ thống báo cho mình biết
-//            val content = "đã mời $memberName ra khỏi nhóm"
-//            val systemMsg = MessageEntity(
-//                serverId = -System.currentTimeMillis().toInt(),
-//                senderId = adminId,
-//                receiverId = groupId,
-//                chatType = "group",
-//                msgType = 9, // TYPE_SYSTEM
-//                content = content,
-//                status = "sent",
-//                createdAt = Date()
-//            )
-//            messageDao.insertMessage(systemMsg)
             Log.d("ChatRepo", "Đã xóa member $memberName khỏi nhóm $groupId (Local)")
         }
     }
@@ -539,12 +507,12 @@ class ChatRepository(
     }
 
     fun isGroupMuted(groupId: Int): Boolean {
-        // Sử dụng key định dạng: MUTE_GROUP_12
-        return prefs.getBoolean("MUTE_GROUP_$groupId", false)
+        // Sử dụng key định dạng: MUTE_GROUP_{groupId}
+        return sessionManager.isGroupMuted(groupId)
     }
 
     fun setGroupMute(groupId: Int, isMuted: Boolean) {
-        prefs.edit().putBoolean("MUTE_GROUP_$groupId", isMuted).apply()
+        sessionManager.setGroupMute(groupId, isMuted)
     }
 
     // 1. Gửi lệnh thu hồi (Gọi từ UI -> ViewModel -> Repo -> Native)

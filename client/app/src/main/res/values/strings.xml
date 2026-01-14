@@ -1,3 +1,36 @@
 <resources>
     <string name="app_name">KonniChat</string>
+
+    <!-- Splash Screen -->
+    <string name="error_connect_server">Không thể kết nối đến máy chủ</string>
+    <string name="action_retry">Thử lại</string>
+
+    <!-- Login Screen -->
+    <string name="title_login">Đăng Nhập</string>
+    <string name="label_email">Email</string>
+    <string name="hint_email">Nhập email của bạn</string>
+    <string name="label_password">Mật khẩu</string>
+    <string name="hint_password">Nhập mật khẩu</string>
+    <string name="action_login">Đăng Nhập</string>
+    <string name="action_login_loading">Đang xử lý...</string>
+    <string name="prompt_no_account">Chưa có tài khoản?</string>
+    <string name="action_register_now">Đăng ký ngay</string>
+    <string name="msg_login_success">Đăng nhập thành công!</string>
+    <string name="msg_input_empty">Vui lòng nhập đầy đủ thông tin</string>
+
+    <!-- Register Screen -->
+    <string name="title_register">Đăng Ký</string>
+    <string name="label_name">Tên</string>
+    <string name="hint_name">Nhập tên của bạn</string>
+    <string name="label_confirm_password">Xác nhận mật khẩu</string>
+    <string name="hint_confirm_password">Nhập lại mật khẩu</string>
+    <string name="action_register">Đăng Ký</string>
+    <string name="action_register_loading">Đang đăng ký...</string>
+    <string name="prompt_has_account">Đã có tài khoản?</string>
+    <string name="action_login_now">Đăng nhập ngay</string>
+    <string name="msg_register_success">Đăng ký thành công! Hãy đăng nhập.</string>
+    <string name="error_password_mismatch">Mật khẩu xác nhận không khớp</string>
+    <string name="error_invalid_name">Tên không hợp lệ (Tối đa 63 ký tự)</string>
+    <string name="error_invalid_email">Email không đúng định dạng</string>
+    <string name="error_invalid_password">Mật khẩu yếu (Cần 8+ ký tự, hoa, thường, số)</string>
 </resources>

@@ -13,4 +13,16 @@
         <item name="android:statusBarColor">?attr/colorPrimaryVariant</item>
         <!-- Customize your theme here. -->
     </style>
+
+    <!-- Theme dành riêng cho Splash Screen -->
+    <style name="Theme.App.Starting" parent="Theme.SplashScreen">
+        <!-- Màu nền khi khởi động -->
+        <item name="windowSplashScreenBackground">@color/white</item>
+        <!-- Icon hiển thị giữa màn hình -->
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <!-- Thời gian hiện icon (nếu là ảnh động) -->
+        <item name="windowSplashScreenAnimationDuration">200</item>
+        <!-- Sau khi Splash xong thì chuyển về Theme nào? -->
+        <item name="postSplashScreenTheme">@style/Theme.KonniChat</item>
+    </style>
 </resources>

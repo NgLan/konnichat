@@ -27,7 +27,7 @@ class MessageListFragment : Fragment() {
         HomeViewModelFactory(
             (requireActivity().application as App).userRepository,
             (requireActivity().application as App).chatRepository,
-            requireContext().getSharedPreferences("konnichat_prefs", android.content.Context.MODE_PRIVATE)
+            (requireActivity().application as App).sessionManager
         )
     }
 

@@ -5,6 +5,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <application
         android:name=".App"
         android:allowBackup="false"
@@ -14,15 +15,17 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:usesCleartextTraffic="true"
-        android:theme="@style/Theme.KonniChat">
+        android:theme="@style/Theme.KonniChat"
+        android:usesCleartextTraffic="true">
         <activity
             android:name=".ui.auth.SplashActivity"
             android:exported="true"
-            android:windowSoftInputMode="adjustResize"> <intent-filter>
-            <action android:name="android.intent.action.MAIN" />
-            <category android:name="android.intent.category.LAUNCHER" />
-        </intent-filter>
+            android:theme="@style/Theme.App.Starting"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
         </activity>
         <activity android:name=".ui.auth.LoginActivity" />
 
@@ -32,14 +35,18 @@
 
         <activity android:name=".ui.chat.ChatActivity" />
 
-        <activity android:name=".ui.group.CreateGroupActivity"
+        <activity
+            android:name=".ui.group.CreateGroupActivity"
             android:exported="false"
             android:label="Tạo nhóm mới"
-            android:windowSoftInputMode="adjustResize"
-            />
+            android:windowSoftInputMode="adjustResize" />
 
-        <activity android:name=".ui.group.GroupInfoActivity" android:label="Xem thành viên" />
-        <activity android:name=".ui.group.AddMemberActivity" android:label="Thêm thành viên" />
+        <activity
+            android:name=".ui.group.GroupInfoActivity"
+            android:label="Xem thành viên" />
+        <activity
+            android:name=".ui.group.AddMemberActivity"
+            android:label="Thêm thành viên" />
     </application>
 
 </manifest>

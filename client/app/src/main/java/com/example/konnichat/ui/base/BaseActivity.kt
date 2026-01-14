@@ -15,8 +15,18 @@ import android.content.Intent
 import android.widget.Toast
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.flow.collectLatest
+import androidx.core.graphics.toColorInt
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
+import com.example.konnichat.ui.chat.ChatActivity
+import com.example.konnichat.ui.group.GroupInfoActivity
+import kotlinx.coroutines.launch
 
-
+/**
+ * BaseActivity: Chứa logic chung cho tất cả màn hình.
+ * - Hiển thị banner trạng thái mạng (Connecting/Disconnected).
+ * - Lắng nghe sự kiện điều hướng toàn cục (ví dụ: bị kick khỏi nhóm).
+ */
 open class BaseActivity : AppCompatActivity() {
 
     private var statusBanner: TextView? = null
@@ -31,21 +41,20 @@ open class BaseActivity : AppCompatActivity() {
         setupConnectionObserver()
     }
 
+    // Banner báo mất mạng/đang kết nối
     private fun setupConnectionObserver() {
-        // Tạo View thông báo bằng Code (Không cần sửa XML)
         if (statusBanner == null) {
             val rootView = window.decorView.findViewById<ViewGroup>(android.R.id.content)
 
             statusBanner = TextView(this).apply {
                 text = "Đang kết nối lại..."
                 setTextColor(Color.WHITE)
-                setBackgroundColor(Color.parseColor("#FF5722")) // Màu cam nổi bật
+                setBackgroundColor("#FF5722".toColorInt()) // Màu cam nổi bật
                 gravity = Gravity.CENTER
                 setPadding(0, 16, 0, 16)
                 visibility = View.GONE // Mặc định ẩn
 
-                // Layout Params: Hiện ở trên cùng (Top) hoặc dưới cùng (Bottom) tùy bạn
-                // Ở đây tôi để ở trên cùng
+                // Layout Params: Hiện ở trên cùng
                 val params = FrameLayout.LayoutParams(
                     FrameLayout.LayoutParams.MATCH_PARENT,
                     FrameLayout.LayoutParams.WRAP_CONTENT
@@ -59,7 +68,7 @@ open class BaseActivity : AppCompatActivity() {
 
         // Lắng nghe trạng thái toàn cục từ NativeEventListenerImpl
         NativeEventListenerImpl.connectionState.observe(this) { state ->
-
+            // Nếu user đã chủ động logout, không hiện lỗi mạng
             if (NativeEventListenerImpl.isUserLoggedOut) {
                 statusBanner?.visibility = View.GONE
                 return@observe
@@ -69,45 +78,52 @@ open class BaseActivity : AppCompatActivity() {
                 ConnectionState.CONNECTED -> {
                     statusBanner?.visibility = View.GONE
                 }
+
                 ConnectionState.CONNECTING -> {
-                    statusBanner?.text = "Đang kết nối lại..."
-                    statusBanner?.setBackgroundColor(Color.parseColor("#FF9800")) // Cam
-                    statusBanner?.visibility = View.VISIBLE
+                    statusBanner?.apply {
+                        text = "Đang kết nối lại..."
+                        setBackgroundColor("#FF9800".toColorInt()) // Cam
+                        visibility = View.VISIBLE
+                    }
                 }
+
                 ConnectionState.DISCONNECTED -> {
-                    statusBanner?.text = "Mất kết nối máy chủ"
-                    statusBanner?.setBackgroundColor(Color.parseColor("#F44336")) // Đỏ
-                    statusBanner?.visibility = View.VISIBLE
+                    statusBanner?.apply {
+                        text = "Mất kết nối máy chủ"
+                        setBackgroundColor("#F44336".toColorInt()) // Đỏ
+                        visibility = View.VISIBLE
+                    }
                 }
-                else -> { statusBanner?.visibility = View.GONE }
+
+                else -> {
+                    statusBanner?.visibility = View.GONE
+                }
             }
         }
     }
 
+    // Lắng nghe sự kiện điều hướng từ Server
     private fun setupNavigationObserver() {
-        lifecycleScope.launchWhenStarted {
-            // Chỉ rõ kiểu dữ liệu (command: NativeEventListenerImpl.NavCommand) để tránh lỗi infer type
-            NativeEventListenerImpl.navigationEvent.collectLatest { command: NativeEventListenerImpl.NavCommand ->
-                val currentTargetId = when (this@BaseActivity) {
-                    is com.example.konnichat.ui.chat.ChatActivity -> {
-                        this@BaseActivity.intent.getIntExtra("TARGET_ID", -1)
+        lifecycleScope.launch {
+            // Block này sẽ chạy khi Activity ở trạng thái STARTED và tự dừng khi STOPPED
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                NativeEventListenerImpl.navigationEvent.collectLatest { command: NativeEventListenerImpl.NavCommand ->
+                    val currentTargetId = when (this@BaseActivity) {
+                        is ChatActivity -> this@BaseActivity.intent.getIntExtra("TARGET_ID", -1)
+                        is GroupInfoActivity -> this@BaseActivity.intent.getIntExtra("GROUP_ID", -1)
+                        else -> -1
                     }
-                    is com.example.konnichat.ui.group.GroupInfoActivity -> {
-                        this@BaseActivity.intent.getIntExtra("GROUP_ID", -1)
+
+                    if (currentTargetId != -1 && currentTargetId == command.targetId) {
+                        Toast.makeText(this@BaseActivity, command.reason, Toast.LENGTH_LONG).show()
+
+                        val intent = Intent(this@BaseActivity, HomeActivity::class.java)
+                        intent.flags =
+                            Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        startActivity(intent)
+
+                        finish()
                     }
-                    else -> -1
-                }
-
-                // Bây giờ các biến targetId và reason sẽ được nhận diện đúng từ object command
-                if (currentTargetId != -1 && currentTargetId == command.targetId) {
-                    // Sửa lỗi Unresolved reference 'show' bằng cách gọi .show() đúng cú pháp
-                    Toast.makeText(this@BaseActivity, command.reason, Toast.LENGTH_LONG).show()
-
-                    val intent = Intent(this@BaseActivity, HomeActivity::class.java)
-                    intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
-                    startActivity(intent)
-
-                    finish()
                 }
             }
         }

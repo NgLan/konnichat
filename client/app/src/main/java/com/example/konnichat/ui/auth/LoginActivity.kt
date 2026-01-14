@@ -13,6 +13,7 @@ import com.example.konnichat.core.state.Resource
 // Import HomeActivity khi bạn tạo nó sau này
  import com.example.konnichat.ui.home.HomeActivity
 import com.example.konnichat.App
+import com.example.konnichat.databinding.ActivityLoginBinding
 import com.example.konnichat.ui.base.BaseActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -21,69 +22,69 @@ import kotlinx.coroutines.withContext
 
 class LoginActivity : BaseActivity() {
 
+    private lateinit var binding: ActivityLoginBinding
+
     private val viewModel: AuthViewModel by viewModels {
         AuthViewModelFactory((application as App).authRepository)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_login)
+        binding = ActivityLoginBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        // Ánh xạ View
-        val etEmail = findViewById<EditText>(R.id.etLoginEmail)
-        val etPass = findViewById<EditText>(R.id.etLoginPassword)
-        val btnLogin = findViewById<Button>(R.id.btnLogin)
-        val tvSignUpLink = findViewById<TextView>(R.id.tvSignUpLink)
+        setupListeners()
+        setupObservers()
+    }
 
-        // Xử lý bấm nút Login
-        btnLogin.setOnClickListener {
-            val email = etEmail.text.toString().trim()
-            val pass = etPass.text.toString().trim()
-            viewModel.login(email, pass)
+    private fun setupListeners() {
+        binding.btnLogin.setOnClickListener {
+            val email = binding.etLoginEmail.text.toString().trim()
+            val pass = binding.etLoginPassword.text.toString().trim()
+
+            if (email.isEmpty() || pass.isEmpty()) {
+                Toast.makeText(this, getString(R.string.msg_input_empty), Toast.LENGTH_SHORT).show()
+            } else {
+                viewModel.login(email, pass)
+            }
         }
 
-        // Xử lý chuyển sang màn hình Đăng ký
-        tvSignUpLink.setOnClickListener {
+        binding.tvSignUpLink.setOnClickListener {
             val intent = Intent(this, RegisterActivity::class.java)
             startActivity(intent)
         }
+    }
 
-        // Lắng nghe kết quả Login
+    private fun setupObservers() {
         viewModel.loginState.observe(this) { resource ->
             when (resource) {
                 is Resource.Loading -> {
-                    btnLogin.isEnabled = false
-                    btnLogin.text = "Đang xử lý..."
+                    binding.btnLogin.isEnabled = false
+                    binding.btnLogin.text = getString(R.string.action_login_loading)
                 }
                 is Resource.Success -> {
-                    btnLogin.isEnabled = true
-                    btnLogin.text = "Đăng Nhập"
-                    Toast.makeText(this, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
+                    binding.btnLogin.isEnabled = true
+                    binding.btnLogin.text = getString(R.string.action_login)
 
-                    // TODO: Lưu thông tin User vào Session/SharedPreferences ở đây
-                    val userDto = resource.data
-                    if (userDto != null) {
-                        val prefs = getSharedPreferences("konnichat_prefs", MODE_PRIVATE)
-                        prefs.edit().apply {
-                            putInt("USER_ID", userDto.id)
-                            putString("USER_NAME", userDto.name)
-                            putString("USER_EMAIL", userDto.email)
-                            apply() // Lưu xuống file
-                        }
+                    Toast.makeText(this, getString(R.string.msg_login_success), Toast.LENGTH_SHORT).show()
 
-                        // Chuyển sang màn hình chính
-                        Toast.makeText(this, "Đăng nhập thành công!", Toast.LENGTH_SHORT).show()
-                        val intent = Intent(this, HomeActivity::class.java)
-                        startActivity(intent)
-                        finish()
-                    }
+                    navigateToHome()
                 }
                 is Resource.Error -> {
-                    btnLogin.isEnabled = true
-                    btnLogin.text = "Đăng Nhập"
+                    binding.btnLogin.isEnabled = true
+                    binding.btnLogin.text = getString(R.string.action_login)
+                    // Hiển thị lỗi từ server trả về
                     Toast.makeText(this, resource.message, Toast.LENGTH_LONG).show()
                 }
             }
         }
+    }
+
+    private fun navigateToHome() {
+        val intent = Intent(this, HomeActivity::class.java)
+        // Xóa Login khỏi backstack
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+        finish()
     }
 }

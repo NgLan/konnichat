@@ -10,6 +10,7 @@ import com.example.konnichat.data.remote.dto.UserSearchDto
 import com.example.konnichat.data.remote.dto.PendingRequestDto
 import com.example.konnichat.ui.search.UserSearchUiModel
 import com.example.konnichat.data.local.dao.MessageDao
+import com.example.konnichat.data.local.prefs.SessionManager
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,12 +24,12 @@ import java.util.Date
 class UserRepository(
     private val userDao: UserDao,
     private val messageDao: MessageDao,
-    private val prefs: SharedPreferences
+    private val sessionManager: SessionManager
 ) {
 
     // Helper: Lấy ID user hiện tại
     private fun getCurrentUserId(): Int {
-        return prefs.getInt("USER_ID", -1)
+        return sessionManager.getUserId()
     }
 
     // 1. Hàm hiển thị danh sách bạn bè
@@ -57,7 +58,7 @@ class UserRepository(
         userDao.insertUsers(userEntities)
     }
 
-    // --- MỚI THÊM: Cập nhật trạng thái ---
+    // --- Cập nhật trạng thái ---
     suspend fun updateFriendStatus(friendId: Int, isOnline: Boolean) {
         userDao.updateFriendStatus(friendId, isOnline)
     }
@@ -195,11 +196,6 @@ class UserRepository(
         updateSearchStatusToNone(friendId)
     }
 
-    // 1. Xóa bạn khỏi Database (khi bị Unfriend)
-//    suspend fun deleteFriend(friendId: Int) {
-//        userDao.deleteUserByServerId(friendId)
-//    }
-
     // 2. Reset trạng thái tìm kiếm về STATUS_NONE (khi bị Từ chối hoặc Unfriend)
     fun updateSearchStatusToNone(userId: Int) {
         val currentList = _searchResults.value.toMutableList()
@@ -226,13 +222,12 @@ class UserRepository(
     }
 
     fun isUserMuted(userId: Int): Boolean {
-        // Key format: MUTE_NOTIFY_12
-        return prefs.getBoolean("MUTE_NOTIFY_$userId", false)
+        // Key format: MUTE_NOTIFY_{userId}
+        return sessionManager.isUserMuted(userId)
     }
 
-    // [THÊM MỚI] Set trạng thái mute
     fun setUserMute(userId: Int, isMuted: Boolean) {
-        prefs.edit().putBoolean("MUTE_NOTIFY_$userId", isMuted).apply()
+        sessionManager.setUserMute(userId, isMuted)
     }
 
     suspend fun acceptFriendRequest(requestId: Int, senderId: Int, senderName: String) {

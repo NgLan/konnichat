@@ -9,72 +9,87 @@ import android.widget.Button
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.activity.viewModels
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.konnichat.core.state.Resource
 import com.example.konnichat.App
+import com.example.konnichat.databinding.ActivitySplashBinding
 import com.example.konnichat.ui.base.BaseActivity
 import com.example.konnichat.ui.home.HomeActivity
 
 class SplashActivity : BaseActivity() {
+
+    private val TAG = "SplashActivity"
+    private lateinit var binding: ActivitySplashBinding
 
     // Khởi tạo ViewModel
     private val viewModel: AuthViewModel by viewModels {
         AuthViewModelFactory((application as App).authRepository)
     }
 
-    private val TAG = "[SplashUI]"
-
     override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_splash)
+        val splashScreen = installSplashScreen()
 
-        // Ánh xạ View
-        val pbLoading = findViewById<ProgressBar>(R.id.pbLoading)
-        val tvError = findViewById<TextView>(R.id.tvError)
-        val btnRetry = findViewById<Button>(R.id.btnRetry)
+        super.onCreate(savedInstanceState)
+        binding = ActivitySplashBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        splashScreen.setKeepOnScreenCondition {
+            // Giữ splash nếu trạng thái đang là Loading hoặc chưa có kết quả
+            viewModel.autoLoginState.value is Resource.Loading || viewModel.autoLoginState.value == null
+        }
+
+        setupObservers()
+        setupListeners()
 
         // Bắt đầu kết nối ngay khi mở màn hình
-        Log.d(TAG, "🎬 onCreate: Bắt đầu check AutoLogin")
+        Log.d(TAG, "Checking auto login...")
         viewModel.checkAutoLogin()
+    }
 
-        // Lắng nghe kết quả kết nối
+    private fun setupListeners() {
+        binding.btnRetry.setOnClickListener {
+            Log.d(TAG, "User clicked Retry")
+            viewModel.checkAutoLogin()
+        }
+    }
+
+    private fun setupObservers() {
+        // Observe LiveData
         viewModel.autoLoginState.observe(this) { resource ->
-            Log.d(TAG, "👀 Observer nhận state mới: ${resource.javaClass.simpleName}")
-
             when (resource) {
                 is Resource.Loading -> {
-                    Log.d(TAG, "⏳ Đang xử lý (Loading)...")
-                    pbLoading.visibility = View.VISIBLE
-                    tvError.visibility = View.GONE
-                    btnRetry.visibility = View.GONE
                 }
                 is Resource.Success -> {
                     val isLoggedIn = resource.data ?: false
                     if (isLoggedIn) {
-                        Log.i(TAG, "✅ Đã đăng nhập -> Go Home")
-                        // Đã lưu pass và login thành công -> Vào thẳng Home
-                        startActivity(Intent(this, HomeActivity::class.java))
+                        navigateToHome()
                     } else {
-                        Log.i(TAG, "➡️ Auto Login thất bại hoặc chưa có dữ liệu -> Vào Login")
-                        // Kết nối OK nhưng chưa đăng nhập -> Vào màn Login
-                        startActivity(Intent(this, LoginActivity::class.java))
+                        navigateToLogin()
                     }
-                    finish() // Đóng SplashActivity để user không back lại được
                 }
                 is Resource.Error -> {
-                    Log.e(TAG, "❌ Lỗi: ${resource.message}")
-                    // Lỗi mạng (socket fail) -> Hiện nút Retry
-                    pbLoading.visibility = View.GONE
-                    tvError.text = resource.message
-                    tvError.visibility = View.VISIBLE
-                    btnRetry.visibility = View.VISIBLE
+                    Log.e(TAG, "Error: ${resource.message}")
+                    binding.pbLoading.visibility = View.GONE
+                    binding.tvError.text = resource.message
+                    binding.tvError.visibility = View.VISIBLE
+                    binding.btnRetry.visibility = View.VISIBLE
                 }
             }
         }
+    }
 
-        // Xử lý khi bấm nút Thử lại
-        btnRetry.setOnClickListener {
-            Log.d(TAG, "🔄 User bấm Retry")
-            viewModel.checkAutoLogin()
-        }
+    private fun navigateToHome() {
+        val intent = Intent(this, HomeActivity::class.java)
+        // Cờ này để xóa Splash khỏi back stack, user bấm Back sẽ thoát app luôn chứ ko quay lại Splash
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+        finish()
+    }
+
+    private fun navigateToLogin() {
+        val intent = Intent(this, LoginActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
+        startActivity(intent)
+        finish()
     }
 }

@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.example.konnichat.data.local.entity.UserEntity
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.local.model.ConversationItem
+import com.example.konnichat.data.local.prefs.SessionManager
 import com.example.konnichat.data.repository.UserRepository
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.ui.search.UserSearchUiModel
@@ -17,7 +18,7 @@ import kotlinx.coroutines.launch
 class HomeViewModel(
     private val userRepository: UserRepository,
     private val chatRepository: ChatRepository, // [THÊM] Inject ChatRepository
-    private val prefs: SharedPreferences
+    private val sessionManager: SessionManager
 ) : ViewModel() {
 
     private val _conversations = MutableStateFlow<List<ConversationItem>>(emptyList())
@@ -45,7 +46,7 @@ class HomeViewModel(
     }
 
     private fun loadConversations() {
-        val myId = prefs.getInt("USER_ID", -1)
+        val myId = sessionManager.getUserId()
         if (myId == -1) return
 
         viewModelScope.launch {
@@ -80,7 +81,7 @@ class HomeViewModel(
     }
 
     suspend fun getGroupRole(groupId: Int): String? {
-        val myId = prefs.getInt("USER_ID", -1)
+        val myId = sessionManager.getUserId()
         // Gọi xuống Repository -> gọi xuống DAO
         return chatRepository.getGroupRole(groupId, myId)
     }

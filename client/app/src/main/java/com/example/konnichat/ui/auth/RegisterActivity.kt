@@ -1,18 +1,17 @@
 package com.example.konnichat.ui.auth
 
-import com.example.konnichat.R
 import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.viewModels
-import androidx.appcompat.app.AppCompatActivity
-import com.example.konnichat.core.state.Resource
 import com.example.konnichat.App
+import com.example.konnichat.R
+import com.example.konnichat.core.state.Resource
+import com.example.konnichat.databinding.ActivityRegisterBinding
 import com.example.konnichat.ui.base.BaseActivity
 
 class RegisterActivity : BaseActivity() {
+
+    private lateinit var binding: ActivityRegisterBinding
 
     private val viewModel: AuthViewModel by viewModels {
         AuthViewModelFactory((application as App).authRepository)
@@ -20,56 +19,56 @@ class RegisterActivity : BaseActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_register)
+        binding = ActivityRegisterBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        // Ánh xạ View
-        // Chú ý: Cần thêm ID cho EditText Tên trong file XML nếu chưa có (ví dụ: etSignUpName)
-        // Trong XML bạn gửi tui không thấy trường nhập Tên (Name), chỉ có Email/Pass.
-        // Tui giả định bạn sẽ thêm EditText tên có ID là etSignUpName.
-        // Nếu chưa có, bạn nhớ thêm vào XML nhé. Tạm thời tui comment lại dòng lấy name.
+        setupListeners()
+        setupObservers()
+    }
 
-         val etName = findViewById<EditText>(R.id.etSignUpName)
-        val etEmail = findViewById<EditText>(R.id.etSignUpEmail)
-        val etPass = findViewById<EditText>(R.id.etSignUpPassword)
-        val etConfirmPass = findViewById<EditText>(R.id.etSignUpConfirmPassword)
-        val btnSignUp = findViewById<Button>(R.id.btnSignUp)
-        val tvLoginLink = findViewById<TextView>(R.id.tvLoginLink)
-
-        tvLoginLink.setOnClickListener {
-            finish() // Quay lại màn hình Login
+    private fun setupListeners() {
+        binding.tvLoginLink.setOnClickListener {
+            finish() // Quay lại Login
         }
 
-        btnSignUp.setOnClickListener {
-             val name = etName.text.toString().trim()
-//            val name = "User" // Tạm thời hardcode nếu UI chưa có trường Name
-            val email = etEmail.text.toString().trim()
-            val pass = etPass.text.toString().trim()
-            val confirmPass = etConfirmPass.text.toString().trim()
+        binding.btnSignUp.setOnClickListener {
+            val name = binding.etSignUpName.text.toString().trim()
+            val email = binding.etSignUpEmail.text.toString().trim()
+            val pass = binding.etSignUpPassword.text.toString().trim()
+            val confirmPass = binding.etSignUpConfirmPassword.text.toString().trim()
 
-            if (pass != confirmPass) {
-                Toast.makeText(this, "Mật khẩu xác nhận không khớp", Toast.LENGTH_SHORT).show()
+            if (name.isEmpty() || email.isEmpty() || pass.isEmpty()) {
+                Toast.makeText(this, getString(R.string.msg_input_empty), Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
 
+            if (pass != confirmPass) {
+                Toast.makeText(this, getString(R.string.error_password_mismatch), Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            // Gọi ViewModel
             viewModel.register(name, email, pass)
         }
+    }
 
-        // Lắng nghe kết quả Đăng ký
+    private fun setupObservers() {
         viewModel.registerState.observe(this) { resource ->
             when (resource) {
                 is Resource.Loading -> {
-                    btnSignUp.isEnabled = false
-                    btnSignUp.text = "Đang đăng ký..."
+                    binding.btnSignUp.isEnabled = false
+                    binding.btnSignUp.text = getString(R.string.action_register_loading)
                 }
                 is Resource.Success -> {
-                    btnSignUp.isEnabled = true
-                    btnSignUp.text = "Đăng Ký"
-                    Toast.makeText(this, "Đăng ký thành công! Hãy đăng nhập.", Toast.LENGTH_LONG).show()
-                    finish() // Quay về màn hình login
+                    binding.btnSignUp.isEnabled = true
+                    binding.btnSignUp.text = getString(R.string.action_register)
+
+                    Toast.makeText(this, getString(R.string.msg_register_success), Toast.LENGTH_LONG).show()
+                    finish() // Đăng ký xong thì quay về Login để người dùng đăng nhập
                 }
                 is Resource.Error -> {
-                    btnSignUp.isEnabled = true
-                    btnSignUp.text = "Đăng Ký"
+                    binding.btnSignUp.isEnabled = true
+                    binding.btnSignUp.text = getString(R.string.action_register)
                     Toast.makeText(this, resource.message, Toast.LENGTH_LONG).show()
                 }
             }

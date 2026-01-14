@@ -43,16 +43,9 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
 
             if (connectResult is Resource.Success) {
                 Log.d(TAG, "✅ Kết nối OK. Đang thử Auto Login...")
-                // 2. Nếu kết nối OK -> Thử Auto Login (Lấy user/pass từ SharedPreferences gửi lên)
+                // 2. Nếu kết nối OK -> Thử Auto Login
                 val isLoggedIn = repository.autoLogin()
-                if (isLoggedIn) {
-                    Log.i(TAG, "🎉 Auto Login thành công -> Báo View chuyển Home.")
-                    _autoLoginState.value = Resource.Success(true)
-                } else {
-                    Log.w(TAG, "⚠️ Auto Login thất bại (sai pass hoặc chưa lưu) -> Báo View chuyển Login.")
-                    // Kết nối được nhưng không login được (chưa lưu pass hoặc pass sai) -> Về màn Login
-                    _autoLoginState.value = Resource.Success(false)
-                }
+                _autoLoginState.value = Resource.Success(isLoggedIn)
             } else {
                 Log.e(TAG, "❌ Kết nối Socket thất bại: ${connectResult.message}")
                 // Lỗi mạng -> Báo lỗi để hiện nút Retry
@@ -66,6 +59,16 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         // Kiểm tra dữ liệu đầu vào cơ bản
         if (email.isBlank() || pass.isBlank()) {
             _loginState.value = Resource.Error("Vui lòng nhập đầy đủ thông tin")
+            return
+        }
+
+        if (!ValidationUtils.isValidEmail(email)) {
+            _loginState.value = Resource.Error("Email không hợp lệ")
+            return
+        }
+
+        if (pass.isEmpty()) {
+            _loginState.value = Resource.Error("Vui lòng nhập mật khẩu")
             return
         }
 

@@ -1,4 +1,3 @@
-// File: client/app/src/main/java/com/example/konnichat/ui/home/HomeActivity.kt
 package com.example.konnichat.ui.home
 
 import android.content.Intent
@@ -13,6 +12,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.konnichat.App
 import com.example.konnichat.R
+import com.example.konnichat.data.local.prefs.SessionManager
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListenerImpl
 import com.example.konnichat.data.repository.ChatRepository
@@ -28,8 +28,8 @@ class HomeActivity : BaseActivity() {
     private val viewModel: HomeViewModel by viewModels {
         HomeViewModelFactory(
             (application as App).userRepository,
-            (application as App).chatRepository, // Thêm cái này
-            getSharedPreferences("konnichat_prefs", android.content.Context.MODE_PRIVATE) // Thêm cái này
+            (application as App).chatRepository,
+            (application as App).sessionManager
         )
     }
 
@@ -159,12 +159,12 @@ class HomeActivity : BaseActivity() {
 class HomeViewModelFactory(
     private val userRepo: UserRepository,
     private val chatRepo: ChatRepository,
-    private val prefs: android.content.SharedPreferences
+    private val sessionManager: SessionManager
 ) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
         if (modelClass.isAssignableFrom(HomeViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return HomeViewModel(userRepo, chatRepo, prefs) as T
+            return HomeViewModel(userRepo, chatRepo, sessionManager) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

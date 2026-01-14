@@ -12,6 +12,7 @@ import com.example.konnichat.data.remote.NativeEventListenerImpl
 import com.example.konnichat.core.exception.NativeException
 import com.example.konnichat.core.state.Resource
 import com.example.konnichat.core.utils.SecurityUtils
+import com.example.konnichat.data.local.prefs.SessionManager
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.dto.UserDto
 import kotlinx.coroutines.Dispatchers
@@ -20,15 +21,14 @@ import kotlinx.coroutines.withContext
 class AuthRepository (
     private val userDao: UserDao,
     private val db: AppDatabase,
-    private val prefs: SharedPreferences
+    private val sessionManager: SessionManager
 ){
 
     companion object {
         private const val TAG = "[AuthRepo]"
     }
 
-    // Hàm kết nối đến Server (Dùng cho Splash Screen)
-    // Chạy trên luồng IO để không chặn UI
+    // Kết nối Server (Socket)
     suspend fun connectToServer(): Resource<Boolean> = withContext(Dispatchers.IO) {
         Log.d(TAG, "Bắt đầu kết nối đến ${Constants.SERVER_HOST}:${Constants.SERVER_PORT}")
         try {
@@ -73,34 +73,10 @@ class AuthRepository (
             }
 
             val hashedPass = SecurityUtils.hashSHA256(pass)
-            // NativeClient.loginUser là hàm blocking, nó sẽ chờ server trả lời hoặc ném Exception
             val user = NativeClient.loginUser(email, hashedPass)
+
             if (user != null) {
-                NativeEventListenerImpl.isUserLoggedOut = false
-
-                NativeClient.startListening(NativeEventListenerImpl)
-                NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
-                NativeEventListenerImpl.isUserLoggedOut = false // Reset cờ logout
-                prefs.edit()
-                    .putString("SAVED_EMAIL", email)
-                    .putString("SAVED_PASS", hashedPass)
-                    .putInt("USER_ID", user.id) // Lưu luôn ID để tiện dùng
-                    .apply()
-
-                db.clearAllTables()
-                val myUserEntity = UserEntity(
-                    serverId = user.id,
-                    email = user.email,
-                    name = user.name,
-                    age = null,
-                    status = "active",
-                    isOnline = true, // Vừa login xong chắc chắn online
-                    avatarUrl = null,
-                    relationType = 0,
-                    createdAt = Date(),
-                    updatedAt = Date()
-                )
-                userDao.insertUser(myUserEntity)
+                handleLoginSuccess(user, email, hashedPass)
                 Resource.Success(user)
             } else {
                 Resource.Error("Dữ liệu người dùng trả về bị rỗng")
@@ -113,8 +89,8 @@ class AuthRepository (
     }
 
     suspend fun autoLogin(): Boolean = withContext(Dispatchers.IO) {
-        val email = prefs.getString("SAVED_EMAIL", null)
-        val pass = prefs.getString("SAVED_PASS", null)
+        val email = sessionManager.getSavedEmail()
+        val pass = sessionManager.getSavedPass()
 
         Log.d(TAG, "AutoLogin: Kiểm tra credentials đã lưu...")
 
@@ -124,7 +100,6 @@ class AuthRepository (
         } else {
             Log.d(TAG, "Tìm thấy credentials cho: $email. Đang gọi Native Login...")
             try {
-                // Gọi login native nhưng không cần xóa DB hay insert lại User (vì đã có rồi)
                 val user = NativeClient.loginUser(email, pass)
                 if (user != null) {
                     Log.i(TAG, "AutoLogin THÀNH CÔNG cho User ID: ${user.id}")
@@ -167,13 +142,11 @@ class AuthRepository (
             // 1. Chặn luồng tự động kết nối lại trước khi ngắt socket
             NativeEventListenerImpl.isUserLoggedOut = true
 
-            NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
-
             // 2. Gọi Native để báo Server và đóng socket
             NativeClient.logoutUser()
 
-            // 3. Xóa sạch SharedPreferences (Email, Pass, ID...)
-            prefs.edit().clear().apply()
+            // 3. Xóa dữ liệu local
+            sessionManager.clearSession()
 
             // 4. Xóa sạch toàn bộ bảng trong Database Local
             db.clearAllTables()
@@ -185,5 +158,32 @@ class AuthRepository (
             Log.e(TAG, "Lỗi khi đăng xuất: ${e.message}")
             e.printStackTrace()
         }
+    }
+
+    // Helper: Xử lý lưu dữ liệu khi login thành công
+    private suspend fun handleLoginSuccess(user: UserDto, email: String, passHash: String) {
+        NativeEventListenerImpl.isUserLoggedOut = false
+        NativeClient.startListening(NativeEventListenerImpl)
+        NativeEventListenerImpl.connectionState.postValue(ConnectionState.CONNECTED)
+
+        // Lưu vào SessionManager
+        sessionManager.saveLoginSession(user.id, user.name, user.email)
+        sessionManager.saveCredentials(email, passHash)
+
+        // Lưu thông tin bản thân vào User Table
+        db.clearAllTables() // Xóa dữ liệu của user cũ (nếu có)
+        val myUserEntity = UserEntity(
+            serverId = user.id,
+            email = user.email,
+            name = user.name,
+            age = null,
+            status = "active",
+            isOnline = true,
+            avatarUrl = null,
+            relationType = 0,
+            createdAt = Date(),
+            updatedAt = Date()
+        )
+        userDao.insertUser(myUserEntity)
     }
 }
