@@ -10,54 +10,80 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.example.konnichat.R
+import com.example.konnichat.databinding.ItemSearchUserBinding
+import androidx.core.graphics.toColorInt
 
 class SearchUserAdapter(
     private val onAddFriendClick: (Int) -> Unit,
     private val onChatClick: (Int) -> Unit
 ) : ListAdapter<UserSearchUiModel, SearchUserAdapter.SearchViewHolder>(DiffCallback) {
 
-    class SearchViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val tvName: TextView = itemView.findViewById(R.id.tvSearchName)
-        val tvEmail: TextView = itemView.findViewById(R.id.tvSearchEmail)
-        val btnAction: Button = itemView.findViewById(R.id.btnSearchAction)
-    }
+    class SearchViewHolder(val binding: ItemSearchUserBinding) :
+        RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): SearchViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_search_user, parent, false)
-        return SearchViewHolder(view)
+        val binding = ItemSearchUserBinding.inflate(
+            LayoutInflater.from(parent.context), parent, false
+        )
+        return SearchViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: SearchViewHolder, position: Int) {
         val user = getItem(position)
-        holder.tvName.text = user.name
-        holder.tvEmail.text = user.email
+        val context = holder.itemView.context
 
-        // Click vào item vẫn mở chat (xem lịch sử cũ)
-        holder.itemView.setOnClickListener { onChatClick(user.id) }
+        with(holder.binding) {
+            tvSearchName.text = user.name
+            tvSearchEmail.text = user.email
 
-        // --- LOGIC HIỂN THỊ NÚT DỰA TRÊN STATUS TỪ SERVER ---
-        when (user.status) {
-            UserSearchUiModel.STATUS_FRIEND -> {
-                // Đã là bạn
-                setupButton(holder.btnAction, "Bạn bè", "#757575", true) // Xám, Bấm để chat
-                holder.btnAction.setOnClickListener { onChatClick(user.id) }
-            }
-            UserSearchUiModel.STATUS_SENT -> {
-                // Đã gửi lời mời
-                setupButton(holder.btnAction, "Đã gửi", "#E0E0E0", false) // Xám nhạt, Disable
-                holder.btnAction.setTextColor(Color.GRAY)
-                holder.btnAction.setOnClickListener { null } // Không làm gì
-            }
-            UserSearchUiModel.STATUS_RECEIVED -> {
-                // Người ta gửi cho mình (Hiếm gặp khi search nhưng cứ handle)
-                setupButton(holder.btnAction, "Phản hồi", "#2196F3", true) // Xanh dương
-                // Bấm vào thì nên mở trang Lời mời (hoặc chấp nhận luôn tùy logic)
-                holder.btnAction.setOnClickListener { /* TODO: Mở dialog chấp nhận */ }
-            }
-            else -> { // STATUS_NONE (Người lạ)
-                setupButton(holder.btnAction, "Kết bạn", "#4CAF50", true) // Xanh lá
-                holder.btnAction.setOnClickListener { onAddFriendClick(user.id) }
+            // Placeholder avatar
+            imgSearchAvatar.setImageResource(R.mipmap.ic_launcher_round)
+
+            // Click vào item
+            root.setOnClickListener { onChatClick(user.id) }
+
+            // Logic hiển thị nút
+            when (user.status) {
+                UserSearchUiModel.STATUS_FRIEND -> {
+                    setupButton(
+                        btnSearchAction,
+                        context.getString(R.string.action_friend_chat),
+                        "#757575",
+                        true
+                    )
+                    btnSearchAction.setOnClickListener { onChatClick(user.id) }
+                }
+
+                UserSearchUiModel.STATUS_SENT -> {
+                    setupButton(
+                        btnSearchAction,
+                        context.getString(R.string.action_friend_sent),
+                        "#E0E0E0",
+                        false
+                    )
+                    btnSearchAction.setTextColor(Color.GRAY)
+                    btnSearchAction.setOnClickListener(null)
+                }
+
+                UserSearchUiModel.STATUS_RECEIVED -> {
+                    setupButton(
+                        btnSearchAction,
+                        context.getString(R.string.action_friend_response),
+                        "#2196F3",
+                        true
+                    )
+                    btnSearchAction.setOnClickListener { /* TODO: Mở trang phản hồi */ }
+                }
+
+                else -> { // NONE
+                    setupButton(
+                        btnSearchAction,
+                        context.getString(R.string.action_add_friend),
+                        "#4CAF50",
+                        true
+                    )
+                    btnSearchAction.setOnClickListener { onAddFriendClick(user.id) }
+                }
             }
         }
     }
@@ -66,11 +92,15 @@ class SearchUserAdapter(
     private fun setupButton(btn: Button, text: String, colorHex: String, isEnabled: Boolean) {
         btn.text = text
         btn.isEnabled = isEnabled
-        btn.setBackgroundColor(Color.parseColor(colorHex))
+        btn.setBackgroundColor(colorHex.toColorInt())
         if (isEnabled) btn.setTextColor(Color.WHITE)
     }
+
     companion object DiffCallback : DiffUtil.ItemCallback<UserSearchUiModel>() {
-        override fun areItemsTheSame(oldItem: UserSearchUiModel, newItem: UserSearchUiModel) = oldItem.id == newItem.id
-        override fun areContentsTheSame(oldItem: UserSearchUiModel, newItem: UserSearchUiModel) = oldItem == newItem
+        override fun areItemsTheSame(oldItem: UserSearchUiModel, newItem: UserSearchUiModel) =
+            oldItem.id == newItem.id
+
+        override fun areContentsTheSame(oldItem: UserSearchUiModel, newItem: UserSearchUiModel) =
+            oldItem == newItem
     }
 }

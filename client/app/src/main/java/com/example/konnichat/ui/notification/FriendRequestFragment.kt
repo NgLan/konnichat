@@ -14,45 +14,72 @@ import androidx.recyclerview.widget.RecyclerView
 import com.example.konnichat.App
 import com.example.konnichat.R
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.databinding.FragmentSearchBinding
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class FriendRequestFragment : Fragment() {
 
     class Factory(private val repo: UserRepository) : ViewModelProvider.Factory {
-        override fun <T : ViewModel> create(modelClass: Class<T>): T = FriendRequestViewModel(repo) as T
+        override fun <T : ViewModel> create(modelClass: Class<T>): T =
+            FriendRequestViewModel(repo) as T
     }
 
     private val viewModel: FriendRequestViewModel by viewModels {
         Factory((requireActivity().application as App).userRepository)
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
-        return inflater.inflate(R.layout.fragment_search, container, false) // Tái sử dụng layout có RecyclerView
+    private var _binding: FragmentSearchBinding? = null
+    private val binding get() = _binding!!
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View? {
+        _binding = FragmentSearchBinding.inflate(inflater, container, false)
+        return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // Ẩn thanh search đi vì ta tái sử dụng layout
-        view.findViewById<View>(R.id.etSearchQuery)?.visibility = View.GONE
-        view.findViewById<View>(R.id.btnSubmitSearch)?.visibility = View.GONE
+        // Ẩn thanh tìm kiếm vì đây là màn hình thông báo
+        binding.etSearchQuery.visibility = View.GONE
+        binding.btnSubmitSearch.visibility = View.GONE
 
-        val rv = view.findViewById<RecyclerView>(R.id.rvSearchResults)
-        rv.layoutManager = LinearLayoutManager(context)
+        binding.rvSearchResults.layoutManager = LinearLayoutManager(context)
 
         val adapter = FriendRequestAdapter(
-            onAccept = { req -> viewModel.respond(req.requestId, req.senderId,req.senderName, true) },
+            onAccept = { req ->
+                viewModel.respond(
+                    req.requestId,
+                    req.senderId,
+                    req.senderName,
+                    true
+                )
+            },
 
-            // [SỬA] Truyền thêm req.senderId (dù từ chối không dùng đến nhưng hàm yêu cầu)
-            onDeny = { req -> viewModel.respond(req.requestId, req.senderId, req.senderName, false) }
+            onDeny = { req ->
+                viewModel.respond(
+                    req.requestId,
+                    req.senderId,
+                    req.senderName,
+                    false
+                )
+            }
         )
-        rv.adapter = adapter
+        binding.rvSearchResults.adapter = adapter
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.requests.collectLatest { adapter.submitList(it) }
         }
 
         viewModel.loadRequests()
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
     }
 }

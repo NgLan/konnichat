@@ -2,6 +2,7 @@ package com.example.konnichat.ui.home
 
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -18,7 +19,10 @@ import com.example.konnichat.ui.chat.ChatActivity
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import android.widget.PopupMenu // [THÊM]
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.repeatOnLifecycle
 import com.example.konnichat.data.local.model.ConversationItem // [THÊM]
+import com.example.konnichat.databinding.FragmentMessageListBinding
 import com.example.konnichat.utils.DialogUtils
 
 class MessageListFragment : Fragment() {
@@ -31,75 +35,82 @@ class MessageListFragment : Fragment() {
         )
     }
 
+    private var _binding: FragmentMessageListBinding? = null
+    private val binding get() = _binding!!
+
     private lateinit var adapter: ConversationAdapter
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        return inflater.inflate(R.layout.fragment_message_list, container, false)
+        _binding = FragmentMessageListBinding.inflate(inflater, container, false)
+        return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        val rvConversations = view.findViewById<RecyclerView>(R.id.rvConversations)
-        val tvEmpty = view.findViewById<TextView>(R.id.tvEmptyState)
+        setupRecyclerView()
+        observeData()
+    }
 
-        // Cập nhật Adapter với callback unfriend
+    private fun setupRecyclerView() {
         adapter = ConversationAdapter(
             onItemClick = { item ->
-                // Logic cũ: Mở màn hình chat
-                val intent = Intent(requireContext(), ChatActivity::class.java)
-                intent.putExtra("TARGET_ID", item.id)
-                intent.putExtra("TARGET_NAME", item.name)
-                intent.putExtra("CHAT_TYPE", item.chatType)
+                val intent = Intent(requireContext(), ChatActivity::class.java).apply {
+                    putExtra("TARGET_ID", item.id)
+                    putExtra("TARGET_NAME", item.name)
+                    putExtra("CHAT_TYPE", item.chatType)
+                }
                 startActivity(intent)
             },
-            onMoreClick = { item, view ->
-                // Logic mới: Hiển thị menu tùy chọn
-                showActionMenu(view, item)
+            onMoreClick = { item, anchorView ->
+                showActionMenu(anchorView, item)
             }
         )
 
-        rvConversations.layoutManager = LinearLayoutManager(context)
-        rvConversations.adapter = adapter
+        binding.rvConversations.apply {
+            layoutManager = LinearLayoutManager(context)
+            adapter = this@MessageListFragment.adapter
+        }
+    }
 
+    private fun observeData() {
         viewLifecycleOwner.lifecycleScope.launch {
-            viewModel.conversations.collectLatest { list ->
-                if (list.isEmpty()) {
-                    tvEmpty.visibility = View.VISIBLE
-                    rvConversations.visibility = View.GONE
-                    tvEmpty.text = "Chưa có cuộc trò chuyện nào."
-                } else {
-                    tvEmpty.visibility = View.GONE
-                    rvConversations.visibility = View.VISIBLE
-                    adapter.submitList(list)
+            viewLifecycleOwner.lifecycleScope.launch {
+                viewModel.conversations.collectLatest { list ->
+                    if (list.isEmpty()) {
+                        binding.tvEmptyState.visibility = View.VISIBLE
+                        binding.rvConversations.visibility = View.GONE
+                    } else {
+                        binding.tvEmptyState.visibility = View.GONE
+                        binding.rvConversations.visibility = View.VISIBLE
+                        adapter.submitList(list)
+                    }
                 }
             }
         }
     }
 
-    // [THÊM MỚI] Hàm hiển thị Menu popup
+    // Hàm hiển thị Menu popup
     private fun showActionMenu(view: View, item: ConversationItem) {
         val popup = PopupMenu(requireContext(), view)
 
         // Kiểm tra loại chat để hiển thị menu phù hợp
         if (item.chatType == "private") {
-            popup.menu.add("Hủy kết bạn")
+            popup.menu.add(getString(R.string.action_unfriend))
         } else if (item.chatType == "group") {
-            popup.menu.add("Rời nhóm")
+            popup.menu.add(getString(R.string.action_leave))
         }
 
         popup.setOnMenuItemClickListener { menuItem ->
             when (menuItem.title) {
-                "Hủy kết bạn" -> {
-                    // Gọi ViewModel để hủy kết bạn
+                getString(R.string.action_unfriend) -> {
                     viewModel.unfriendUser(item.id)
                     true
                 }
-                "Rời nhóm" -> {
-                    // Tạm thời chỉ hiện thông báo
+                getString(R.string.action_leave) -> {
                     handleGroupActionClick(item)
                     true
                 }
@@ -110,31 +121,35 @@ class MessageListFragment : Fragment() {
     }
 
     private fun handleGroupActionClick(item: ConversationItem) {
-        // Dùng lifecycleScope để chạy coroutine kiểm tra DB
-        lifecycleScope.launch {
+        viewLifecycleOwner.lifecycleScope.launch {
             val role = viewModel.getGroupRole(item.id)
 
-            android.util.Log.d("CheckRole", "Group: ${item.id}, User Role: $role")
+            Log.d("CheckRole", "Group: ${item.id}, User Role: $role")
 
             if (role != null && role.equals("admin", ignoreCase = true)) {
                 DialogUtils.showConfirmationDialog(
                     requireContext(),
-                    "Giải tán nhóm?",
-                    "Bạn là trưởng nhóm. Hành động này sẽ xóa nhóm vĩnh viễn.",
-                    positiveLabel = "Giải tán"
+                    getString(R.string.dialog_dissolve_group_title),
+                    getString(R.string.dialog_dissolve_group_msg),
+                    positiveLabel = getString(R.string.action_dissolve)
                 ) {
                     viewModel.dissolveGroup(item.id)
                 }
             } else {
                 DialogUtils.showConfirmationDialog(
                     requireContext(),
-                    "Rời nhóm?",
-                    "Bạn có chắc chắn muốn rời nhóm?",
-                    positiveLabel = "Rời nhóm"
+                    getString(R.string.dialog_leave_group_title),
+                    getString(R.string.dialog_leave_group_msg),
+                    positiveLabel = getString(R.string.action_leave)
                 ) {
                     viewModel.leaveGroup(item.id)
                 }
             }
         }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
     }
 }

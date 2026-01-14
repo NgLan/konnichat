@@ -7,63 +7,77 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.PopupMenu
 import android.widget.TextView
+import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
+import com.bumptech.glide.Glide
 import com.example.konnichat.R
 import com.example.konnichat.data.local.entity.UserEntity
+import com.example.konnichat.databinding.ItemFriendBinding
 
 class FriendAdapter(
     private val onItemClick: (UserEntity) -> Unit,
     private val onUnfriendClick: (UserEntity) -> Unit // Callback hủy kết bạn
 ) : ListAdapter<UserEntity, FriendAdapter.FriendViewHolder>(DiffCallback) {
 
-    class FriendViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val imgAvatar: ImageView = itemView.findViewById(R.id.imgAvatar)
-        val tvName: TextView = itemView.findViewById(R.id.tvFriendName)
-        val tvStatus: TextView = itemView.findViewById(R.id.tvFriendStatusText)
-        val viewStatusDot: View = itemView.findViewById(R.id.viewStatusDot)
-        val btnMore: ImageButton = itemView.findViewById(R.id.btnMore) // Nút 3 chấm
-    }
+    class FriendViewHolder(val binding: ItemFriendBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): FriendViewHolder {
-        val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_friend, parent, false)
-        return FriendViewHolder(view)
+        val binding = ItemFriendBinding.inflate(
+            LayoutInflater.from(parent.context), parent, false
+        )
+        return FriendViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: FriendViewHolder, position: Int) {
         val user = getItem(position)
+        val context = holder.itemView.context
 
-        holder.tvName.text = user.name
-        holder.imgAvatar.setImageResource(R.mipmap.ic_launcher_round)
+        with(holder.binding) {
+            tvFriendName.text = user.name
 
-        if (user.isOnline) {
-            holder.tvStatus.text = "Online"
-            holder.tvStatus.setTextColor(android.graphics.Color.parseColor("#4CAF50"))
-            holder.viewStatusDot.setBackgroundResource(R.drawable.status_online_bg)
-        } else {
-            holder.tvStatus.text = "Offline"
-            holder.tvStatus.setTextColor(android.graphics.Color.parseColor("#888888"))
-            holder.viewStatusDot.setBackgroundResource(R.drawable.status_offline_bg)
-        }
+            // Load Avatar dùng Glide
+            if (!user.avatarUrl.isNullOrEmpty()) {
+                Glide.with(context)
+                    .load(user.avatarUrl)
+                    .placeholder(R.mipmap.ic_launcher_round)
+                    .circleCrop()
+                    .into(imgAvatar)
+            } else {
+                imgAvatar.setImageResource(R.mipmap.ic_launcher_round)
+            }
 
-        // Click vào item -> Chat
-        holder.itemView.setOnClickListener { onItemClick(user) }
+            // Xử lý trạng thái Online/Offline
+            if (user.isOnline) {
+                tvFriendStatusText.text = context.getString(R.string.status_online)
+                tvFriendStatusText.setTextColor(ContextCompat.getColor(context, R.color.status_online))
+                viewStatusDot.setBackgroundResource(R.drawable.status_online_bg)
+            } else {
+                tvFriendStatusText.text = context.getString(R.string.status_offline)
+                tvFriendStatusText.setTextColor(ContextCompat.getColor(context, R.color.status_offline))
+                viewStatusDot.setBackgroundResource(R.drawable.status_offline_bg)
+            }
 
-        // Click vào nút 3 chấm -> Hiện Menu Hủy kết bạn
-        holder.btnMore.setOnClickListener { view ->
-            showPopupMenu(view, user)
+            // Click vào item -> Chat
+            root.setOnClickListener { onItemClick(user) }
+
+            // Click vào nút 3 chấm -> Hiện Menu
+            btnMore.setOnClickListener { view ->
+                showPopupMenu(view, user)
+            }
         }
     }
 
     private fun showPopupMenu(view: View, user: UserEntity) {
-        val popup = PopupMenu(view.context, view)
-        // Thêm menu item bằng code thay vì tạo file xml menu để đơn giản hóa
-        popup.menu.add("Hủy kết bạn")
+        val context = view.context
+        val popup = PopupMenu(context, view)
+
+        val unfriendTitle = context.getString(R.string.action_unfriend)
+        popup.menu.add(unfriendTitle)
 
         popup.setOnMenuItemClickListener { item ->
-            if (item.title == "Hủy kết bạn") {
+            if (item.title == unfriendTitle) {
                 onUnfriendClick(user)
                 true
             } else {

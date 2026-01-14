@@ -7,4 +7,7 @@
     <color name="teal_700">#FF018786</color>
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+
+    <color name="status_online">#4CAF50</color> <!-- Xanh lá -->
+    <color name="status_offline">#888888</color> <!-- Xám -->
 </resources>

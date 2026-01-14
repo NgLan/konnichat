@@ -12,18 +12,26 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import com.example.konnichat.App
 import com.example.konnichat.R
+import com.example.konnichat.core.state.Resource
 import com.example.konnichat.data.local.prefs.SessionManager
 import com.example.konnichat.data.remote.NativeClient
 import com.example.konnichat.data.remote.NativeEventListenerImpl
 import com.example.konnichat.data.repository.ChatRepository
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.databinding.ActivityHomeBinding
 import com.example.konnichat.ui.base.BaseActivity
 import com.google.android.material.bottomnavigation.BottomNavigationView
 import com.example.konnichat.ui.chat.ChatActivity
 import  com.example.konnichat.ui.auth.AuthViewModel
+import com.example.konnichat.ui.auth.AuthViewModelFactory
+import com.example.konnichat.ui.auth.LoginActivity
 import com.example.konnichat.ui.group.CreateGroupActivity
+import com.example.konnichat.ui.notification.FriendRequestFragment
+import com.example.konnichat.ui.search.SearchFragment
 
 class HomeActivity : BaseActivity() {
+
+    private lateinit var binding: ActivityHomeBinding
 
     private val viewModel: HomeViewModel by viewModels {
         HomeViewModelFactory(
@@ -35,60 +43,65 @@ class HomeActivity : BaseActivity() {
 
     // Khai báo thêm AuthViewModel để xử lý Logout
     private val authViewModel: AuthViewModel by viewModels {
-        com.example.konnichat.ui.auth.AuthViewModelFactory((application as App).authRepository)
+        AuthViewModelFactory((application as App).authRepository)
     }
 
     private lateinit var bottomNav: BottomNavigationView
-    // Đã xóa biến tvTitle
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_home)
+        binding = ActivityHomeBinding.inflate(layoutInflater)
+        setContentView(binding.root)
 
-        // 1. Setup Native Listener
-        val app = application as App
-        NativeEventListenerImpl.userRepository = app.userRepository
-        NativeEventListenerImpl.context = applicationContext
+        setupNativeListener()
+        setupBottomNavigation()
+        setupObservers()
 
-        // Uncomment dòng này để bắt đầu nhận sự kiện
-        NativeClient.startListening(NativeEventListenerImpl)
-
-        // 2. Ánh xạ View
-        bottomNav = findViewById(R.id.bottom_navigation)
-        // Đã xóa dòng findViewById(tvTitle)
-
-        // 3. Setup Bottom Navigation
-        bottomNav.setOnItemSelectedListener { item ->
-            when (item.itemId) {
-                R.id.nav_message -> {
-                    // Đã xóa dòng tvTitle.text = ...
-                    loadFragment(MessageListFragment())
-                    true
-                }
-                R.id.nav_search -> {
-                    // Đã xóa dòng tvTitle.text = ...
-                    loadFragment(com.example.konnichat.ui.search.SearchFragment())
-                    true
-                }
-                R.id.nav_notification -> {
-                    // Đã xóa dòng tvTitle.text = ...
-                    loadFragment(com.example.konnichat.ui.notification.FriendRequestFragment())
-                    true
-                }
-                else -> false
-            }
-        }
-
-        // 4. Mặc định load tab Message
+        // Mặc định load tab Message
         if (savedInstanceState == null) {
             loadFragment(MessageListFragment())
             handleNavigationIntent(intent)
         }
+    }
 
+    private fun setupNativeListener() {
+        val app = application as App
+        NativeEventListenerImpl.userRepository = app.userRepository
+        NativeEventListenerImpl.chatRepository = app.chatRepository
+        NativeEventListenerImpl.authRepository = app.authRepository
+        NativeEventListenerImpl.context = applicationContext
+
+        // Bắt đầu lắng nghe sự kiện
+        NativeClient.startListening(NativeEventListenerImpl)
+    }
+
+    private fun setupBottomNavigation() {
+        binding.bottomNavigation.setOnItemSelectedListener { item ->
+            when (item.itemId) {
+                R.id.nav_message -> {
+                    loadFragment(MessageListFragment())
+                    true
+                }
+
+                R.id.nav_search -> {
+                    loadFragment(SearchFragment())
+                    true
+                }
+
+                R.id.nav_notification -> {
+                    loadFragment(FriendRequestFragment())
+                    true
+                }
+
+                else -> false
+            }
+        }
+    }
+
+    private fun setupObservers() {
         authViewModel.logoutState.observe(this) { resource ->
-            if (resource is com.example.konnichat.core.state.Resource.Success) {
-                // Chuyển về màn hình Login và xóa sạch Stack các màn hình cũ
-                val intent = Intent(this, com.example.konnichat.ui.auth.LoginActivity::class.java)
+            if (resource is Resource.Success) {
+                val intent = Intent(this, LoginActivity::class.java)
                 intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
                 startActivity(intent)
                 finish()
@@ -115,10 +128,12 @@ class HomeActivity : BaseActivity() {
                 startActivity(intent)
                 true
             }
+
             R.id.action_logout -> {
                 authViewModel.logout()
                 true
             }
+
             else -> super.onOptionsItemSelected(item)
         }
     }
@@ -130,7 +145,7 @@ class HomeActivity : BaseActivity() {
         } else if (type == "MESSAGE") {
             bottomNav.selectedItemId = R.id.nav_message
 
-            // [THÊM MỚI] Logic tự động mở màn hình Chat
+            // Logic tự động mở màn hình Chat
             val targetId = intent.getIntExtra("TARGET_ID", -1)
             val targetName = intent.getStringExtra("TARGET_NAME")
 

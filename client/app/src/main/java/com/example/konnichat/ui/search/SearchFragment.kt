@@ -9,20 +9,22 @@ import android.widget.ImageButton
 import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.example.konnichat.App
 import com.example.konnichat.R
 import com.example.konnichat.data.repository.UserRepository
+import com.example.konnichat.databinding.FragmentSearchBinding
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 
 class SearchFragment : Fragment() {
 
-    // Factory để inject Repo cho SearchViewModel
     class SearchViewModelFactory(private val repo: UserRepository) : ViewModelProvider.Factory {
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             return SearchViewModel(repo) as T
@@ -33,62 +35,69 @@ class SearchFragment : Fragment() {
         SearchViewModelFactory((requireActivity().application as App).userRepository)
     }
 
+    private var _binding: FragmentSearchBinding? = null
+    private val binding get() = _binding!!
+
     private lateinit var adapter: SearchUserAdapter
-    private lateinit var etSearch: EditText
-    private lateinit var btnSearch: ImageButton
-    private lateinit var rvResults: RecyclerView
 
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
     ): View? {
-        return inflater.inflate(R.layout.fragment_search, container, false)
+        _binding = FragmentSearchBinding.inflate(inflater, container, false)
+        return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        // 1. Ánh xạ View (Binding)
-        etSearch = view.findViewById(R.id.etSearchQuery)
-        btnSearch = view.findViewById(R.id.btnSubmitSearch)
-        rvResults = view.findViewById(R.id.rvSearchResults)
+        setupRecyclerView()
 
-        // 2. Setup Adapter
-        adapter = SearchUserAdapter(
-            onAddFriendClick = { userId ->
-                viewModel.sendFriendRequest(userId)
-                // Toast.makeText(context, "Đã gửi lời mời!", Toast.LENGTH_SHORT).show()
-            },
-            onChatClick = { userId ->
-                Toast.makeText(context, "Chức năng Chat đang phát triển", Toast.LENGTH_SHORT).show()
-            }
-        )
-
-        rvResults.layoutManager = LinearLayoutManager(context)
-        rvResults.adapter = adapter
-
-        // 3. Setup Listener (Sự kiện bấm nút) - ĐỂ Ở NGOÀI COROUTINE
-        btnSearch.setOnClickListener {
-            val query = etSearch.text.toString().trim()
+        // 3. Setup Listener (Sự kiện bấm nút)
+        binding.btnSubmitSearch.setOnClickListener {
+            val query = binding.etSearchQuery.text.toString().trim()
             if (query.isNotEmpty()) {
                 viewModel.search(query)
-                // Ẩn bàn phím sau khi bấm tìm (Optional)
-                // hideKeyboard()
+            } else {
+                Toast.makeText(context, getString(R.string.msg_search_empty), Toast.LENGTH_SHORT)
+                    .show()
             }
         }
 
-        // 4. Setup Observer (Lắng nghe dữ liệu) - DÙNG 1 SCOPE DUY NHẤT
+        observeData()
+    }
+
+    private fun setupRecyclerView() {
+        adapter = SearchUserAdapter(
+            onAddFriendClick = { userId ->
+                viewModel.sendFriendRequest(userId)
+            },
+            onChatClick = {
+                Toast.makeText(context, getString(R.string.msg_chat_developing), Toast.LENGTH_SHORT)
+                    .show()
+            }
+        )
+        binding.rvSearchResults.layoutManager = LinearLayoutManager(context)
+        binding.rvSearchResults.adapter = adapter
+    }
+
+    private fun observeData() {
         viewLifecycleOwner.lifecycleScope.launch {
+            //viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
             viewModel.searchResults.collectLatest { results ->
                 adapter.submitList(results)
 
-                // Logic hiển thị thông báo "Không tìm thấy"
-                // Chỉ hiện khi: List rỗng VÀ Ô tìm kiếm không trống (để tránh hiện lúc mới vào màn hình)
-                val currentQuery = etSearch.text.toString().trim()
+                val currentQuery = binding.etSearchQuery.text.toString().trim()
                 if (results.isEmpty() && currentQuery.isNotEmpty()) {
                     Toast.makeText(context, "Không tìm thấy kết quả nào", Toast.LENGTH_SHORT).show()
                 }
             }
+            //}
         }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
     }
 }

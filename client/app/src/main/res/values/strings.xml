@@ -33,4 +33,41 @@
     <string name="error_invalid_name">Tên không hợp lệ (Tối đa 63 ký tự)</string>
     <string name="error_invalid_email">Email không đúng định dạng</string>
     <string name="error_invalid_password">Mật khẩu yếu (Cần 8+ ký tự, hoa, thường, số)</string>
+
+    <!-- Home - Navigation -->
+    <string name="nav_message">Tin nhắn</string>
+    <string name="nav_search">Tìm bạn</string>
+    <string name="nav_notification">Thông báo</string>
+    <string name="action_create_group">Tạo nhóm</string>
+    <string name="action_logout">Đăng xuất</string>
+
+    <!-- Message List -->
+    <string name="empty_conversations">Chưa có cuộc trò chuyện nào.\nHãy tìm bạn bè để bắt đầu trò chuyện!</string>
+    <string name="msg_no_message">Chưa có tin nhắn</string>
+    <string name="dialog_dissolve_group_title">Giải tán nhóm?</string>
+    <string name="dialog_dissolve_group_msg">Bạn là trưởng nhóm. Hành động này sẽ xóa nhóm vĩnh viễn.</string>
+    <string name="dialog_leave_group_title">Rời nhóm?</string>
+    <string name="dialog_leave_group_msg">Bạn có chắc chắn muốn rời nhóm?</string>
+    <string name="action_dissolve">Giải tán</string>
+    <string name="action_leave">Rời nhóm</string>
+    <string name="action_unfriend">Hủy kết bạn</string>
+
+    <!-- Search Screen -->
+    <string name="hint_search_user">Nhập tên hoặc email...</string>
+    <string name="msg_search_no_result">Không tìm thấy kết quả nào</string>
+    <string name="msg_search_empty">Vui lòng nhập từ khóa</string>
+    <string name="action_add_friend">Kết bạn</string>
+    <string name="action_friend_sent">Đã gửi</string>
+    <string name="action_friend_chat">Nhắn tin</string>
+    <string name="action_friend_response">Phản hồi</string>
+    <string name="msg_chat_developing">Chức năng Chat đang phát triển</string>
+
+    <!-- Notification Screen -->
+    <string name="msg_no_notifications">Không có lời mời kết bạn nào.</string>
+    <string name="action_accept">Đồng ý</string>
+    <string name="action_deny">Từ chối</string>
+    <string name="text_friend_request_desc">Muốn kết bạn với bạn</string>
+
+    <string name="status_online">Online</string>
+    <string name="status_offline">Offline</string>
 </resources>

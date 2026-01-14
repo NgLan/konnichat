@@ -9,9 +9,9 @@ import kotlinx.coroutines.flow.Flow
 interface ConversationDao {
 
     /**
-     * Câu lệnh SQL phức tạp để lấy danh sách hội thoại hỗn hợp (User + Group).
+     * Câu lệnh SQL để lấy danh sách hội thoại hỗn hợp (User + Group).
      *
-     * [SỬA ĐỔI]: Thêm điều kiện lọc ở PHẦN 1 để ẩn người lạ chưa có tin nhắn.
+     * Thêm điều kiện lọc ở PHẦN 1 để ẩn người lạ chưa có tin nhắn.
      */
     @Query("""
         SELECT * FROM (
