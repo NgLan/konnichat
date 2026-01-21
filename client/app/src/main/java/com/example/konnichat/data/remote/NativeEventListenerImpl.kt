@@ -49,7 +49,7 @@ object NativeEventListenerImpl : NativeEventListener {
     private val _navigationEvent = kotlinx.coroutines.flow.MutableSharedFlow<NavCommand>()
     val navigationEvent = _navigationEvent.asSharedFlow()
 
-    // [THÊM MỚI] Hàm helper để phát lệnh
+    // Hàm helper để phát lệnh
     private fun emitNavCommand(targetId: Int, chatType: String, reason: String) {
         CoroutineScope(Dispatchers.Main).launch {
             _navigationEvent.emit(NavCommand(targetId, chatType, reason))

@@ -37,8 +37,6 @@ CREATE TABLE friends (
     id INT AUTO_INCREMENT PRIMARY KEY,
     user_id INT NOT NULL,
     friend_id INT NOT NULL,
-    -- Notification: 'on', 'off'
-    notification VARCHAR(10) DEFAULT 'on',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
     FOREIGN KEY (friend_id) REFERENCES Users(id) ON DELETE CASCADE,
@@ -66,8 +64,6 @@ CREATE TABLE `groups` (
     id INT AUTO_INCREMENT PRIMARY KEY,
     name VARCHAR(100) CHARACTER SET utf8mb4 NOT NULL,
     avatar_url TEXT,
-    -- Notification: 'on', 'off'
-    notification VARCHAR(10) DEFAULT 'on',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -84,31 +80,6 @@ CREATE TABLE group_members (
     FOREIGN KEY (group_id) REFERENCES `Groups`(id) ON DELETE CASCADE,
     FOREIGN KEY (member_id) REFERENCES Users(id) ON DELETE CASCADE,
     UNIQUE KEY unique_group_member (group_id, member_id)
-);
-
--- 7. Bảng ICONS (Biểu tượng cảm xúc)
-CREATE TABLE icons (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    -- icon: (ví dụ: 'like', 'love', 'haha')
-    icon VARCHAR(50) NOT NULL UNIQUE, 
-    -- image_url: Đường dẫn ảnh hoặc tên file resource trong Android (ví dụ: 'ic_emoji_like')
-    image_url VARCHAR(255), 
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- 8. Bảng REACTIONS (Thả cảm xúc vào tin nhắn)
-CREATE TABLE reactions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL, -- Người thả reaction
-    icon_id INT NOT NULL, -- Loại icon 
-    message_id INT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    FOREIGN KEY (user_id) REFERENCES Users(id) ON DELETE CASCADE,
-    FOREIGN KEY (icon_id) REFERENCES Icons(id) ON DELETE CASCADE,
-    FOREIGN KEY (message_id) REFERENCES Messages(id) ON DELETE CASCADE,
-
-    UNIQUE KEY unique_user_react (user_id, message_id)
 );
 
 -- INSERT DỮ LIỆU MẪU
@@ -132,7 +103,7 @@ INSERT INTO Users (email, password, name, is_online, avatar_url) VALUES
 INSERT INTO Friends (user_id, friend_id)
 SELECT 1, id FROM Users 
 WHERE email IN (
-    'bich.tran@test.com', 'cuong.le@test.com', 
+    'bich.tran@test.com',
     'dung.pham@test.com', 'em.hoang@test.com', 'phuong.vu@test.com', 
     'giang.dang@test.com', 'hoa.bui@test.com', 'khanh.do@test.com', 
     'linh.ngo@test.com', 'lan.nguyen@test.com'
@@ -152,11 +123,3 @@ WHERE email IN (
     'an.nguyen@test.com', 'cuong.le@test.com', 'khanh.do@test.com', 
     'linh.ngo@test.com'
 );
-
--- Thêm bộ icon cơ bản
-INSERT INTO icons (id, icon, image_url) VALUES 
-(1, 'like', 'ic_reaction_like'),
-(2, 'love', 'ic_reaction_love'),
-(3, 'haha', 'ic_reaction_haha'),
-(4, 'sad', 'ic_reaction_sad'),
-(5, 'angry', 'ic_reaction_angry');

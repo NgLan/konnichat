@@ -32,15 +32,17 @@ class ChatActivity : BaseActivity() {
 
     private var chatType: String = "private"
 
-    // Biến static để NativeEventListener kiểm tra trạng thái (chặn thông báo khi đang chat)
+    // Biến static để NativeEventListener kiểm tra trạng thái xem người dùng có đang ở màn hình chat với người này hay không (chặn thông báo khi đang chat)
     companion object {
         var sCurrentTargetId: Int = -1
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Inflate file XML thành các đối tượng View
         binding = ActivityChatBinding.inflate(layoutInflater)
-        setContentView(binding.root)
+        setContentView(binding.root) // Đưa giao diện này lên màn hình.
 
         // 1. Lấy thông tin User hiện tại từ SharedPreferences (Đã lưu lúc Login)
         val prefs = getSharedPreferences("konnichat_prefs", Context.MODE_PRIVATE)
@@ -73,10 +75,9 @@ class ChatActivity : BaseActivity() {
 
         viewModel.checkMuteStatus(targetUserId)
 
-        // [THÊM MỚI] Quan sát LiveData để đổi Icon nút Mute
+        // Quan sát LiveData để đổi Icon nút Mute
         viewModel.isMuted.observe(this) { isMuted ->
             if (isMuted) {
-                // Bạn có thể thay bằng icon ic_notifications_off nếu có
                 binding.btnMute.setImageResource(android.R.drawable.ic_lock_silent_mode)
                 binding.btnMute.alpha = 0.5f // Làm mờ nút khi đang mute
             } else {
@@ -85,7 +86,7 @@ class ChatActivity : BaseActivity() {
             }
         }
 
-        // [THÊM MỚI] Gắn sự kiện click
+        // Gắn sự kiện click
         binding.btnMute.setOnClickListener {
             viewModel.toggleMute(targetUserId)
             val msg = if (viewModel.isMuted.value == true) "Đã tắt thông báo" else "Đã bật thông báo"
